@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leads Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Work+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <style>
+        :root {
+            --primary: #2D3142;
+            --accent: #EF8354;
+            --accent-light: #FFA07A;
+            --bg: #FAF9F6;
+            --card-bg: #FFFFFF;
+            --text: #2D3142;
+            --text-light: #6B7280;
+            --border: #E5E7EB;
+            --success: #10B981;
+            --warm: #F59E0B;
+            --hot: #EF4444;
+            --shadow: rgba(45, 49, 66, 0.08);
+            --shadow-lg: rgba(45, 49, 66, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Work Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Loader */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(250, 249, 246, 0.98);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+
+        .loader-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Navigation */
+        nav {
+            background: var(--card-bg);
+            box-shadow: 0 2px 20px var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            animation: slideDown 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            padding: 0.75rem 1.5rem;
+            border: 2px solid transparent;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 12px;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .nav-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .nav-btn:hover::before {
+            left: 100%;
+        }
+
+        .nav-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        .nav-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            box-shadow: 0 4px 15px rgba(239, 131, 84, 0.3);
+        }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        .header {
+            margin-bottom: 3rem;
+            opacity: 0;
+            animation: fadeInUp 0.8s ease forwards 0.2s;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 3.5rem;
+            font-weight: 900;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+            letter-spacing: -1px;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            font-weight: 300;
+        }
+
+        /* Cards Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 2rem;
+            opacity: 0;
+            animation: fadeIn 0.6s ease forwards 0.4s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .lead-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px var(--shadow);
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            position: relative;
+            overflow: hidden;
+            animation: cardSlideIn 0.6s ease backwards;
+        }
+
+        @keyframes cardSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(40px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .lead-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-light));
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.4s ease;
+        }
+
+        .lead-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .lead-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px var(--shadow-lg);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+        }
+
+        .lead-name {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .lead-date {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            background: var(--bg);
+            padding: 0.35rem 0.75rem;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .lead-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .info-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            min-width: 100px;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            color: var(--text);
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .phone-number {
+            color: var(--accent);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .phone-number:hover {
+            color: var(--primary);
+            text-decoration: underline;
+        }
+
+        .intent-badge {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .intent-hot {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--hot);
+        }
+
+        .intent-warm {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warm);
+        }
+
+        .intent-cold {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3B82F6;
+        }
+
+        .note-box {
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 12px;
+            margin-top: 1rem;
+            border-left: 3px solid var(--accent);
+        }
+
+        .note-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-light);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.5px;
+        }
+
+        .note-text {
+            font-size: 0.9rem;
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .assign-btn {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Work Sans', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 1.5rem;
+        }
+
+        .assign-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 131, 84, 0.4);
+        }
+
+        .assign-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(45, 49, 66, 0.8);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 3rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+            animation: modalSlideIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: scale(0.8) translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: var(--bg);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: var(--text);
+            transition: all 0.3s ease;
+        }
+
+        .modal-close:hover {
+            background: var(--accent);
+            color: white;
+            transform: rotate(90deg);
+        }
+
+        .modal h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 900;
+            color: var(--primary);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            font-family: 'Work Sans', sans-serif;
+            font-size: 1rem;
+            color: var(--text);
+            transition: all 0.3s ease;
+            background: var(--bg);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(239, 131, 84, 0.1);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 1.2rem;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Work Sans', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 1rem;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 131, 84, 0.4);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            animation: fadeInUp 0.6s ease;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p {
+            color: var(--text-light);
+            font-size: 1.1rem;
+        }
+
+        /* Progress Bar for Intent */
+        .intent-progress {
+            margin-top: 0.5rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--accent-light));
+            border-radius: 10px;
+            transition: width 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2.5rem;
+            }
+
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .nav-container {
+                padding: 1rem;
+            }
+
+            .logo {
+                font-size: 1.5rem;
+            }
+
+            .nav-buttons {
+                width: 100%;
+            }
+
+            .nav-btn {
+                flex: 1;
+                min-width: calc(50% - 0.375rem);
+            }
+
+            .modal {
+                padding: 2rem;
+            }
+        }
+
+        /* Additional styles for agent leads */
+        .agent-card {
+            background: linear-gradient(135deg, var(--primary) 0%, #3d4152 100%);
+            color: white;
+        }
+
+        .agent-card .lead-name,
+        .agent-card .info-value,
+        .agent-card .note-text {
+            color: white;
+        }
+
+        .agent-card .info-label {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .agent-card .note-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-left-color: var(--accent-light);
+        }
+
+        .agent-card .lead-date {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        a{
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loader -->
+    <div class="loader-overlay" id="loader">
+        <div class="loader"></div>
+    </div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <div class="logo">NishaHomes</div>
+            <div class="nav-buttons">
+                <button class="nav-btn active" data-sheet="buying">Buying Leads</button>
+                <button class="nav-btn" data-sheet="rental">Rental Leads</button>
+                <button class="nav-btn" data-sheet="selling">Selling Leads</button>
+                <button class="nav-btn" data-sheet="agent">Agent Leads</button>
+               <button class="nav-btn" data-sheet="other">other Leads</button>
+                <a href="assigned.html"> <button class="nav-btn">Assigned Leads</button></a>
+               <a href="manageteam.html"> <button class="nav-btn">Manage Team</button></a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container">
+        <div class="header">
+            <h1 id="pageTitle">Buying Leads</h1>
+            <p id="pageSubtitle">Manage and track your property leads</p>
+        </div>
+
+        <div class="cards-grid" id="cardsGrid"></div>
+    </div>
+
+    <!-- Assign Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <button class="modal-close" onclick="closeModal()">×</button>
+            <h2>Assign Lead</h2>
+            <form id="assignForm">
+                <input type="hidden" id="leadNumber" name="leadNumber">
+                <input type="hidden" id="SheetURL" name="SheetURL" required>
+                <div class="form-group">
+                    <label class="form-label" for="assignTo">Assign To</label>
+                    
+                    <select id="assignTo" name="assignTo" class="form-input" required>
+                       <option value="">Select employee</option>
+                    </select>
+
+                    <input type="hidden" id="assignToname" name="assignToname">
+                </div>
+                <button type="submit" class="submit-btn">Assign Lead</button>
+            </form>
+        </div>
+    </div>
+
+    <button id="installBtn" style="display:none" class="btn btn-primary">
+  📲 Install App
+</button>
+
+<script>
+let deferredPrompt;
+
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById("installBtn").style.display = "block";
+});
+
+document.getElementById("installBtn").addEventListener("click", async () => {
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+});
+</script>
+
+
+    <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js")
+      .then(() => console.log("✅ Service Worker Registered"))
+      .catch(err => console.error("SW error", err));
+  });
+}
+</script>
+
+    <script>
+        // Configuration - UPDATE THESE WITH YOUR GOOGLE SHEETS URLS
+
+        let BASE_API_URL = "http://localhost:5000/api";
+
+const API_CONFIG = {
+    buying: `${BASE_API_URL}/leads`,
+    rental: `${BASE_API_URL}/rental-leads`,
+    selling: `${BASE_API_URL}/selling-leads`,
+    agent: `${BASE_API_URL}/agent-leads`,
+    other: `${BASE_API_URL}/leads`
+};
+
+
+        let currentSheet = 'buying';
+        let allLeads = {};
+
+        // Format phone number
+        function formatPhone(phone) {
+             const phoneStr = String(phone);
+
+    return '+' + phoneStr
+        .replace('@s.whatsapp.net', '')
+        .replace('@c.us', '')
+        .replace(/\s+/g, '')  // remove spaces
+        .replace(/[^0-9]/g, '');
+        }
+
+        // Get intent badge class
+        function getIntentClass(intent) {
+            if (!intent) return 'intent-cold';
+            const lower = intent.toLowerCase();
+            if (lower === 'hot') return 'intent-hot';
+            if (lower === 'warm') return 'intent-warm';
+            return 'intent-cold';
+        }
+
+        // Show loader
+        function showLoader() {
+            document.getElementById('loader').classList.remove('hidden');
+        }
+
+        // Hide loader
+        function hideLoader() {
+            document.getElementById('loader').classList.add('hidden');
+        }
+
+        // Render buying leads
+        function renderBuyingLeads(leads) {
+            const grid = document.getElementById('cardsGrid');
+            
+            if (!leads || leads.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>No leads found</h3>
+                        <p>Check back later for new leads</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = leads.map((lead, index) => `
+                <div class="lead-card" style="animation-delay: ${index * 0.1}s">
+                    <div class="card-header">
+                        <div>
+                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                        </div>
+                        <div class="lead-date">${lead.Date || 'N/A'}</div>
+                    </div>
+                    
+                    <div class="lead-info">
+                        <div class="info-row">
+                            <span class="info-label">Phone</span>
+                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                                ${formatPhone(lead['Phone Number'])}
+                            </a>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Location</span>
+                            <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
+                        </div>
+                        
+                        ${lead['Sub_location'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Sub-Location</span>
+                            <span class="info-value">${lead['Sub_location']}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="info-row">
+                            <span class="info-label">Property</span>
+                            <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Budget</span>
+                            <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Intent</span>
+                            <span class="intent-badge ${getIntentClass(lead['Final Intent'])}">
+                                ${lead['Final Intent'] || 'Cold'}
+                            </span>
+                        </div>
+                        
+                        ${lead['Lead Intent %'] ? `
+                        <div class="intent-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${lead['Lead Intent %']}%"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${lead.note ? `
+                    <div class="note-box">
+                        <div class="note-label">Note</div>
+                        <div class="note-text">${lead.note}</div>
+                    </div>
+                    ` : ''}
+                    
+                    <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}')">
+                        Assign Lead
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Render rental leads
+        function renderRentalLeads(leads) {
+            const grid = document.getElementById('cardsGrid');
+            
+            if (!leads || leads.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>No leads found</h3>
+                        <p>Check back later for new leads</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = leads.map((lead, index) => `
+                <div class="lead-card" style="animation-delay: ${index * 0.1}s">
+                    <div class="card-header">
+                        <div>
+                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                        </div>
+                        <div class="lead-date">${lead.Date || 'N/A'}</div>
+                    </div>
+                    
+                    <div class="lead-info">
+                        <div class="info-row">
+                            <span class="info-label">Phone</span>
+                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                                ${formatPhone(lead['Phone Number'])}
+                            </a>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Location</span>
+                            <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
+                        </div>
+                        
+                        ${lead['Sub_location'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Sub-Location</span>
+                            <span class="info-value">${lead['Sub_location']}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="info-row">
+                            <span class="info-label">Property</span>
+                            <span class="info-value">${lead['Property_Type'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Budget</span>
+                            <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
+                        </div>
+                        
+                        ${lead['Tenant_Profile'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Profile</span>
+                            <span class="info-value">${lead['Tenant_Profile']}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="info-row">
+                            <span class="info-label">Intent</span>
+                            <span class="intent-badge ${getIntentClass(lead['Final Intent'])}">
+                                ${lead['Final Intent'] || 'Cold'}
+                            </span>
+                        </div>
+                        
+                        ${lead['Lead Intent %'] ? `
+                        <div class="intent-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${lead['Lead Intent %']}%"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${lead.note ? `
+                    <div class="note-box">
+                        <div class="note-label">Note</div>
+                        <div class="note-text">${lead.note}</div>
+                    </div>
+                    ` : ''}
+                    
+                     <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}')">
+                        Assign Lead
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Render selling leads
+        function renderSellingLeads(leads) {
+            const grid = document.getElementById('cardsGrid');
+            
+            if (!leads || leads.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>No leads found</h3>
+                        <p>Check back later for new leads</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = leads.map((lead, index) => `
+                <div class="lead-card" style="animation-delay: ${index * 0.1}s">
+                    <div class="card-header">
+                        <div>
+                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                        </div>
+                        <div class="lead-date">${lead.Date || 'N/A'}</div>
+                    </div>
+                    
+                    <div class="lead-info">
+                        <div class="info-row">
+                            <span class="info-label">Phone</span>
+                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                                ${formatPhone(lead['Phone Number'])}
+                            </a>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Location</span>
+                            <span class="info-value">${lead['Property Location'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Property</span>
+                            <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Price</span>
+                            <span class="info-value">${lead['Expected Price'] || 'N/A'}</span>
+                        </div>
+                        
+                        ${lead['Property Size + Floor'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Size</span>
+                            <span class="info-value">${lead['Property Size + Floor']}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${lead['Occupancy Status'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Status</span>
+                            <span class="info-value">${lead['Occupancy Status']}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${lead['Selling Timeline'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Timeline</span>
+                            <span class="info-value">${lead['Selling Timeline']}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${lead.Note ? `
+                    <div class="note-box">
+                        <div class="note-label">Note</div>
+                        <div class="note-text">${lead.Note}</div>
+                    </div>
+                    ` : ''}
+                    
+                     <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}')">
+                        Assign Lead
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Render agent leads
+        function renderAgentLeads(leads) {
+            const grid = document.getElementById('cardsGrid');
+            
+            if (!leads || leads.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>No leads found</h3>
+                        <p>Check back later for new leads</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = leads.map((lead, index) => `
+                <div class="lead-card agent-card" style="animation-delay: ${index * 0.1}s">
+                    <div class="card-header">
+                        <div>
+                            <div class="lead-name">${lead.Name || 'Unknown'}</div>
+                        </div>
+                        <div class="lead-date">${lead.Date || 'N/A'}</div>
+                    </div>
+                    
+                    <div class="lead-info">
+                        <div class="info-row">
+                            <span class="info-label">Company</span>
+                            <span class="info-value">${lead['Company Name'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Phone</span>
+                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                                ${formatPhone(lead['Phone Number'])}
+                            </a>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">City</span>
+                            <span class="info-value">${lead['Operating City'] || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span class="info-label">Inventory</span>
+                            <span class="info-value">${lead[' Inventory Type (Flats / Villas / Plots / Commercial)'] || 'N/A'}</span>
+                        </div>
+                        
+                        ${lead[' Contact Details'] ? `
+                        <div class="info-row">
+                            <span class="info-label">Contact</span>
+                            <span class="info-value">${lead[' Contact Details']}</span>
+                        </div>
+                        ` : ''}
+
+
+                        <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}')">
+                        Assign Lead
+                    </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Switch sheet
+        function switchSheet(sheet) {
+            currentSheet = sheet;
+            
+            // Update nav buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.sheet === sheet) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // Update title
+            const titles = {
+                buying: 'Buying Leads',
+                rental: 'Rental Leads',
+                selling: 'Selling Leads',
+                agent: 'Agent Leads',
+                other: 'Other Leads'
+            };
+            document.getElementById('pageTitle').textContent = titles[sheet];
+            
+            // Render appropriate leads
+            if (allLeads[sheet]) {
+                switch(sheet) {
+                    case 'buying':
+                        renderBuyingLeads(allLeads[sheet]);
+                        break;
+                    case 'rental':
+                        renderRentalLeads(allLeads[sheet]);
+                        break;
+                    case 'selling':
+                        renderSellingLeads(allLeads[sheet]);
+                        break;
+                    case 'agent':
+                        renderAgentLeads(allLeads[sheet]);
+                        break;
+                }
+            } else {
+                fetchLeads(sheet);
+            }
+        }
+
+        // Open assign modal
+        function openAssignModal(phoneNumber) {
+            document.getElementById('leadNumber').value = phoneNumber;
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+            document.getElementById('assignForm').reset();
+        }
+
+        // Fetch leads from Google Sheets
+   async function fetchLeads(sheet) {
+    showLoader();
+
+    try {
+        const url = API_CONFIG[sheet];
+        const response = await fetch(url);
+        let leads = await response.json();
+
+        /* 1️⃣ UNASSIGNED ONLY */
+        leads = leads.filter(lead => {
+            const assignTo = String(lead.AssignTo || '').trim();
+            return assignTo === '';
+        });
+
+        /* 2️⃣ TAB-SPECIFIC FILTER */
+        if (sheet === 'buying') {
+            leads = leads.filter(lead =>
+                String(lead.LeadType || '').toLowerCase() !== 'other'
+            );
+        }
+
+        if (sheet === 'other') {
+            leads = leads.filter(lead =>
+                String(lead.LeadType || '').toLowerCase() === 'other'
+            );
+        }
+
+        allLeads[sheet] = leads;
+
+        switch(sheet) {
+            case 'buying':
+                renderBuyingLeads(leads);
+                break;
+            case 'rental':
+                renderRentalLeads(leads);
+                break;
+            case 'selling':
+                renderSellingLeads(leads);
+                break;
+            case 'agent':
+                renderAgentLeads(leads);
+                break;
+            case 'other':
+                renderBuyingLeads(leads);
+                break;
+        }
+
+    } catch (error) {
+        console.error(error);
+    } finally {
+        hideLoader();
+    }
+}
+
+       
+        // Handle assign form submission
+       document.getElementById('assignForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const assignToname = document.getElementById('assignToname').value;
+  const leadNumber = document.getElementById('leadNumber').value;
+  const employeeNumber = document.getElementById('assignTo').value;
+
+  const submitBtn = e.target.querySelector('.submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Assigning...';
+
+  try {
+
+    // 1️⃣ Insert in teamAssign collection
+    await fetch('http://localhost:5000/api/assign-lead', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    collection: currentSheet === 'buying' ? 'Leads' :
+                currentSheet === 'rental' ? 'RentalLeads' :
+                currentSheet === 'selling' ? 'sellingLeads' :
+                currentSheet === 'agent' ? 'agentLeads' : 'Leads',
+    leadNumber: leadNumber,
+    assignTo: assignToname
+  })
+});
+
+
+    
+
+    alert("Lead assigned successfully");
+    closeModal();
+    fetchLeads(currentSheet);
+
+  } catch (err) {
+    console.error(err);
+    alert("Assignment failed");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Assign Lead';
+  }
+});
+
+        
+        // Add event listeners to nav buttons
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchSheet(btn.dataset.sheet);
+            });
+        });
+
+        // Close modal on overlay click
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'modalOverlay') {
+                closeModal();
+            }
+        });
+
+// sending notification to n8n
+
+async function notifyEmployeeViaN8N({ assignToname, employeeNumber, leadNumber }) {
+  try {
+    await fetch('https://n8n.phishnix.site/webhook/nishahomesNotification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assignToname,
+        employeeNumber,
+        leadNumber
+      })
+    });
+  } catch (err) {
+    console.error('n8n notification failed', err);
+  }
+}
+
+
+
+document.getElementById('assignTo').addEventListener('change', (e) => {
+const selectedOption = e.target.options[e.target.selectedIndex];
+  document.getElementById('assignToname').value = selectedOption.textContent;
+});
+
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const res = await fetch(
+      'http://localhost:5000/api/team-assign'
+    );
+
+    const employees = await res.json();
+    console.log("Employees:", employees);
+
+    const select = document.getElementById('assignTo');
+    if (!select) {
+      console.error("Select element not found");
+      return;
+    }
+
+    select.innerHTML = '<option value="">Select employee</option>';
+
+    employees.forEach(emp => {
+      const option = document.createElement('option');
+      option.value = emp["Employee number"];
+      option.textContent = emp["Employee name"];
+      select.appendChild(option);
+    });
+
+  } catch (err) {
+    console.error('Failed to load employees', err);
+  }
+});
+
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                hideLoader();
+                fetchLeads('buying');
+            }, 800);
+        });
+    </script>
+</body>
+</html>
