@@ -539,6 +539,66 @@ def delete_wp_template(id):
         return jsonify({"error": str(e)}), 500
 
 
+db = client["NishaHomesData"]
+collection = db["endData"]
+
+
+@app.route("/update-lead", methods=["POST"])
+def update_lead():
+    try:
+        data = request.get_json()
+
+        if not data or not isinstance(data, list):
+            return jsonify({"error": "Invalid input format"}), 400
+
+        output = data[0].get("output", {})
+        number = output.get("number")
+
+        if not number:
+            return jsonify({"error": "Number is required"}), 400
+
+        # 🔥 Fields we want to update (excluding _id, Number, Call_attempt)
+        update_fields = {
+            "Customer Name": output.get("customerName"),
+            "Lead Source": output.get("leadSource"),
+            "Property Type": output.get("propertyType"),
+            "Preferred Location": output.get("preferredLocation"),
+            "Budget Range": output.get("budgetRange"),
+            "Call Status": output.get("callStatus"),
+            "Transaction Type": output.get("transactionType"),
+            "Configuration": output.get("configuration"),
+            "Customer Response": output.get("customerResponse"),
+            "Interest Level": output.get("interestLevel"),
+            "Objection / Reason": output.get("objectionReason"),
+            "Next Follow-up Timeline": output.get("nextFollowupTimeline"),
+            "Caller Remarks": output.get("callerRemarks"),
+            "Call Priority": output.get("callPriority"),
+            "Next Call Date": output.get("nextCallDate"),
+            "done": output.get("done"),
+            "Lead type": output.get("leadType"),
+            "Lead score": output.get("leadScore"),
+            "lastUpdatedAt": datetime.utcnow()
+        }
+
+        # Remove None values (clean update)
+        update_fields = {k: v for k, v in update_fields.items() if v is not None}
+
+        result = collection.update_one(
+            {"Number": number},   # 🔎 Find by Number
+            {
+                "$set": update_fields,
+                "$inc": {"Call_attempt": 1}  # 🔥 increment safely
+            },
+            upsert=False  # Do NOT create new document automatically
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"message": "No document found with this number"}), 404
+
+        return jsonify({"message": "Lead updated successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
