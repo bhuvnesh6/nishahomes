@@ -274,6 +274,68 @@ def assign_lead():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@app.route("/api/bulk-assign-leads", methods=["POST"])
+def bulk_assign_leads():
+    try:
+        data = request.json
+
+        collection_name = data.get("collection")
+        lead_numbers = data.get("leadNumbers")  # <-- array
+        assign_to = data.get("assignTo")
+
+        if not collection_name or not lead_numbers or not assign_to:
+            return jsonify({"success": False, "message": "Missing fields"}), 400
+
+        lead_collection = db[collection_name]
+        employee_collection = db["teamAssign"]
+
+        # Clean numbers
+        cleaned_numbers = [
+            str(num).replace("+", "").strip()
+            for num in lead_numbers
+        ]
+
+        # 1️⃣ Update ALL leads in one query
+        lead_collection.update_many(
+            {"Phone Number": {"$in": cleaned_numbers}},
+            {"$set": {"AssignTo": assign_to}}
+        )
+
+        # 2️⃣ Update employee lead list
+        employee = employee_collection.find_one({"Employee name": assign_to})
+
+        if not employee:
+            return jsonify({"success": False, "message": "Employee not found"}), 404
+
+        existing_leads = employee.get("Leads")
+
+        if existing_leads:
+            clean = existing_leads.strip("{}")
+            leads_list = [x.strip() for x in clean.split(",") if x.strip()]
+        else:
+            leads_list = []
+
+        # Add new numbers without duplicate
+        for num in cleaned_numbers:
+            formatted = f"+{num}"
+            if formatted not in leads_list:
+                leads_list.append(formatted)
+
+        new_leads_string = "{" + ", ".join(leads_list) + "}"
+
+        employee_collection.update_one(
+            {"_id": employee["_id"]},
+            {"$set": {"Leads": new_leads_string}}
+        )
+
+        return jsonify({
+            "success": True,
+            "assignedCount": len(cleaned_numbers)
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 #reassign function
 
 import re
