@@ -222,42 +222,47 @@ def assign_lead():
         data = request.json
 
         collection_name = data.get("collection")
-        lead_number = str(data.get("leadNumber")).strip()
+        raw_number = data.get("leadNumber")
         assign_to = data.get("assignTo")
 
-        if not collection_name or not lead_number or not assign_to:
+        if not collection_name or not raw_number or not assign_to:
             return jsonify({"success": False, "message": "Missing fields"}), 400
 
         lead_collection = db[collection_name]
         employee_collection = db["teamAssign"]
 
-        # 1️⃣ Update Lead AssignTo
+        # Normalize number
+        lead_number = normalize_number(raw_number)
+
+        # 1️⃣ Update Lead using REGEX match (handles all formats)
         lead_result = lead_collection.update_one(
-            {"Phone Number": lead_number},
+            {
+                "Phone Number": {
+                    "$regex": lead_number
+                }
+            },
             {"$set": {"AssignTo": assign_to}}
         )
 
         if lead_result.matched_count == 0:
             return jsonify({"success": False, "message": "Lead not found"}), 404
 
-        # 2️⃣ Update Employee Leads List
+        # 2️⃣ Update Employee Lead List
         employee = employee_collection.find_one({"Employee name": assign_to})
 
         if not employee:
             return jsonify({"success": False, "message": "Employee not found"}), 404
 
-        existing_leads = employee.get("Leads")
-
-        formatted_number = f"+{lead_number}"
+        existing_leads = employee.get("Leads", "")
 
         if existing_leads:
-            # remove brackets
             clean = existing_leads.strip("{}")
             leads_list = [x.strip() for x in clean.split(",") if x.strip()]
         else:
             leads_list = []
 
-        # prevent duplicate
+        formatted_number = f"+{lead_number}"
+
         if formatted_number not in leads_list:
             leads_list.append(formatted_number)
 
@@ -273,14 +278,13 @@ def assign_lead():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-
 @app.route("/api/bulk-assign-leads", methods=["POST"])
 def bulk_assign_leads():
     try:
         data = request.json
 
         collection_name = data.get("collection")
-        lead_numbers = data.get("leadNumbers")  # <-- array
+        lead_numbers = data.get("leadNumbers")
         assign_to = data.get("assignTo")
 
         if not collection_name or not lead_numbers or not assign_to:
@@ -289,25 +293,33 @@ def bulk_assign_leads():
         lead_collection = db[collection_name]
         employee_collection = db["teamAssign"]
 
-        # Clean numbers
-        cleaned_numbers = [
-            str(num).replace("+", "").strip()
-            for num in lead_numbers
-        ]
+        # Normalize all numbers
+        cleaned_numbers = [normalize_number(num) for num in lead_numbers]
 
-        # 1️⃣ Update ALL leads in one query
-        lead_collection.update_many(
-            {"Phone Number": {"$in": cleaned_numbers}},
-            {"$set": {"AssignTo": assign_to}}
-        )
+        # 1️⃣ Update leads one by one using regex (safer for mixed formats)
+        matched_count = 0
 
-        # 2️⃣ Update employee lead list
+        for number in cleaned_numbers:
+            result = lead_collection.update_one(
+                {
+                    "Phone Number": {
+                        "$regex": number
+                    }
+                },
+                {"$set": {"AssignTo": assign_to}}
+            )
+            matched_count += result.matched_count
+
+        if matched_count == 0:
+            return jsonify({"success": False, "message": "No leads matched"}), 404
+
+        # 2️⃣ Update Employee Lead List
         employee = employee_collection.find_one({"Employee name": assign_to})
 
         if not employee:
             return jsonify({"success": False, "message": "Employee not found"}), 404
 
-        existing_leads = employee.get("Leads")
+        existing_leads = employee.get("Leads", "")
 
         if existing_leads:
             clean = existing_leads.strip("{}")
@@ -315,9 +327,8 @@ def bulk_assign_leads():
         else:
             leads_list = []
 
-        # Add new numbers without duplicate
-        for num in cleaned_numbers:
-            formatted = f"+{num}"
+        for number in cleaned_numbers:
+            formatted = f"+{number}"
             if formatted not in leads_list:
                 leads_list.append(formatted)
 
@@ -330,11 +341,25 @@ def bulk_assign_leads():
 
         return jsonify({
             "success": True,
-            "assignedCount": len(cleaned_numbers)
+            "assignedCount": matched_count
         })
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+def normalize_number(number):
+    if not number:
+        return ""
+
+    number = str(number).strip()
+    number = number.replace("+", "")
+    number = number.replace("@s.whatsapp.net", "")
+    number = number.replace("@c.us", "")
+    number = "".join(filter(str.isdigit, number))
+
+    return number
+
 
 #reassign function
 
