@@ -222,7 +222,7 @@ def assign_lead():
         data = request.json
 
         collection_name = data.get("collection")
-        lead_number = str(data.get("leadNumber")).replace("+", "").strip()
+        lead_number = str(data.get("leadNumber")).strip()
         assign_to = data.get("assignTo")
 
         if not collection_name or not lead_number or not assign_to:
@@ -661,6 +661,10 @@ def update_lead():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/check-assign")
+def check_assign():
+    return "assign route section reached"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
