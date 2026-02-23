@@ -706,5 +706,46 @@ def update_lead():
 def check_assign():
     return "assign route section reached"
 
+
+
+@app.route("/add-lead", methods=["POST"])
+def add_lead():
+    try:
+        data = request.json
+
+        # 1️⃣ Get collection name dynamically
+        collection_name = data.get("collection")
+        if not collection_name:
+            return jsonify({"error": "Collection name is required"}), 400
+
+        collection = db[collection_name]
+
+        # 2️⃣ Extract phone number (required for upsert)
+        phone_number = data.get("Phone Number")
+        if not phone_number:
+            return jsonify({"error": "Phone Number is required"}), 400
+
+        # 3️⃣ Remove collection key from document
+        data.pop("collection", None)
+
+        # 4️⃣ Upsert (update if exists, insert if not)
+        result = collection.update_one(
+            {"Phone Number": phone_number},
+            {"$set": data},
+            upsert=True
+        )
+
+        return jsonify({
+            "success": True,
+            "matched_count": result.matched_count,
+            "modified_count": result.modified_count,
+            "upserted_id": str(result.upserted_id) if result.upserted_id else None
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
