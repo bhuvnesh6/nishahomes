@@ -174,6 +174,17 @@ def add_team_member():
         if not name or not number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
 
+        # ✅ CLEAN NUMBER
+        number = str(number).strip()
+        number = number.replace("+", "")
+        number = "".join(filter(str.isdigit, number))
+
+        if not number:
+            return jsonify({"success": False, "message": "Invalid phone number"}), 400
+
+        # ✅ CONVERT TO INT64
+        number = int(number)
+
         collection = db["teamAssign"]
 
         # prevent duplicate
@@ -183,17 +194,21 @@ def add_team_member():
 
         new_member = {
             "Employee name": name,
-            "Employee number": number,
+            "Employee number": number,   # ← stored as int64
             "Leads": [],
             "Active": True
         }
 
         collection.insert_one(new_member)
 
-        return jsonify({"success": True, "message": "Team member added successfully"})
+        return jsonify({
+            "success": True,
+            "message": "Team member added successfully"
+        })
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
 
 @app.route("/api/remove-team-assign/<number>", methods=["DELETE"])
 def remove_team_member(number):
