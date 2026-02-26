@@ -746,6 +746,105 @@ def add_lead():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/modify-document", methods=["POST"])
+def modify_document():
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({"error": "No JSON body provided"}), 400
+
+        # 1️⃣ Validate collection
+        collection_name = data.get("collection")
+        if not collection_name:
+            return jsonify({"error": "Collection name is required"}), 400
+
+        # 🔒 Optional: restrict collections (recommended)
+        allowed_collections = [
+            "Leads",
+            "RentalLeads",
+            "sellingLeads",
+            "agentLeads",
+            "endData",
+            "teamAssign"
+        ]
+
+        if collection_name not in allowed_collections:
+            return jsonify({"error": "Invalid collection"}), 400
+
+        collection = db[collection_name]
+
+        # 2️⃣ Validate phone / number
+        raw_number = data.get("Phone Number") or data.get("Number")
+
+        if not raw_number:
+            return jsonify({"error": "Phone Number or Number is required"}), 400
+
+        # Normalize (uses your existing function)
+        normalized_number = normalize_number(raw_number)
+
+        if not normalized_number:
+            return jsonify({"error": "Invalid phone number"}), 400
+
+        # 3️⃣ Build filter dynamically
+        if collection_name == "endData":
+            filter_query = {"Number": normalized_number}
+        else:
+            filter_query = {
+                "Phone Number": {
+                    "$regex": normalized_number
+                }
+            }
+
+        # 4️⃣ Build update operations
+        update_query = {}
+
+        # SET (add/update fields)
+        set_fields = data.get("set", {})
+        if set_fields:
+            update_query["$set"] = set_fields
+
+        # UNSET (delete fields)
+        unset_fields = data.get("unset", [])
+        if unset_fields:
+            update_query["$unset"] = {field: "" for field in unset_fields}
+
+        # PUSH (append to array)
+        push_fields = data.get("push", {})
+        if push_fields:
+            update_query["$push"] = push_fields
+
+        # INC (increment numbers)
+        inc_fields = data.get("inc", {})
+        if inc_fields:
+            update_query["$inc"] = inc_fields
+
+        if not update_query:
+            return jsonify({"error": "No update operations provided"}), 400
+
+        # 5️⃣ Perform update (Upsert allowed)
+        result = collection.update_one(
+            filter_query,
+            update_query,
+            upsert=True
+        )
+
+        # 6️⃣ Return updated document
+        updated_doc = collection.find_one(filter_query)
+
+        return jsonify({
+            "success": True,
+            "matched_count": result.matched_count,
+            "modified_count": result.modified_count,
+            "upserted_id": str(result.upserted_id) if result.upserted_id else None,
+            "updated_document": serialize_doc(updated_doc) if updated_doc else None
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
