@@ -770,7 +770,8 @@ def modify_document():
             "sellingLeads",
             "agentLeads",
             "endData",
-            "teamAssign"
+            "teamAssign",
+            "hofcorders"
         ]
 
         if collection_name not in allowed_collections:
