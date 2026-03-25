@@ -117,6 +117,10 @@ def upload():
 def leads():
     return jsonify(get_collection_data("Leads"))
 
+@app.route("/api/hofcorders")
+def hofcorders():
+    return jsonify(get_collection_data("orderhouseofcakes"))
+
 @app.route("/api/rental-leads")
 def rental_leads():
     return jsonify(get_collection_data("RentalLeads"))
@@ -706,7 +710,7 @@ def update_lead():
 def check_assign():
     return "assign route section reached"
 
-
+#https://www.karmandrones.com/
 
 @app.route("/add-lead", methods=["POST"])
 def add_lead():
