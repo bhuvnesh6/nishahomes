@@ -12,7 +12,9 @@ from datetime import datetime
 from img_to_text import extract_text_from_image
 from video_to_audio import extract_audio_from_video
 import tempfile
-
+import cv2
+import os
+import time
 
 # Load env
 load_dotenv()
@@ -910,6 +912,50 @@ def get_audio():
     path = request.args.get('path')
     return send_file(path, mimetype='audio/mpeg')
 
+@app.route('/video-to-frames', methods=['POST'])
+def video_to_frames():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+
+    # temp video
+    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    temp_video.close()
+    file.save(temp_video.name)
+
+    # output folder
+    folder_name = str(int(time.time()))
+    frames_folder = os.path.join(app.config["UPLOAD_FOLDER"], folder_name)
+    os.makedirs(frames_folder, exist_ok=True)
+
+    # extract frames (1 FPS)
+    cap = cv2.VideoCapture(temp_video.name)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    count = 0
+    frame_number = 0
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        # take 1 frame per second
+        if int(frame_number % fps) == 0:
+            frame_path = os.path.join(frames_folder, f"frame_{count}.jpg")
+            cv2.imwrite(frame_path, frame)
+            count += 1
+
+        frame_number += 1
+
+    cap.release()
+    os.remove(temp_video.name)
+
+    return jsonify({
+        "frames_folder": f"/uploads/{folder_name}",
+        "total_frames": count
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

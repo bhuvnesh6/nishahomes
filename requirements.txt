@@ -7,3 +7,4 @@ flask-cors==4.0.0
 Werkzeug==3.0.1
 moviepy==1.0.3
 setuptools
+opencv-python==4.9.0.80
