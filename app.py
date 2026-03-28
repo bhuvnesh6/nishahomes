@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, flash, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, flash, jsonify, send_from_directory, send_file
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import pandas as pd
@@ -9,6 +9,10 @@ from bson import ObjectId
 from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
+from img_to_text import extract_text_from_image
+from video_to_audio import extract_audio_from_video
+import tempfile
+
 
 # Load env
 load_dotenv()
@@ -850,6 +854,62 @@ def modify_document():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     
+    
+    
+# Endpoint 1: Image -> Text
+@app.route('/image-to-text', methods=['POST'])
+def image_to_text():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp.close()  # 🔥 IMPORTANT
+
+    file.save(temp.name)
+
+    text = extract_text_from_image(temp.name)
+
+    os.remove(temp.name)  # cleanup
+
+    return jsonify({'text': text})
+
+# Endpoint 2: Video -> Audio (returns HTML player)
+
+@app.route('/video-to-audio', methods=['POST'])
+def video_to_audio():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+
+    # 🔥 TEMP VIDEO (not permanent)
+    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    temp_video.close()
+    file.save(temp_video.name)
+
+    # 🔥 FINAL AUDIO (saved in uploads)
+    audio_filename = f"{int(time.time())}.mp3"
+    audio_path = os.path.join(app.config["UPLOAD_FOLDER"], audio_filename)
+
+    # 🎬 Extract audio
+    extract_audio_from_video(temp_video.name, audio_path)
+
+    # 🧹 Delete temp video
+    os.remove(temp_video.name)
+
+    # ✅ Return usable URL
+    return jsonify({
+        "audio_url": f"/uploads/{audio_filename}"
+    })
+
+
+@app.route('/get-audio')
+def get_audio():
+    path = request.args.get('path')
+    return send_file(path, mimetype='audio/mpeg')
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
