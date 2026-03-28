@@ -929,9 +929,14 @@ def video_to_frames():
     frames_folder = os.path.join(app.config["UPLOAD_FOLDER"], folder_name)
     os.makedirs(frames_folder, exist_ok=True)
 
-    # extract frames (1 FPS)
+    # extract frames
     cap = cv2.VideoCapture(temp_video.name)
     fps = cap.get(cv2.CAP_PROP_FPS)
+
+    if fps == 0:
+        fps = 25  # fallback
+
+    interval = int(fps)
 
     count = 0
     frame_number = 0
@@ -941,8 +946,7 @@ def video_to_frames():
         if not success:
             break
 
-        # take 1 frame per second
-        if int(frame_number % fps) == 0:
+        if frame_number % interval == 0:
             frame_path = os.path.join(frames_folder, f"frame_{count}.jpg")
             cv2.imwrite(frame_path, frame)
             count += 1
@@ -952,10 +956,18 @@ def video_to_frames():
     cap.release()
     os.remove(temp_video.name)
 
+    base_url = request.host_url.rstrip('/')
+
+    frame_urls = [
+        f"{base_url}/uploads/{folder_name}/frame_{i}.jpg"
+        for i in range(count)
+    ]
+
     return jsonify({
-        "frames_folder": f"/uploads/{folder_name}",
+        "frames": frame_urls,
         "total_frames": count
     })
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
