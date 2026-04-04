@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-#from video_to_audio import extract_audio_from_video
+from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
