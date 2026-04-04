@@ -154,6 +154,11 @@ def assign():
 
 
 
+@app.route("/leadjourney")
+def leadjourney():
+    return render_template("leadjourney.html")
+
+
 @app.route("/manageteam")
 def manageteam():
     return render_template("manageteam.html")
