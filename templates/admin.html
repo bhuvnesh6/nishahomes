@@ -1012,6 +1012,11 @@
         Add Lead
     </a>
 
+    <a href="/emp" class="drawer-nav-link">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Work Dash
+    </a>
+
        <a href="/logout" class="drawer-nav-link">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         Logout
@@ -1053,6 +1058,11 @@
             <a href="/addlead" class="nav-util-link accent-link">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
                 Add Lead
+            </a>
+
+            <a href="/emp" class="nav-util-link accent-link">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Work Dash
             </a>
 
             <a href="/logout" class="nav-util-link accent-link">
@@ -1301,6 +1311,12 @@
 
 <!-- PWA install -->
 <script>
+ const employeeName = "{{ employee_name }}";
+  const employeeNumber = "{{ employee_number }}";
+
+  localStorage.setItem("employee_name", employeeName);
+  localStorage.setItem("employee_number", employeeNumber);
+
 let selectMode = false;
 let selectedLeads = new Map();
 let wpTemplates = [];

@@ -153,6 +153,26 @@
         transition: all 0.3s ease;
     }
 
+    .admin-btn {
+    padding: 0.5rem 1.2rem;
+    background: rgba(34, 197, 94, 0.12);
+    color: #22c55e;
+    border: 2px solid rgba(34, 197, 94, 0.3);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Work Sans', sans-serif;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.admin-btn:hover {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    border-color: #22c55e;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(34, 197, 94, 0.35);
+}
+
     .logout-btn:hover {
         background: var(--danger);
         color: white;
@@ -740,7 +760,9 @@
             <div class="header-content">
                 <div class="logo">NishaHomes Team</div>
                 <div class="user-info">
+                    <button class="admin-btn" onclick="admin()">Home</button>
                     <div class="user-badge" id="userBadge">Loading...</div>
+                    
                     <button class="logout-btn" onclick="logout()">Logout</button>
                 </div>
             </div>
@@ -1797,6 +1819,13 @@ Note: ${lead.note || "-"}
         // redirect to backend logout
         window.location.href = "/logout";
     }
+}
+
+       function admin() {
+
+        // redirect to backend logout
+        window.location.href = "/admin";
+    
 }
 
         function showLoader() {

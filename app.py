@@ -128,20 +128,26 @@ def upload_page():
 
 @app.route("/admin")
 def admin():
-    if session.get("role") != "admin":
+    if not session.get("user_id") or session.get("role") != "admin":
         return redirect("/")
-    return render_template("admin.html")
 
+    return render_template(
+        "admin.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number")
+    )
 
 @app.route("/emp")
 def emp():
-    if session.get("role") != "emp":
+    # ✅ Only check if logged in
+    if not session.get("user_id"):
         return redirect("/")
 
-    employee_name = session.get("employee_name")
-    employee_number = session.get("employee_number")
-    return render_template("emp.html", employee_name=employee_name, employee_number=employee_number )
-
+    return render_template(
+        "emp.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number")
+    )
 
 @app.route("/logout")
 def logout():
