@@ -10,11 +10,14 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-from video_to_audio import extract_audio_from_video
+#from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
 import time
+from flask import session
+import random
+import requests
 
 # Load env
 load_dotenv()
@@ -57,16 +60,115 @@ def get_collection_data(collection_name):
 
 
 @app.route("/")
-def home():
+def loginpage():
+    # ✅ If already logged in → redirect based on role
+    if "user_id" in session:
+        role = session.get("role")
+
+        if role == "admin":
+            return redirect("/admin")
+        elif role == "emp":
+            return redirect("/emp")
+        else:
+            # fallback (invalid role)
+            session.clear()
+            return redirect("/")
+
+    # ✅ Not logged in → show login page
+    return render_template("index.html")
+
+
+#login system
+@app.route("/login", methods=["POST"])
+def login():
+    number = request.form.get("number")
+
+# clean + convert
+    number = number.replace("+", "").strip()
+
+    try:
+     number = int(number)
+    except:
+     flash("Invalid phone number format")
+     return redirect("/")
+    password = request.form.get("password")
+
+    collection = db["teamAssign"]
+
+    user = collection.find_one({
+        "Employee number": number,
+        "password": password
+    })
+
+    if user:
+        # Store session
+        session["user_id"] = str(user["_id"])
+        session["role"] = user.get("roll")
+        session["employee_name"] = user.get("Employee name")
+        session["employee_number"] = user.get("Employee number")
+
+        # Redirect based on role
+        if user.get("roll") == "admin":
+            return redirect("/admin")
+        elif user.get("roll") == "emp":
+            return redirect("/emp")
+        else:
+            flash("Invalid role")
+            return redirect("/")
+    else:
+        flash("Invalid number or password")
+        return redirect("/")
+    
+    
+
+@app.route("/upload_page")
+def upload_page():
     return render_template("upload.html")
+
 
 @app.route("/admin")
 def admin():
+    if session.get("role") != "admin":
+        return redirect("/")
     return render_template("admin.html")
 
-@app.route("/assign")
+
+@app.route("/emp")
+def emp():
+    if session.get("role") != "emp":
+        return redirect("/")
+
+    employee_name = session.get("employee_name")
+    employee_number = session.get("employee_number")
+    return render_template("emp.html", employee_name=employee_name, employee_number=employee_number )
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+@app.route("/assignehd")
 def assign():
-    return render_template("assign.html")
+    return render_template("assignehd.html")
+
+
+
+@app.route("/manageteam")
+def manageteam():
+    return render_template("manageteam.html")
+
+@app.route("/status")
+def status():
+    return render_template("status.html")
+
+@app.route("/addtemplete")
+def addtemplete():
+    return render_template("addtemplete.html")
+
+@app.route("/addlead")
+def addlead():
+    return render_template("addlead.html")
 
 
 @app.route("/leadjourney")
@@ -180,6 +282,7 @@ def add_team_member():
 
         name = data.get("name")
         number = data.get("number")
+        role = data.get("role", "emp")  # default emp
 
         if not name or not number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
@@ -197,19 +300,42 @@ def add_team_member():
 
         collection = db["teamAssign"]
 
-        # prevent duplicate
+        # ✅ prevent duplicate
         existing = collection.find_one({"Employee number": number})
         if existing:
             return jsonify({"success": False, "message": "Employee already exists"}), 400
 
+        # ✅ GENERATE PASSWORD
+        clean_name = name.lower().replace(" ", "")
+        rand_digits = random.randint(100, 9999)  # 3–4 digits
+        password = f"{clean_name}@{rand_digits}"
+
         new_member = {
             "Employee name": name,
-            "Employee number": number,   # ← stored as int64
+            "Employee number": number,
+            "Password": password,
+            "roll": role,  # ✅ as requested (roll, not role)
             "Leads": [],
             "Active": True
         }
 
         collection.insert_one(new_member)
+
+        # ✅ SEND TO N8N WEBHOOK
+        try:
+            requests.post(
+                "https://n8n.phishnix.site/webhook/recevingdataofteammember",
+                json={
+                    "name": name,
+                    "number": number,
+                    "password": password,
+                    "login_url": "https://api.phishnix.site",
+                    "message": f"Welcome {name}, your account has been created"
+                },
+                timeout=5
+            )
+        except Exception as webhook_error:
+            print("Webhook failed:", webhook_error)  # don't break main flow
 
         return jsonify({
             "success": True,
@@ -225,6 +351,16 @@ def remove_team_member(number):
     try:
         collection = db["teamAssign"]
 
+        # ✅ CLEAN + CONVERT SAME AS ADD
+        number = str(number).strip()
+        number = number.replace("+", "")
+        number = "".join(filter(str.isdigit, number))
+
+        if not number:
+            return jsonify({"success": False, "message": "Invalid number"}), 400
+
+        number = int(number)
+
         result = collection.delete_one({"Employee number": number})
 
         if result.deleted_count == 0:
@@ -234,8 +370,6 @@ def remove_team_member(number):
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-
-
 
 #post apis 
 

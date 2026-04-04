@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Management System</title>
+    <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    :root {
+        --primary: #2D3142;
+        --primary-dark: #1e2235;
+        --secondary: #3d4152;
+        --accent: #EF8354;
+        --accent-light: #FFA07A;
+        --success: #10B981;
+        --danger: #EF4444;
+        --warning: #F59E0B;
+        --dark: #2D3142;
+        --light: #FAF9F6;
+        --bg: #FAF9F6;
+        --card-bg: linear-gradient(135deg, #2D3142 0%, #3d4152 100%);
+        --border: #E5E7EB;
+        --shadow: 0 4px 20px rgba(45, 49, 66, 0.08);
+        --shadow-lg: 0 10px 40px rgba(45, 49, 66, 0.15);
+        --text-light: #6B7280;
+    }
+
+    body {
+        font-family: 'Work Sans', sans-serif;
+        background: var(--bg);
+        min-height: 100vh;
+        color: var(--dark);
+    }
+
+    /* Loading Overlay */
+    .loader-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(250, 249, 246, 0.98);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    .loader-overlay.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    .loader {
+        width: 60px;
+        height: 60px;
+        border: 4px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Header */
+    header {
+        background: var(--card-bg);
+        backdrop-filter: blur(10px);
+        padding: 1.5rem 0;
+        box-shadow: 0 2px 20px rgba(45, 49, 66, 0.2);
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        animation: slideDown 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    @keyframes slideDown {
+        from {
+            transform: translateY(-100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 2rem;
+    }
+
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .logo {
+        font-family: 'Playfair Display', serif;
+        font-size: 2rem;
+        font-weight: 900;
+        background: white;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -0.5px;
+    }
+
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .user-badge {
+        padding: 0.5rem 1.2rem;
+        background: var(--accent);
+        color: white;
+        border-radius: 50px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        box-shadow: 0 4px 15px rgba(239, 131, 84, 0.3);
+    }
+
+    .logout-btn {
+        padding: 0.5rem 1.2rem;
+        background: rgba(239, 68, 68, 0.15);
+        color: #ff6b6b;
+        border: 2px solid rgba(239, 68, 68, 0.3);
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: 'Work Sans', sans-serif;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .logout-btn:hover {
+        background: var(--danger);
+        color: white;
+        border-color: var(--danger);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    /* Navigation */
+    nav {
+        background: var(--primary-dark);
+        padding: 1rem 0;
+        box-shadow: 0 2px 10px rgba(45, 49, 66, 0.2);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .nav-tabs {
+        display: flex;
+        gap: 0.75rem;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+    }
+
+    .nav-tab {
+        padding: 0.75rem 1.5rem;
+        background: rgba(255, 255, 255, 0.07);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        white-space: nowrap;
+        font-weight: 500;
+        font-family: 'Work Sans', sans-serif;
+        color: rgba(255, 255, 255, 0.75);
+    }
+
+    .nav-tab:hover {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 131, 84, 0.3);
+    }
+
+    .nav-tab.active {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+        box-shadow: 0 4px 15px rgba(239, 131, 84, 0.3);
+    }
+
+    /* Stats Section */
+    .stats-section {
+        padding: 2rem 0;
+        animation: fadeIn 0.8s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--card-bg);
+        padding: 1.75rem;
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        animation: slideUp 0.6s ease-out;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-light));
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .stat-card:hover {
+        transform: translateY(-6px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .stat-label {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-family: 'Playfair Display', serif;
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: var(--accent);
+    }
+
+    /* Search Section */
+    .search-section {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        margin-bottom: 2rem;
+        border: 1px solid var(--border);
+    }
+
+    .search-box {
+        width: 100%;
+        padding: 1rem 1.25rem;
+        border: 2px solid var(--border);
+        border-radius: 12px;
+        font-size: 1rem;
+        font-family: 'Work Sans', sans-serif;
+        color: var(--dark);
+        background: var(--bg);
+        transition: all 0.3s ease;
+    }
+
+    .search-box:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px rgba(239, 131, 84, 0.1);
+    }
+
+    /* Leads Grid */
+    .leads-section {
+        padding-bottom: 2rem;
+    }
+
+    .leads-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 1.5rem;
+    }
+
+    /* Skeleton Loading */
+    .skeleton-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+    }
+
+    .skeleton {
+        background: linear-gradient(90deg, #f0ede8 25%, #e8e4de 50%, #f0ede8 75%);
+        background-size: 200% 100%;
+        animation: loading 1.5s infinite;
+        border-radius: 6px;
+    }
+
+    @keyframes loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .skeleton-title {
+        height: 24px;
+        width: 70%;
+        margin-bottom: 1rem;
+    }
+
+    .skeleton-text {
+        height: 16px;
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+
+    .skeleton-button {
+        height: 40px;
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    /* Lead Card */
+    .lead-card {
+        background: var(--card-bg);
+        padding: 1.75rem;
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        animation: slideUp 0.6s ease-out;
+        opacity: 0;
+        animation-fill-mode: forwards;
+        position: relative;
+        overflow: hidden;
+        color: white;
+    }
+
+    .lead-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-light));
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform 0.4s ease;
+    }
+
+    .lead-card:hover::before {
+        transform: scaleX(1);
+    }
+
+    .lead-card:hover {
+        transform: translateY(-8px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .lead-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+
+    .lead-name {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: white;
+    }
+
+    .intent-badge {
+        padding: 0.35rem 1rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .intent-hot {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ff6b6b;
+    }
+
+    .intent-warm {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--warning);
+    }
+
+    .intent-cold {
+        background: rgba(59, 130, 246, 0.15);
+        color: #93c5fd;
+    }
+
+    .lead-details {
+        margin-bottom: 1rem;
+    }
+
+    .detail-row {
+        display: flex;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+
+    .detail-label {
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.55);
+        min-width: 140px;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .detail-value {
+        color: white;
+        flex: 1;
+        font-weight: 500;
+    }
+
+    .lead-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        flex: 1;
+        padding: 0.85rem 1rem;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 600;
+        font-family: 'Work Sans', sans-serif;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-width: 120px;
+        letter-spacing: 0.3px;
+    }
+
+    .btn-call {
+        background: linear-gradient(135deg, var(--success), #059669);
+        color: white;
+    }
+
+    .btn-call:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-log {
+        background: linear-gradient(135deg, var(--accent), var(--accent-light));
+        color: white;
+    }
+
+    .btn-log:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(239, 131, 84, 0.35);
+    }
+
+    .call-count {
+        background: rgba(255, 255, 255, 0.25);
+        padding: 0.2rem 0.5rem;
+        border-radius: 50px;
+        font-size: 0.85rem;
+    }
+
+    /* Modal */
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(45, 49, 66, 0.8);
+        backdrop-filter: blur(8px);
+        z-index: 10000;
+        justify-content: center;
+        align-items: center;
+        animation: fadeIn 0.3s ease;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: var(--card-bg);
+        padding: 2.5rem;
+        border-radius: 24px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        animation: scaleIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    @keyframes scaleIn {
+        from {
+            transform: scale(0.85);
+            opacity: 0;
+        }
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .modal-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.75rem;
+        font-weight: 900;
+        color: white;
+    }
+
+    .close-btn {
+        width: 36px;
+        height: 36px;
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        border-radius: 50%;
+        font-size: 1.4rem;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+    }
+
+    .close-btn:hover {
+        background: var(--accent);
+        color: white;
+        transform: rotate(90deg);
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .form-input,
+    .form-textarea {
+        width: 100%;
+        padding: 1rem;
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        font-size: 1rem;
+        font-family: 'Work Sans', sans-serif;
+        color: var(--dark);
+        background: var(--bg);
+        transition: all 0.3s ease;
+    }
+
+    .form-textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    .form-input:focus,
+    .form-textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px rgba(239, 131, 84, 0.15);
+    }
+
+    .btn-submit {
+        width: 100%;
+        padding: 1.1rem;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-family: 'Work Sans', sans-serif;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .btn-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(239, 131, 84, 0.4);
+    }
+
+    .btn-submit:disabled {
+        background: rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.4);
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: var(--card-bg);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+    }
+
+    .empty-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+
+    .empty-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.75rem;
+        font-weight: 900;
+        color: white;
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-text {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 1.05rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .container {
+            padding: 0 1rem;
+        }
+
+        .leads-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .header-content {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .user-info {
+            justify-content: space-between;
+        }
+
+        .nav-tabs {
+            flex-wrap: wrap;
+        }
+
+        .lead-actions {
+            flex-direction: column;
+        }
+
+        .btn {
+            width: 100%;
+        }
+    }
+
+    /* Animation delays for staggered effect */
+    .lead-card:nth-child(1) { animation-delay: 0.1s; }
+    .lead-card:nth-child(2) { animation-delay: 0.2s; }
+    .lead-card:nth-child(3) { animation-delay: 0.3s; }
+    .lead-card:nth-child(4) { animation-delay: 0.4s; }
+    .lead-card:nth-child(5) { animation-delay: 0.5s; }
+    .lead-card:nth-child(6) { animation-delay: 0.6s; }
+</style>
+
+
+</head>
+<body>
+    <!-- Loader -->
+    <div class="loader-overlay" id="loader">
+        <div class="loader"></div>
+    </div>
+
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">NishaHomes Team</div>
+                <div class="user-info">
+                    <div class="user-badge" id="userBadge">Loading...</div>
+                    <button class="logout-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="container">
+            <div class="nav-tabs">
+                <button class="nav-tab active" data-type="buying">🏠 Buying Leads</button>
+                <button class="nav-tab" data-type="rental">🔑 Rental Leads</button>
+                <button class="nav-tab" data-type="selling">💰 Selling Leads</button>
+                <button class="nav-tab" data-type="agent">👔 Agent Leads</button>
+                <button class="nav-tab" data-type="pending">📋 Pending</button>
+
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container">
+        <!-- Stats Section -->
+        <div class="stats-section">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Leads</div>
+                    <div class="stat-value" id="totalLeads">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Hot Leads</div>
+                    <div class="stat-value" id="hotLeads">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Warm Leads</div>
+                    <div class="stat-value" id="warmLeads">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Cold Leads</div>
+                    <div class="stat-value" id="coldLeads">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Section -->
+        <div class="search-section">
+            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search by name, location, or phone number...">
+        </div>
+
+        <!-- Leads Section -->
+        <div class="leads-section">
+            <div class="leads-grid" id="leadsGrid">
+                <!-- Skeleton Loading -->
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    
+
+    <!-- Call Log Modal -->
+    <!-- Call Log Modal -->
+<div class="modal" id="callLogModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Add Call Log</h2>
+            <button class="close-btn" onclick="closeModal('callLogModal')">&times;</button>
+        </div>
+        <form id="callLogForm">
+
+            <!-- hidden system fields -->
+            <input type="hidden" id="callLogName">
+            <input type="hidden" id="callLogPhone">
+            <input type="hidden" id="callLogLeadType">
+            <input type="hidden" id="callLogLeadSnapshot">
+
+            <!-- READ ONLY LEAD SUMMARY -->
+            <div class="form-group">
+                <label class="form-label">Lead Details</label>
+                <textarea class="form-textarea" id="leadSummary" readonly></textarea>
+            </div>
+
+            <!-- REQUIRED -->
+            <div class="form-group">
+                <label class="form-label">Call Status *</label>
+                <select class="form-input" id="callStatus" required>
+                    <option value="">Select</option>
+                    <option>Call Back Requested</option>
+                    <option>Call Completed</option>
+                    <option>Call Disconnected</option>
+                    <option>Call Not Picked</option>
+                    <option>Call Rescheduled</option>
+                    <option>Follow-up Required</option>
+                    <option>Invalid Number</option>
+                    <option>Line Busy</option>
+                    <option>Meeting Fixed</option>
+                    <option>No Response</option>
+                    <option>Number Switched Off</option>
+                    <option>Site Visit Scheduled</option>
+                    <option>Site Visit Completed</option>
+                    <option>Wrong Number</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Customer Response *</label>
+                <select class="form-input" id="customerResponse" required>
+                    <option value="">Select</option>
+                    <option>Asked for Callback</option>
+                    <option>Budget Confirmed</option>
+                    <option>Budget Mismatch</option>
+                    <option>Call Later</option>
+                    <option>Comparing Options</option>
+                    <option>Documentation Query</option>
+                    <option>Interested</option>
+                    <option>Not Interested</option>
+                    <option>Price Negotiation</option>
+                    <option>Requirement Changed</option>
+                    <option>Shortlisted Property</option>
+                    <option>Thinking / Considering</option>
+                    <option>Will Revert</option>
+                    <option>Wrong Lead</option>
+                </select>
+            </div>
+
+            <!-- OPTIONAL / CLASSIFICATION -->
+            <div class="form-group">
+                <label class="form-label">Transaction Type</label>
+                <select class="form-input" id="transactionType">
+                    <option value="">Select</option>
+                    <option>Buy</option>
+                    <option>Rent</option>
+                    <option>Sell</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Configuration</label>
+                <select class="form-input" id="configuration">
+                    <option value="">Select</option>
+                    <option>1 BHK</option>
+                    <option>2 BHK</option>
+                    <option>3 BHK</option>
+                    <option>4 BHK</option>
+                    <option>Builder Floor</option>
+                    <option>Commercial Office</option>
+                    <option>Farmhouse</option>
+                    <option>Independent Flat</option>
+                    <option>Kothi / Independent House</option>
+                    <option>Plot</option>
+                    <option>Retail Shop</option>
+                    <option>Studio Apartment</option>
+                    <option>Villa</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Interest Level</label>
+                <select class="form-input" id="interestLevel">
+                    <option>Very High</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Cold</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Objection / Reason</label>
+                <select class="form-input" id="objection">
+                    <option value="">Select</option>
+                    <option>Area Not Suitable</option>
+                    <option>Budget Issue</option>
+                    <option>Builder Credibility Concern</option>
+                    <option>Already Purchased</option>
+                    <option>Already Working with Another Broker</option>
+                    <option>Construction Delay Concern</option>
+                    <option>Distance Issue</option>
+                    <option>Documentation Issue</option>
+                    <option>EMI Not Affordable</option>
+                    <option>Family Not Agreeing</option>
+                    <option>Floor Preference Issue</option>
+                    <option>Location Issue</option>
+                    <option>Looking Only for Direct Owner</option>
+                    <option>Market Comparison</option>
+                    <option>Not Urgent</option>
+                    <option>Price Too High</option>
+                    <option>Project Not Approved</option>
+                    <option>Quality Concern</option>
+                    <option>Site Visit Not Possible</option>
+                    <option>Timing Issue</option>
+                    <option>Trust Issue</option>
+                    <option>Unit Size Issue</option>
+                    <option>Vastu Concern</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Next Follow-up Timeline</label>
+                <select class="form-input" id="followupTimeline">
+                    <option value="">Select</option>
+                    <option>After 1 Day</option>
+                    <option>After 2 Days</option>
+                    <option>After 3 Days</option>
+                    <option>After 1 Week</option>
+                    <option>After 2 Weeks</option>
+                    <option>After 1 Month</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Next Call Date</label>
+                <input type="date" class="form-input" id="nextCallDate">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Call Priority</label>
+                <select class="form-input" id="callPriority">
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                </select>
+            </div>
+
+
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-input" id="Status">
+                    <option>Pending</option>
+                    <option>Done</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Caller Remarks</label>
+                <textarea class="form-textarea" id="callerRemarks"></textarea>
+            </div>
+
+            <button type="submit" class="btn-submit">Save Call Log</button>
+        </form>
+    </div>
+</div>
+
+<div id="reassignModal" class="modal">
+  <div class="modal-content">
+    <h3>Reassign Lead</h3>
+
+    <input type="hidden" id="reassignPhone">
+    <input type="hidden" id="reassignLeadId">
+
+    <select id="newEmployeeSelect"></select>
+
+    <button onclick="submitReassign()">Confirm</button>
+    <button onclick="closeModal('reassignModal')">Cancel</button>
+  </div>
+</div>
+
+  <script>
+localStorage.setItem("employeeName", "{{ employee_name }}");
+localStorage.setItem("employeeNumber", "{{ employee_number }}");
+</script>
+
+<script>
+        // Configuration
+        const TEAM_ASSIGN_URL = "https://api.phishnix.site/api/get-team-assign";
+const MANAGER_NUMBER = "918130505710"; // only this employee can reassign
+let isManager = false;
+
+const SHEETS_CONFIG = {
+    buying:  "https://api.phishnix.site/api/leads",
+    rental:  "https://api.phishnix.site/api/rental-leads",
+    selling: "https://api.phishnix.site/api/selling-leads",
+    agent:   "https://api.phishnix.site/api/agent-leads",
+    pending: "https://api.phishnix.site/api/end-data"
+};
+
+        // Global State
+        let currentEmployee = null;
+        let assignedLeadNumbers = [];
+        let allLeads = [];
+        let filteredLeads = [];
+        let currentLeadType = 'buying';
+        let callCounts = JSON.parse(localStorage.getItem('callCounts') || '{}');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', init);
+
+        function init() {
+    setupEventListeners();
+
+    const employeeName = localStorage.getItem("employeeName");
+    const employeeNumber = localStorage.getItem("employeeNumber");
+
+    if (!employeeName || !employeeNumber) {
+        // not logged in → redirect
+        window.location.href = "/login.html";
+        return;
+    }
+
+    currentEmployee = {
+        "Employee name": employeeName,
+        "Employee number": employeeNumber
+    };
+
+    document.getElementById("userBadge").textContent =
+        `👤 ${employeeName}`;
+
+     loadAssignedLeads(employeeNumber);
+}
+
+        function setupEventListeners() {
+            // Tab navigation
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                    e.target.classList.add('active');
+                    currentLeadType = e.target.dataset.type;
+                    loadLeads();
+                });
+            });
+
+            // Search
+            document.getElementById('searchBox').addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                filteredLeads = allLeads.filter(lead => {
+                    const searchableFields = [
+                        lead['Lead Name'] || lead.Name,
+                        lead['Phone Number'] || lead.Number,
+                        lead['Location Interested In'],
+                        lead['Property Type'],
+                        lead['Sub_location']
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    
+                    return searchableFields.includes(searchTerm);
+                });
+                renderLeads();
+            });
+
+            // Employee form
+           
+            // Call log form
+            document.getElementById('callLogForm').addEventListener('submit', handleCallLogSubmit);
+        }
+
+       
+
+       
+
+       
+
+        async function loadAssignedLeads(employeeNumber) {
+    try {
+        showLoader();
+
+        const res = await fetch(TEAM_ASSIGN_URL);
+        const employees = await res.json();
+
+        const employee = employees.find(emp =>
+            emp["Employee number"].toString() === employeeNumber.toString()
+        );
+
+        if (!employee) {
+            alert("❌ Employee not found");
+            logout();
+            return;
+        }
+
+        // Manager check
+        isManager =
+            employee["Employee number"].toString() === MANAGER_NUMBER;
+
+        // ✅ normalize assigned numbers
+        assignedLeadNumbers = [];
+
+        if (Array.isArray(employee.Leads)) {
+            assignedLeadNumbers = employee.Leads.map(num =>
+                num.toString()
+                    .replace("+", "")
+                    .replace("@s.whatsapp.net", "")
+                    .replace("@c.us", "")
+                    .replace(/\s/g, "")
+                    .trim()
+            );
+        } else if (typeof employee.Leads === "string") {
+            assignedLeadNumbers = employee.Leads
+                .replace(/[{}]/g, "")
+                .split(",")
+                .map(num =>
+                    num.trim()
+                        .replace("+", "")
+                        .replace("@s.whatsapp.net", "")
+                        .replace("@c.us", "")
+                        .replace(/\s/g, "")
+                )
+                .filter(Boolean);
+        }
+
+        console.log("Assigned Leads:", assignedLeadNumbers);
+
+        await loadLeads();
+
+    } catch (err) {
+        console.error(err);
+        alert("Error loading employee data");
+    } finally {
+        hideLoader();
+    }
+}
+
+async function loadLeads() {
+    showLoader();
+
+    try {
+        const url = SHEETS_CONFIG[currentLeadType];
+        const response = await fetch(url);
+        const data = await response.json();   // ✅ only once
+
+        // Your Flask API returns direct array
+        // NOT { success: true, data: [...] }
+
+        allLeads = data.filter(lead => {
+
+    let phoneNumber = String(
+        lead["Phone Number"] ||
+        lead["Number"] ||
+        ""
+    );
+
+    phoneNumber = phoneNumber
+        .replace("@s.whatsapp.net", "")
+        .replace("@c.us", "")
+        .replace("+", "")
+        .replace(/\s/g, "")   // ✅ IMPORTANT
+        .trim();
+
+    return assignedLeadNumbers.some(num => 
+        phoneNumber.endsWith(num) || num.endsWith(phoneNumber)
+    );
+});
+
+        filteredLeads = [...allLeads];
+        updateStats();
+        renderLeads();
+
+    } catch (error) {
+        console.error("Error loading leads:", error);
+        renderError();
+    } finally {
+        hideLoader();
+    }
+}
+
+
+
+        function updateStats() {
+            const total = filteredLeads.length;
+            const hot = filteredLeads.filter(l => l['Final Intent']?.toLowerCase() === 'hot').length;
+            const warm = filteredLeads.filter(l => l['Final Intent']?.toLowerCase() === 'warm').length;
+            const cold = filteredLeads.filter(l => l['Final Intent']?.toLowerCase() === 'cold').length;
+
+            document.getElementById('totalLeads').textContent = total;
+            document.getElementById('hotLeads').textContent = hot;
+            document.getElementById('warmLeads').textContent = warm;
+            document.getElementById('coldLeads').textContent = cold;
+        }
+
+        function renderLeads() {
+            const grid = document.getElementById('leadsGrid');
+            
+            if (filteredLeads.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-icon">📭</div>
+                        <div class="empty-title">No Leads Found</div>
+                        <div class="empty-text">There are no leads assigned to you in this category.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filteredLeads.map((lead, index) => {
+                if (currentLeadType === 'selling') return renderSellingLeadCard(lead, index);
+                if (currentLeadType === 'rental') return renderRentalLeadCard(lead, index);
+                if (currentLeadType === 'agent') return renderAgentCard(lead, index);
+                if (currentLeadType === 'pending') return renderPendingLeadCard(lead, index);
+                return renderBuyingLeadCard(lead, index);
+
+            }).join('');
+        }
+
+
+        function renderBuyingLeadCard(lead, index) {
+    const phoneNumber = lead['Phone Number'] || '';
+    const cleanPhone = phoneNumber.replace('@s.whatsapp.net', '');
+    const callCount = callCounts[phoneNumber] || 0;
+    const intent = (lead['Final Intent'] || 'cold').toLowerCase();
+
+    return `
+        <div class="lead-card" style="animation-delay:${index * 0.1}s">
+            <div class="lead-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                ${lead['Final Intent'] ? `<span class="intent-badge intent-${intent}">${lead['Final Intent']}</span>` : ''}
+            </div>
+
+            <div class="lead-details">
+                <div class="detail-row">
+                    <span class="detail-label">📱 Phone:</span>
+                    <span class="detail-value">${cleanPhone}</span>
+                </div>
+
+                ${lead['Location Interested In'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📍 Location:</span>
+                    <span class="detail-value">${lead['Location Interested In']}</span>
+                </div>` : ''}
+
+                ${lead['Property Type'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">🏠 Property:</span>
+                    <span class="detail-value">${lead['Property Type']}</span>
+                </div>` : ''}
+
+                ${lead['Budget Range'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">💰 Budget:</span>
+                    <span class="detail-value">${lead['Budget Range']}</span>
+                </div>` : ''}
+
+                ${lead['Buying Timeline'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">⏰ Timeline:</span>
+                    <span class="detail-value">${lead['Buying Timeline']}</span>
+                </div>` : ''}
+
+                ${lead.note ? `
+                <div class="detail-row">
+                    <span class="detail-label">📝 Note:</span>
+                    <span class="detail-value">${lead.note}</span>
+                </div>` : ''}
+            </div>
+
+            <div class="lead-actions">
+                <button class="btn btn-call" onclick="makeCall('${phoneNumber}')">
+                    📞 Call ${callCount > 0 ? `<span class="call-count">${callCount}</span>` : ''}
+                </button>
+
+                <button class="btn btn-log"
+ onclick='openCallLogModal(${JSON.stringify({
+   name:  lead['Lead Name'] || 'Unknown',
+   phone: phoneNumber,
+   type: "buying",
+   summary: `
+
+Phone: ${cleanPhone}
+Location: ${lead["Location Interested In"] || "-"}
+Property: ${lead["Property Type"] || "-"}
+Budget: ${lead["Budget Range"] || "-"}
+Timeline: ${lead["Buying Timeline"] || "-"}
+Note: ${lead.note || "-"}
+`
+ })})'>
+ 📝 Add Log
+</button>
+
+<button class="btn btn-call" onclick="openWhatsApp('${phoneNumber}')">
+    💬 WhatsApp
+</button>
+
+${isManager ? `
+<button class="btn btn-log"
+onclick="openReassignModal('${cleanPhone}', '${lead._id || ''}')">
+🔁 Reassign
+</button>
+` : ''}
+
+
+
+            </div>
+        </div>
+    `;
+}
+
+
+function renderSellingLeadCard(lead, index) {
+    const phoneNumber = lead['Phone Number'] || '';
+    const cleanPhone = phoneNumber.replace('@s.whatsapp.net', '');
+    const callCount = callCounts[phoneNumber] || 0;
+
+    return `
+        <div class="lead-card" style="animation-delay:${index * 0.1}s">
+            <div class="lead-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Owner'}</div>
+                <span class="intent-badge intent-hot">SELLING</span>
+            </div>
+
+            <div class="lead-details">
+                <div class="detail-row">
+                    <span class="detail-label">📱 Phone:</span>
+                    <span class="detail-value">${cleanPhone}</span>
+                </div>
+
+                ${lead['Property Location'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📍 Location:</span>
+                    <span class="detail-value">${lead['Property Location']}</span>
+                </div>` : ''}
+
+                ${lead['Property Type'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">🏠 Property:</span>
+                    <span class="detail-value">${lead['Property Type']}</span>
+                </div>` : ''}
+
+                ${lead['Expected Price'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">💰 Expected Price:</span>
+                    <span class="detail-value">${lead['Expected Price']}</span>
+                </div>` : ''}
+
+                ${lead['Property Size + Floor'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📐 Size:</span>
+                    <span class="detail-value">${lead['Property Size + Floor']}</span>
+                </div>` : ''}
+
+                ${lead['Occupancy Status'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">🚪 Occupancy:</span>
+                    <span class="detail-value">${lead['Occupancy Status']}</span>
+                </div>` : ''}
+
+                ${lead['Selling Timeline'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">⏳ Timeline:</span>
+                    <span class="detail-value">${lead['Selling Timeline']}</span>
+                </div>` : ''}
+
+                ${lead['Note'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📝 Note:</span>
+                    <span class="detail-value">${lead['Note']}</span>
+                </div>` : ''}
+            </div>
+
+            <div class="lead-actions">
+                <button class="btn btn-call" onclick="makeCall('${phoneNumber}')">
+                    📞 Call ${callCount > 0 ? `<span class="call-count">${callCount}</span>` : ''}
+                </button>
+                
+
+                <button class="btn btn-log"
+ onclick='openCallLogModal(${JSON.stringify({
+   name:  lead['Lead Name'] || 'Unknown',
+   phone: cleanPhone,
+   type: "selling",
+   summary: `
+
+Phone: ${cleanPhone}
+Location: ${lead['Property Location'] || "-"}
+Property: ${lead['Property Type'] || "-"}
+Budget: ${lead['Expected Price'] || "-"}
+Timeline: ${lead['Selling Timeline'] || "-"}
+Note: ${lead.note || "-"}
+`
+ })})'>
+ 📝 Add Log
+</button>
+
+<button class="btn btn-call" onclick="openWhatsApp('${phoneNumber}')">
+    💬 WhatsApp
+</button>
+
+${isManager ? `
+<button class="btn btn-log"
+onclick="openReassignModal('${cleanPhone}', '${lead._id || ''}')">
+🔁 Reassign
+</button>
+` : ''}
+
+
+            </div>
+        </div>
+    `;
+}
+
+
+function renderRentalLeadCard(lead, index) {
+    const phoneNumber = lead['Phone Number'] || '';
+    const cleanPhone = phoneNumber.replace('@s.whatsapp.net', '');
+    const callCount = callCounts[phoneNumber] || 0;
+
+    return `
+        <div class="lead-card" style="animation-delay:${index * 0.1}s">
+            <div class="lead-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Tenant'}</div>
+                ${lead['Final Intent'] ? `<span class="intent-badge intent-warm">${lead['Final Intent']}</span>` : ''}
+            </div>
+
+            <div class="lead-details">
+                <div class="detail-row">
+                    <span class="detail-label">📱 Phone:</span>
+                    <span class="detail-value">${cleanPhone}</span>
+                </div>
+
+                ${lead['Location Interested In'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📍 Location:</span>
+                    <span class="detail-value">${lead['Location Interested In']}</span>
+                </div>` : ''}
+
+                ${lead['Property_Type'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">🏠 Property:</span>
+                    <span class="detail-value">${lead['Property_Type']}</span>
+                </div>` : ''}
+
+                ${lead['Budget Range'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">💰 Budget:</span>
+                    <span class="detail-value">${lead['Budget Range']}</span>
+                </div>` : ''}
+
+                ${lead['Tenant_Profile'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">👤 Tenant:</span>
+                    <span class="detail-value">${lead['Tenant_Profile']}</span>
+                </div>` : ''}
+
+                ${lead['Buying Timeline'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">⏰ Timeline:</span>
+                    <span class="detail-value">${lead['Buying Timeline']}</span>
+                </div>` : ''}
+
+                ${lead.note ? `
+                <div class="detail-row">
+                    <span class="detail-label">📝 Note:</span>
+                    <span class="detail-value">${lead.note}</span>
+                </div>` : ''}
+            </div>
+
+            <div class="lead-actions">
+                <button class="btn btn-call" onclick="makeCall('${phoneNumber}')">
+                    📞 Call ${callCount > 0 ? `<span class="call-count">${callCount}</span>` : ''}
+                </button>
+                
+                <button class="btn btn-log"
+ onclick='openCallLogModal(${JSON.stringify({
+   name:  lead['Lead Name'] || 'Unknown',
+   phone: cleanPhone,
+   type: "Rental",
+   summary: `
+
+Phone: ${cleanPhone}
+Location: ${lead['Location Interested In'] || "-"}
+Property: ${lead['Property_Type'] || "-"}
+Budget: ${lead['Budget Range'] || "-"}
+Timeline: ${['Buying Timeline'] || "-"}
+Note: ${lead.note || "-"}
+`
+ })})'>
+ 📝 Add Log
+</button>
+
+<button class="btn btn-call" onclick="openWhatsApp('${phoneNumber}')">
+    💬 WhatsApp
+</button>
+
+${isManager ? `
+<button class="btn btn-log"
+onclick="openReassignModal('${cleanPhone}', '${lead._id || ''}')">
+🔁 Reassign
+</button>
+` : ''}
+
+
+            </div>
+        </div>
+    `;
+}
+
+
+function renderAgentCard(lead, index) {
+            const phoneNumber = lead['Phone Number'] || '';
+            const cleanPhone = phoneNumber.replace('@s.whatsapp.net', '');
+            const callCount = callCounts[phoneNumber] || 0;
+
+            return `
+                <div class="lead-card" style="animation-delay: ${index * 0.1}s;">
+                    <div class="lead-header">
+                        <div class="lead-name">${lead.Name || 'Unknown'}</div>
+                    </div>
+                    <div class="lead-details">
+                        <div class="detail-row">
+                            <span class="detail-label">📱 Phone:</span>
+                            <span class="detail-value">${cleanPhone}</span>
+                        </div>
+                        ${lead['Company Name'] ? `
+                        <div class="detail-row">
+                            <span class="detail-label">🏢 Company:</span>
+                            <span class="detail-value">${lead['Company Name']}</span>
+                        </div>` : ''}
+                        ${lead['Operating City'] ? `
+                        <div class="detail-row">
+                            <span class="detail-label">📍 City:</span>
+                            <span class="detail-value">${lead['Operating City']}</span>
+                        </div>` : ''}
+                        ${lead[' Inventory Type (Flats / Villas / Plots / Commercial)'] ? `
+                        <div class="detail-row">
+                            <span class="detail-label">🏗️ Inventory:</span>
+                            <span class="detail-value">${lead[' Inventory Type (Flats / Villas / Plots / Commercial)']}</span>
+                        </div>` : ''}
+                    </div>
+                    <div class="lead-actions">
+                        <button class="btn btn-call" onclick="makeCall('${phoneNumber}')">
+                            📞 Call ${callCount > 0 ? `<span class="call-count">${callCount}</span>` : ''}
+                        </button>
+                        
+                        <button class="btn btn-log"
+ onclick='openCallLogModal(${JSON.stringify({
+   name:  lead['Lead Name'] || 'Unknown',
+   phone: cleanPhone,
+   type: "agent",
+   summary: `
+
+Phone: ${cleanPhone}
+Location: ${lead['Operating City'] || "-"}
+Property: ${lead[' Inventory Type (Flats / Villas / Plots / Commercial)'] || "-"}
+Budget: ${lead['Budget Range'] || "-"}
+Timeline: ${lead['Buying Timeline'] || "-"}
+Note: ${lead.note || "-"}
+`
+ })})'>
+ 📝 Add Log
+</button>
+
+<button class="btn btn-call" onclick="openWhatsApp('${phoneNumber}')">
+    💬 WhatsApp
+</button>
+
+${isManager ? `
+<button class="btn btn-log"
+onclick="openReassignModal('${cleanPhone}', '${lead._id || ''}')">
+🔁 Reassign
+</button>
+` : ''}
+
+
+                    </div>
+                </div>
+            `;
+        }
+
+
+function renderPendingLeadCard(lead, index) {
+
+    const phoneNumber = lead['Number'] || '';
+            
+            const callCount = callCounts[phoneNumber] || 0;
+
+    return `
+        <div class="lead-card" style="animation-delay:${index * 0.05}s">
+            <div class="lead-header">
+                <div class="lead-name">${lead['Customer Name'] || 'Unknown'}</div>
+                <span class="intent-badge intent-warm">PENDING</span>
+            </div>
+
+            <div class="lead-details">
+
+                ${lead['Call_attempt'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📞 Attempts:</span>
+                    <span class="detail-value">${lead['Call_attempt']}</span>
+                </div>` : ''}
+
+                <div class="detail-row">
+                    <span class="detail-label">📱 Number:</span>
+                    <span class="detail-value">${lead['Number'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">🏠 Property:</span>
+                    <span class="detail-value">${lead['Property Type'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">📍 Location:</span>
+                    <span class="detail-value">${lead['Preferred Location'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">💰 Budget:</span>
+                    <span class="detail-value">${lead['Budget Range'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">📊 Status:</span>
+                    <span class="detail-value">${lead['Call Status'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">🔁 Transaction:</span>
+                    <span class="detail-value">${lead['Transaction Type'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">🏗 Config:</span>
+                    <span class="detail-value">${lead['Configuration'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">💬 Response:</span>
+                    <span class="detail-value">${lead['Customer Response'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">🔥 Interest:</span>
+                    <span class="detail-value">${lead['Interest Level'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">⚠️ Objection:</span>
+                    <span class="detail-value">${lead['Objection / Reason'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">⏳ Follow-up:</span>
+                    <span class="detail-value">${lead['Next Follow-up Timeline'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">📅 Next Call:</span>
+                    <span class="detail-value">${lead['Next Call Date'] || '-'}</span>
+                </div>
+
+                <div class="detail-row">
+                    <span class="detail-label">⭐ Priority:</span>
+                    <span class="detail-value">${lead['Call Priority'] || '-'}</span>
+                </div>
+
+                ${lead['Caller Remarks'] ? `
+                <div class="detail-row">
+                    <span class="detail-label">📝 Remarks:</span>
+                    <span class="detail-value">${lead['Caller Remarks']}</span>
+                </div>` : ''}
+
+            </div>
+
+            <div class="lead-actions">
+                <button class="btn btn-call" onclick="makeCall('${lead['Number']}')">
+                    📞 Call ${callCount > 0 ? `<span class="call-count">${callCount}</span>` : ''}
+                </button>
+
+                <button class="btn btn-log"
+ onclick='openCallLogModal(${JSON.stringify({
+   name:  lead['Lead Name'] || 'Unknown',
+   phone: lead['Number'],
+   type: "pending",
+   summary: `
+
+Phone: ${lead['Number']}
+Location: ${lead["Location Interested In"] || "-"}
+Property: ${lead["Property Type"] || "-"}
+Budget: ${lead["Budget Range"] || "-"}
+Timeline: ${lead["Buying Timeline"] || "-"}
+Note: ${lead.note || "-"}
+`
+ })})'>
+ 📝 Add Log
+</button>
+
+<button class="btn btn-call" onclick="openWhatsApp('${lead['Number']}')">
+    💬 WhatsApp
+</button>
+
+
+            </div>
+        </div>
+    `;
+}
+
+
+      function openCallLogModal(leadData) {
+        
+    document.getElementById('callLogName').value = leadData.name;
+    document.getElementById('callLogPhone').value = leadData.phone;
+    document.getElementById('callLogLeadType').value = leadData.type;
+    document.getElementById('leadSummary').value = leadData.summary.trim();
+
+    document.getElementById('callLogModal').classList.add('active');
+}
+
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function handleCallLogSubmit(e) {
+            e.preventDefault();
+            
+            const phoneNumber = document.getElementById('callLogPhone').value;
+            const duration = document.getElementById('callDuration').value;
+            const outcome = document.getElementById('callOutcome').value;
+            const notes = document.getElementById('callNotes').value;
+
+            // Here you would typically send this to your backend
+            console.log('Call Log:', { phoneNumber, duration, outcome, notes, timestamp: new Date() });
+
+            // Show success message
+            alert('✅ Call log saved successfully!');
+
+            // Reset form and close modal
+            document.getElementById('callLogForm').reset();
+            closeModal('callLogModal');
+        }
+
+        function renderError() {
+            const grid = document.getElementById('leadsGrid');
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1/-1;">
+                    <div class="empty-icon">⚠️</div>
+                    <div class="empty-title">Error Loading Leads</div>
+                    <div class="empty-text">Please try again later.</div>
+                </div>
+            `;
+        }
+
+       function logout() {
+    if (confirm('Are you sure you want to logout?')) {
+
+        // clear frontend session
+        localStorage.removeItem("employeeName");
+        localStorage.removeItem("employeeNumber");
+
+        // redirect to backend logout
+        window.location.href = "/logout";
+    }
+}
+
+        function showLoader() {
+            document.getElementById('loader').classList.remove('hidden');
+        }
+
+        function hideLoader() {
+            document.getElementById('loader').classList.add('hidden');
+        }
+
+
+    function makeCall(phoneNumber) {
+  const cleanPhone = phoneNumber
+    .replace('@s.whatsapp.net', '')
+    .replace('@c.us', '');
+
+  fetch('https://api.phishnix.site/api/call-attempt', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    number: cleanPhone
+  })
+})
+.then(res => res.json())
+.then(data => {
+  console.log('Call logged:', data);
+
+  if (data.Call_attempt !== undefined) {
+    // Update button count dynamically
+    const btn = document.querySelector(`[onclick="makeCall('${phoneNumber}')"]`);
+    if (btn) {
+      btn.innerHTML = `📞 Call <span class="call-count">${data.Call_attempt}</span>`;
+    }
+  }
+})
+.catch(err => console.error('Call log failed', err));
+
+window.open(`tel:+${cleanPhone}`);
+
+  // optional
+   window.open(`tel:+${cleanPhone}`);
+}
+
+
+async function handleCallLogSubmit(e) {
+    e.preventDefault();
+
+    const payload = {
+        name: document.getElementById('callLogName').value,
+        phone: document.getElementById('callLogPhone').value,
+        leadType: document.getElementById('callLogLeadType').value,
+        leadSnapshot: document.getElementById('leadSummary').value,
+
+        callStatus: document.getElementById('callStatus').value,
+        customerResponse: document.getElementById('customerResponse').value,
+
+        transactionType: document.getElementById('transactionType').value,
+        configuration: document.getElementById('configuration').value,
+        interestLevel: document.getElementById('interestLevel').value,
+        objection: document.getElementById('objection').value,
+        followupTimeline: document.getElementById('followupTimeline').value,
+        nextCallDate: document.getElementById('nextCallDate').value,
+        callPriority: document.getElementById('callPriority').value,
+        Status: document.getElementById('Status').value,
+        callerRemarks: document.getElementById('callerRemarks').value,
+
+        employee: currentEmployee?.['Employee name'],
+        timestamp: new Date().toISOString()
+    };
+
+    await fetch('https://n8n.phishnix.site/webhook/datafromdash', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+
+    alert('✅ Call log saved');
+    document.getElementById('callLogForm').reset();
+    closeModal('callLogModal');
+}
+
+
+function openWhatsApp(phoneNumber) {
+
+    const cleanPhone = String(phoneNumber)
+        .replace('@s.whatsapp.net', '')
+        .replace('@c.us', '')
+        .replace('+', '')
+        .trim();
+
+    // If India default country code needed, ensure it starts with 91
+    const finalNumber = cleanPhone.startsWith('91')
+        ? cleanPhone
+        : '91' + cleanPhone;
+
+    const message = encodeURIComponent(
+        "Hi 👋 This is from Nisha Homes regarding your property enquiry."
+    );
+
+    const whatsappURL = `https://wa.me/${finalNumber}?text=${message}`;
+
+    window.open(whatsappURL, '_blank');
+}
+
+
+async function openReassignModal(phone, leadId) {
+
+    document.getElementById('reassignPhone').value = phone;
+    document.getElementById('reassignLeadId').value = leadId;
+
+    const res = await fetch(TEAM_ASSIGN_URL);
+    const employees = await res.json();
+
+    const select = document.getElementById('newEmployeeSelect');
+    select.innerHTML = '';
+
+    employees.forEach(emp => {
+        select.innerHTML += `
+            <option value="${emp['Employee number']}">
+                ${emp['Employee name']}
+            </option>
+        `;
+    });
+
+    document.getElementById('reassignModal').classList.add('active');
+}
+
+
+async function submitReassign() {
+
+    const phone = document.getElementById('reassignPhone').value;
+    const newEmployeeNumber = document.getElementById('newEmployeeSelect').value;
+
+    const collectionName = getCollectionName(currentLeadType);
+
+    await fetch("https://api.phishnix.site/api/reassign-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            phone: phone.replace("+", ""),
+            newEmployeeNumber: newEmployeeNumber,
+            collection: collectionName   // ✅ send real collection
+        })
+    });
+
+    alert("✅ Lead reassigned successfully");
+
+    closeModal('reassignModal');
+    loadLeads();
+}
+
+
+function getCollectionName(type) {
+    if (type === 'selling') return 'sellingLeads';
+    if (type === 'rental') return 'RentalLeads';
+    if (type === 'agent') return 'agentLeads';
+    if (type === 'buying') return 'Leads';
+}
+
+
+    </script>
+</body>
+</html>

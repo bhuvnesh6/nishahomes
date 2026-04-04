@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NishaHomes — Leads</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #2D3142;
+            --primary-deep: #1e2235;
+            --accent: #EF8354;
+            --accent-light: #FFA07A;
+            --accent-glow: rgba(239,131,84,0.25);
+            --bg: #FAF9F6;
+            --card-bg: linear-gradient(145deg, #2D3142 0%, #3a3f56 100%);
+            --text: #2D3142;
+            --text-light: #8891A5;
+            --border: #E5E7EB;
+            --success: #10B981;
+            --warm: #F59E0B;
+            --hot: #EF4444;
+            --shadow-sm: 0 2px 8px rgba(45,49,66,0.07);
+            --shadow: 0 6px 24px rgba(45,49,66,0.10);
+            --shadow-lg: 0 16px 48px rgba(45,49,66,0.18);
+            --nav-h: 68px;
+            --tab-h: 58px;
+        }
+
+        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── LOADER ─────────────────────────────── */
+        .loader-overlay {
+            position: fixed; inset: 0;
+            background: rgba(250,249,246,0.97);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10000;
+            transition: opacity .45s ease, visibility .45s ease;
+        }
+        .loader-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        .loader-ring {
+            width: 56px; height: 56px;
+            border: 3.5px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin .9s cubic-bezier(.6,0,.4,1) infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── TOP NAV ─────────────────────────────── */
+        .topnav {
+            position: sticky; top: 0; z-index: 900;
+            background: var(--primary-deep);
+            height: var(--nav-h);
+            display: flex; align-items: center;
+            padding: 0 24px;
+            justify-content: space-between;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.25);
+            animation: slideDown .55s cubic-bezier(.22,1,.36,1) both;
+        }
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to   { transform: translateY(0);     opacity: 1; }
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-weight: 900;
+            font-size: 1.45rem;
+            color: #fff;
+            letter-spacing: -.3px;
+            white-space: nowrap;
+        }
+        .logo span { color: var(--accent); }
+
+        .nav-right {
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        /* Home pill */
+        .home-pill {
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 14px;
+            border-radius: 20px;
+            border: 1.5px solid rgba(255,255,255,.18);
+            color: rgba(255,255,255,.75);
+            font-size: .82rem; font-weight: 500;
+            text-decoration: none;
+            transition: all .25s ease;
+        }
+        .home-pill:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(239,131,84,.08);
+        }
+        .home-pill svg { flex-shrink: 0; }
+
+        /* Select button */
+        .select-pill {
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 14px;
+            border-radius: 20px;
+            border: 1.5px solid rgba(255,255,255,.18);
+            background: transparent;
+            color: rgba(255,255,255,.75);
+            font-family: 'DM Sans', sans-serif;
+            font-size: .82rem; font-weight: 500;
+            cursor: pointer;
+            transition: all .25s ease;
+        }
+        .select-pill.active,
+        .select-pill:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(239,131,84,.08);
+        }
+
+        /* ── TAB BAR ─────────────────────────────── */
+        .tab-bar-wrap {
+            position: sticky;
+            top: var(--nav-h);
+            z-index: 800;
+            background: var(--primary);
+            box-shadow: 0 3px 14px rgba(0,0,0,.22);
+        }
+
+        .tab-bar {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            padding: 0 12px;
+        }
+        .tab-bar::-webkit-scrollbar { display: none; }
+
+        .tab-btn {
+            flex: 0 0 auto;
+            scroll-snap-align: start;
+            padding: 0 22px;
+            height: var(--tab-h);
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: rgba(255,255,255,.5);
+            font-family: 'DM Sans', sans-serif;
+            font-size: .88rem;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color .25s ease, border-color .25s ease;
+            position: relative;
+        }
+        .tab-btn .tab-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            margin-right: 6px;
+            opacity: 0;
+            transform: scale(0);
+            transition: all .25s ease;
+            vertical-align: middle;
+        }
+        .tab-btn.active { color: #fff; border-bottom-color: var(--accent); }
+        .tab-btn.active .tab-dot { opacity: 1; transform: scale(1); }
+        .tab-btn:hover:not(.active) { color: rgba(255,255,255,.8); }
+
+        /* ── BULK ACTION STRIP ─────────────────────── */
+        .bulk-strip {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: rgba(239,131,84,.08);
+            border-bottom: 1px solid rgba(239,131,84,.2);
+            animation: stripIn .3s ease both;
+        }
+        @keyframes stripIn {
+            from { opacity:0; transform:translateY(-8px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+        .bulk-strip.visible { display: flex; }
+
+        .bulk-count {
+            font-size: .85rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-right: auto;
+        }
+
+        .bulk-action-btn {
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            border: 1.5px solid var(--accent);
+            background: transparent;
+            color: var(--accent);
+            font-family: 'DM Sans', sans-serif;
+            font-size: .82rem; font-weight: 600;
+            cursor: pointer;
+            transition: all .2s ease;
+        }
+        .bulk-action-btn:hover {
+            background: var(--accent);
+            color: #fff;
+        }
+        .bulk-action-btn.primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .bulk-action-btn.primary:hover {
+            background: var(--accent-light);
+        }
+
+        /* ── MAIN CONTENT ────────────────────────── */
+        .main {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 28px 20px 60px;
+        }
+
+        /* Page header */
+        .page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-bottom: 24px;
+            opacity: 0;
+            animation: fadeUp .6s .15s ease both;
+        }
+        @keyframes fadeUp {
+            from { opacity:0; transform:translateY(20px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+
+        .page-title-block h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            font-weight: 900;
+            color: var(--primary);
+            letter-spacing: -.5px;
+            line-height: 1;
+        }
+        .page-title-block p {
+            font-size: .9rem;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+
+        /* Search */
+        .search-wrap {
+            position: relative;
+            width: 100%;
+            max-width: 380px;
+        }
+        .search-wrap svg {
+            position: absolute;
+            left: 14px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-light);
+            pointer-events: none;
+        }
+        #leadSearch {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            border-radius: 14px;
+            border: 2px solid var(--border);
+            background: #fff;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .9rem;
+            color: var(--text);
+            transition: all .25s ease;
+            box-shadow: var(--shadow-sm);
+        }
+        #leadSearch:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
+
+        /* ── CARDS GRID ──────────────────────────── */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            opacity: 0;
+            animation: fadeUp .55s .3s ease both;
+        }
+
+        /* ── LEAD CARD ───────────────────────────── */
+        .lead-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 22px;
+            box-shadow: var(--shadow);
+            transition: transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s ease;
+            position: relative;
+            overflow: hidden;
+            animation: cardIn .5s ease both;
+            cursor: default;
+        }
+        @keyframes cardIn {
+            from { opacity:0; transform:translateY(28px) scale(.97); }
+            to   { opacity:1; transform:translateY(0)    scale(1); }
+        }
+
+        /* accent top bar */
+        .lead-card::before {
+            content: '';
+            position: absolute; top:0; left:0; right:0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-light));
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform .4s ease;
+        }
+        .lead-card:hover::before { transform: scaleX(1); }
+        .lead-card:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        /* selection highlight */
+        .lead-card.selected {
+            outline: 2.5px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* Card top row */
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+        .card-top-left { flex: 1; min-width: 0; }
+
+        .lead-name {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lead-date {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: .75rem;
+            color: rgba(255,255,255,.55);
+            font-weight: 400;
+        }
+
+        /* Checkbox for select mode */
+        .card-checkbox-wrap {
+            display: none;
+            align-items: center; justify-content: center;
+            width: 26px; height: 26px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .select-mode .card-checkbox-wrap { display: flex; }
+
+        .card-checkbox {
+            width: 20px; height: 20px;
+            accent-color: var(--accent);
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        /* Info rows */
+        .lead-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .info-label {
+            font-size: .72rem;
+            font-weight: 600;
+            color: rgba(255,255,255,.5);
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            min-width: 90px;
+            padding-top: 2px;
+        }
+        .info-value {
+            font-size: .88rem;
+            color: rgba(255,255,255,.9);
+            font-weight: 400;
+            flex: 1;
+            line-height: 1.4;
+        }
+        .phone-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color .2s;
+        }
+        .phone-link:hover { color: var(--accent-light); }
+
+        /* Intent badges */
+        .intent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: .75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+        .intent-badge::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            flex-shrink: 0;
+        }
+        .intent-hot  { background: rgba(239,68,68,.15); color: #ff6b6b; }
+        .intent-warm { background: rgba(245,158,11,.15); color: #fbbf24; }
+        .intent-cold { background: rgba(99,179,255,.12); color: #7ab8ff; }
+
+        /* Assign badge */
+        .assign-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: rgba(16,185,129,.12);
+            color: #34d399;
+            font-size: .78rem;
+            font-weight: 600;
+        }
+
+        /* Note box */
+        .note-box {
+            background: rgba(255,255,255,.07);
+            border-left: 3px solid var(--accent);
+            padding: 10px 12px;
+            border-radius: 0 10px 10px 0;
+            margin-bottom: 16px;
+        }
+        .note-label {
+            font-size: .68rem;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-bottom: 4px;
+        }
+        .note-text {
+            font-size: .82rem;
+            color: rgba(255,255,255,.75);
+            line-height: 1.5;
+        }
+
+        /* Card actions */
+        .card-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .btn-journey {
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            width: 100%;
+            padding: 11px 16px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+            color: #fff;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .85rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: none; cursor: pointer;
+            transition: all .3s cubic-bezier(.22,1,.36,1);
+            letter-spacing: .3px;
+            box-shadow: 0 4px 14px rgba(239,131,84,.25);
+        }
+        .btn-journey:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 22px rgba(239,131,84,.38);
+        }
+        .btn-journey:active { transform: translateY(0); }
+
+        .btn-delete {
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            width: 100%;
+            padding: 9px 16px;
+            border-radius: 12px;
+            background: transparent;
+            border: 1.5px solid rgba(239,68,68,.4);
+            color: #ff6b6b;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .25s ease;
+        }
+        .btn-delete:hover {
+            background: rgba(239,68,68,.12);
+            border-color: #ff6b6b;
+        }
+
+        /* ── EMPTY STATE ─────────────────────────── */
+        .empty-state {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 72px 24px;
+            text-align: center;
+            animation: fadeUp .5s ease both;
+        }
+        .empty-icon {
+            font-size: 3.5rem;
+            margin-bottom: 16px;
+            opacity: .7;
+        }
+        .empty-state h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.7rem;
+            color: var(--primary);
+            margin-bottom: 6px;
+        }
+        .empty-state p { color: var(--text-light); font-size: .95rem; }
+
+        /* ── TEMPLATE MODAL ──────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(20,22,35,.7);
+            backdrop-filter: blur(6px);
+            z-index: 9000;
+            align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .modal-overlay.open { display: flex; }
+
+        .modal-box {
+            background: #fff;
+            border-radius: 22px;
+            padding: 32px 28px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: 0 24px 70px rgba(0,0,0,.25);
+            animation: modalIn .38s cubic-bezier(.22,1,.36,1) both;
+        }
+        @keyframes modalIn {
+            from { opacity:0; transform:scale(.88) translateY(20px); }
+            to   { opacity:1; transform:scale(1)   translateY(0); }
+        }
+        .modal-box h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 6px;
+        }
+        .modal-box p {
+            font-size: .85rem;
+            color: var(--text-light);
+            margin-bottom: 20px;
+        }
+
+        #templateSelect {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 2px solid var(--border);
+            font-family: 'DM Sans', sans-serif;
+            font-size: .9rem;
+            color: var(--text);
+            background: var(--bg);
+            margin-bottom: 20px;
+            transition: border-color .2s;
+        }
+        #templateSelect:focus { outline: none; border-color: var(--accent); }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-cancel {
+            flex: 1;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1.5px solid var(--border);
+            background: transparent;
+            color: var(--text-light);
+            font-family: 'DM Sans', sans-serif;
+            font-size: .88rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .modal-cancel:hover { border-color: var(--text-light); color: var(--text); }
+        .modal-send {
+            flex: 2;
+            padding: 12px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            color: #fff;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all .25s ease;
+            box-shadow: 0 4px 14px rgba(239,131,84,.3);
+        }
+        .modal-send:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(239,131,84,.38); }
+
+        /* ── RESPONSIVE ──────────────────────────── */
+        @media (max-width: 640px) {
+            .main { padding: 20px 14px 60px; }
+
+            .page-header { flex-direction: column; align-items: flex-start; }
+            .search-wrap { max-width: 100%; }
+
+            .cards-grid {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+
+            .topnav { padding: 0 16px; }
+
+            .tab-btn { padding: 0 16px; font-size: .82rem; }
+
+            .logo { font-size: 1.2rem; }
+        }
+
+        @media (min-width: 641px) and (max-width: 1024px) {
+            .cards-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (min-width: 1025px) {
+            .cards-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (min-width: 1440px) {
+            .cards-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+
+        /* Scroll fade-in for cards */
+        .lead-card[data-visible="false"] {
+            opacity: 0;
+            transform: translateY(24px) scale(.97);
+        }
+        .lead-card[data-visible="true"] {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            transition: opacity .5s ease, transform .5s cubic-bezier(.22,1,.36,1);
+        }
+
+        .btn-reassign {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%;
+    padding: 9px 16px;
+    border-radius: 12px;
+    background: transparent;
+    border: 1.5px solid rgba(59,130,246,.4);
+    color: #60a5fa;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .25s ease;
+}
+
+.btn-reassign:hover {
+    background: rgba(59,130,246,.12);
+    border-color: #60a5fa;
+    transform: translateY(-1px);
+}
+
+
+#reassignModal .modal-box {
+    max-width: 420px;
+}
+
+#employeeSelect {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    font-family: 'DM Sans', sans-serif;
+    font-size: .9rem;
+    color: var(--text);
+    background: var(--bg);
+    margin-bottom: 20px;
+    transition: all .2s ease;
+}
+
+#employeeSelect:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-glow);
+}
+    </style>
+</head>
+<body>
+
+<!-- ── LOADER ────────────────────────────────────── -->
+<div class="loader-overlay" id="loader">
+    <div class="loader-ring"></div>
+</div>
+
+<!-- ── TOP NAV ───────────────────────────────────── -->
+<header class="topnav">
+    <div class="logo">Nisha<span>Homes</span></div>
+    <div class="nav-right">
+        <a href="/" class="home-pill">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            Home
+        </a>
+        <button class="select-pill" id="toggleSelectBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+                <polyline points="9 12 11 14 15 10"/>
+            </svg>
+            <span id="toggleSelectLabel">Select</span>
+        </button>
+    </div>
+</header>
+
+<!-- ── TAB BAR ───────────────────────────────────── -->
+<div class="tab-bar-wrap">
+    <div class="tab-bar" role="tablist">
+        <button class="tab-btn active" data-sheet="buying" role="tab">
+            <span class="tab-dot"></span>Buying
+        </button>
+        <button class="tab-btn" data-sheet="rental" role="tab">
+            <span class="tab-dot"></span>Rental
+        </button>
+        <button class="tab-btn" data-sheet="selling" role="tab">
+            <span class="tab-dot"></span>Selling
+        </button>
+        <button class="tab-btn" data-sheet="agent" role="tab">
+            <span class="tab-dot"></span>Agent
+        </button>
+    </div>
+</div>
+
+<!-- ── BULK STRIP ────────────────────────────────── -->
+<div class="bulk-strip" id="bulkStrip">
+    <span class="bulk-count" id="bulkCount">0 selected</span>
+    <button class="bulk-action-btn" id="selectAllBtn">Select All</button>
+    <button class="bulk-action-btn primary" id="sendSelectedBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Send Message
+    </button>
+</div>
+
+<!-- ── MAIN ──────────────────────────────────────── -->
+<main class="main">
+    <div class="page-header">
+        <div class="page-title-block">
+            <h1 id="pageTitle">Buying Leads</h1>
+            <p id="pageSubtitle">Manage and track your property leads</p>
+        </div>
+        <div class="search-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="leadSearch" placeholder="Search name, phone, location…" autocomplete="off" />
+        </div>
+    </div>
+
+    <div class="cards-grid" id="cardsGrid"></div>
+</main>
+
+<!-- ── TEMPLATE MODAL ────────────────────────────── -->
+<div class="modal-overlay" id="templateModal">
+    <div class="modal-box">
+        <h3>Send WhatsApp Message</h3>
+        <p id="modalSubtext">Choose a template to send to selected leads.</p>
+        <select id="templateSelect"></select>
+        <div class="modal-actions">
+            <button class="modal-cancel" id="closeTemplateModal">Cancel</button>
+            <button class="modal-send" id="confirmSendBtn">
+                Send →
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="reassignModal">
+    <div class="modal-box">
+        <h3>Reassign Lead</h3>
+
+        <input type="hidden" id="reassignPhone">
+
+        <select id="newEmployeeSelect"></select>
+
+        <div class="modal-actions">
+            <button class="modal-cancel" onclick="closeReassignModal()">Cancel</button>
+            <button class="modal-send" onclick="submitReassign()">Reassign →</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ─── State ─────────────────────────────────── */
+let selectMode = false;
+let selectedLeads = new Map();
+let wpTemplates = [];
+let currentSheet = 'buying';
+let allLeads = {};
+const BASE_API_URL = "https://api.phishnix.site/api";
+const API_CONFIG = {
+    buying:  `${BASE_API_URL}/leads`,
+    rental:  `${BASE_API_URL}/rental-leads`,
+    selling: `${BASE_API_URL}/selling-leads`,
+    agent:   `${BASE_API_URL}/agent-leads`
+};
+
+/* ─── Helpers ───────────────────────────────── */
+function formatPhone(p) {
+    if (!p) return '';
+    return '+' + String(p).replace(/@s\.whatsapp\.net|@c\.us/g,'').replace(/\s+/g,'').replace(/[^0-9]/g,'');
+}
+function cleanPhoneForURL(p) {
+    if (!p) return '';
+    return String(p).replace(/@s\.whatsapp\.net|@c\.us/g,'').replace(/\s+/g,'').replace(/[^0-9]/g,'');
+}
+function intentClass(v) {
+    if (!v) return 'intent-cold';
+    const l = v.toLowerCase();
+    if (l === 'hot')  return 'intent-hot';
+    if (l === 'warm') return 'intent-warm';
+    return 'intent-cold';
+}
+
+/* ─── Loader ────────────────────────────────── */
+function showLoader() { document.getElementById('loader').classList.remove('hidden'); }
+function hideLoader() { document.getElementById('loader').classList.add('hidden'); }
+
+/* ─── Scroll Observer ───────────────────────── */
+function observeCards() {
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting) {
+                e.target.setAttribute('data-visible', 'true');
+                io.unobserve(e.target);
+            }
+        });
+    }, { threshold: 0.08 });
+
+    document.querySelectorAll('.lead-card').forEach((card, i) => {
+        card.setAttribute('data-visible', 'false');
+        card.style.transitionDelay = `${Math.min(i * 60, 400)}ms`;
+        io.observe(card);
+    });
+}
+
+/* ─── Card builders ─────────────────────────── */
+function assignBlock(lead) {
+    return lead.AssignTo ? `
+        <div class="info-row">
+            <span class="info-label">Assigned</span>
+            <span class="info-value">
+                <span class="assign-badge">👤 ${lead.AssignTo}</span>
+            </span>
+        </div>` : '';
+}
+
+function noteBlock(text) {
+    return text ? `
+        <div class="note-box">
+            <div class="note-label">Note</div>
+            <div class="note-text">${text}</div>
+        </div>` : '';
+}
+
+function actionsBlock(id, phone) {
+    return `
+        <div class="card-actions">
+            <a class="btn-journey" href="/leadjourney.html?number=${cleanPhoneForURL(phone)}">
+                View Lead Journey
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12 5 19 12 12 19"/>
+                </svg>
+            </a>
+
+            <button class="btn-reassign" onclick="openReassignModal('${cleanPhoneForURL(phone)}')">
+                🔄 Reassign
+            </button>
+
+            <button class="btn-delete" onclick="deleteLead('${id}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+                </svg>
+                Delete Lead
+            </button>
+        </div>`;
+}
+
+function cardShell(lead, index, innerHTML) {
+    const name = lead['Lead Name'] || lead.Name || '';
+    const phone = formatPhone(lead['Phone Number']);
+    const loc = lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || '';
+    const assigned = (lead.AssignTo || '').toLowerCase();
+    return `<div class="lead-card" style="animation-delay:${index*80}ms"
+        data-name="${name}" data-phone="${phone}" data-location="${loc}" data-assigned="${assigned}">
+        <div class="card-top">
+            <div class="card-top-left">
+                <div class="lead-name">${name || 'Unknown'}</div>
+                <span class="lead-date">${lead.Date || 'N/A'}</span>
+            </div>
+            <div class="card-checkbox-wrap">
+                <input type="checkbox" class="card-checkbox">
+            </div>
+        </div>
+        ${innerHTML}
+    </div>`;
+}
+
+/* ─── Render functions ──────────────────────── */
+function renderBuying(leads) {
+    if (!leads?.length) return emptyState();
+    return leads.map((l, i) => cardShell(l, i, `
+        <div class="lead-info">
+            <div class="info-row"><span class="info-label">Phone</span>
+                <a href="tel:${formatPhone(l['Phone Number'])}" class="info-value phone-link">${formatPhone(l['Phone Number'])}</a></div>
+            <div class="info-row"><span class="info-label">Location</span>
+                <span class="info-value">${l['Location Interested In']||'N/A'}</span></div>
+            ${l['Sub_location']?`<div class="info-row"><span class="info-label">Sub-loc</span><span class="info-value">${l['Sub_location']}</span></div>`:''}
+            <div class="info-row"><span class="info-label">Property</span>
+                <span class="info-value">${l['Property Type']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Budget</span>
+                <span class="info-value">${l['Budget Range']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Intent</span>
+                <span class="info-value"><span class="intent-badge ${intentClass(l['Final Intent'])}">${l['Final Intent']||'Cold'}</span></span></div>
+            ${assignBlock(l)}
+        </div>
+        ${noteBlock(l.note)}
+        ${actionsBlock(l._id, l['Phone Number'])}
+    `)).join('');
+}
+
+function renderRental(leads) {
+    if (!leads?.length) return emptyState();
+    return leads.map((l, i) => cardShell(l, i, `
+        <div class="lead-info">
+            <div class="info-row"><span class="info-label">Phone</span>
+                <a href="tel:${formatPhone(l['Phone Number'])}" class="info-value phone-link">${formatPhone(l['Phone Number'])}</a></div>
+            <div class="info-row"><span class="info-label">Location</span>
+                <span class="info-value">${l['Location Interested In']||'N/A'}</span></div>
+            ${l['Sub_location']?`<div class="info-row"><span class="info-label">Sub-loc</span><span class="info-value">${l['Sub_location']}</span></div>`:''}
+            <div class="info-row"><span class="info-label">Property</span>
+                <span class="info-value">${l['Property_Type']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Budget</span>
+                <span class="info-value">${l['Budget Range']||'N/A'}</span></div>
+            ${l['Tenant_Profile']?`<div class="info-row"><span class="info-label">Profile</span><span class="info-value">${l['Tenant_Profile']}</span></div>`:''}
+            <div class="info-row"><span class="info-label">Intent</span>
+                <span class="info-value"><span class="intent-badge ${intentClass(l['Final Intent'])}">${l['Final Intent']||'Cold'}</span></span></div>
+            ${assignBlock(l)}
+        </div>
+        ${noteBlock(l.note)}
+        ${actionsBlock(l._id, l['Phone Number'])}
+    `)).join('');
+}
+
+function renderSelling(leads) {
+    if (!leads?.length) return emptyState();
+    return leads.map((l, i) => cardShell(l, i, `
+        <div class="lead-info">
+            <div class="info-row"><span class="info-label">Phone</span>
+                <a href="tel:${formatPhone(l['Phone Number'])}" class="info-value phone-link">${formatPhone(l['Phone Number'])}</a></div>
+            <div class="info-row"><span class="info-label">Location</span>
+                <span class="info-value">${l['Property Location']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Property</span>
+                <span class="info-value">${l['Property Type']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Price</span>
+                <span class="info-value">${l['Expected Price']||'N/A'}</span></div>
+            ${l['Property Size + Floor']?`<div class="info-row"><span class="info-label">Size</span><span class="info-value">${l['Property Size + Floor']}</span></div>`:''}
+            ${l['Occupancy Status']?`<div class="info-row"><span class="info-label">Status</span><span class="info-value">${l['Occupancy Status']}</span></div>`:''}
+            ${l['Selling Timeline']?`<div class="info-row"><span class="info-label">Timeline</span><span class="info-value">${l['Selling Timeline']}</span></div>`:''}
+            ${assignBlock(l)}
+        </div>
+        ${noteBlock(l.Note)}
+        ${actionsBlock(l._id, l['Phone Number'])}
+    `)).join('');
+}
+
+function renderAgent(leads) {
+    if (!leads?.length) return emptyState();
+    return leads.map((l, i) => cardShell(l, i, `
+        <div class="lead-info">
+            <div class="info-row"><span class="info-label">Company</span>
+                <span class="info-value">${l['Company Name']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Phone</span>
+                <a href="tel:${formatPhone(l['Phone Number'])}" class="info-value phone-link">${formatPhone(l['Phone Number'])}</a></div>
+            <div class="info-row"><span class="info-label">City</span>
+                <span class="info-value">${l['Operating City']||'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Inventory</span>
+                <span class="info-value">${l[' Inventory Type (Flats / Villas / Plots / Commercial)']||'N/A'}</span></div>
+            ${l[' Contact Details']?`<div class="info-row"><span class="info-label">Contact</span><span class="info-value">${l[' Contact Details']}</span></div>`:''}
+            ${assignBlock(l)}
+        </div>
+        ${actionsBlock(l._id, l['Phone Number'])}
+    `)).join('');
+}
+
+function emptyState() {
+    return `<div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h3>No leads found</h3>
+        <p>Check back later for new leads</p>
+    </div>`;
+}
+
+/* ─── Fetch ─────────────────────────────────── */
+async function fetchLeads(sheet) {
+    showLoader();
+    try {
+        const res  = await fetch(API_CONFIG[sheet]);
+        let leads  = await res.json();
+        leads      = leads.reverse();
+        const filtered = leads.filter(l => l.AssignTo && String(l.AssignTo).trim());
+        allLeads[sheet] = filtered;
+        renderSheet(sheet, filtered);
+    } catch(e) {
+        console.error(e);
+        document.getElementById('cardsGrid').innerHTML = `<div class="empty-state"><h3>Error loading leads</h3><p>Please try again</p></div>`;
+    } finally {
+        hideLoader();
+    }
+}
+
+function renderSheet(sheet, leads) {
+    const grid = document.getElementById('cardsGrid');
+    const renderers = { buying: renderBuying, rental: renderRental, selling: renderSelling, agent: renderAgent };
+    grid.innerHTML = renderers[sheet](leads);
+    observeCards();
+}
+
+/* ─── Switch tab ────────────────────────────── */
+function switchTab(sheet) {
+    currentSheet = sheet;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.sheet === sheet));
+    const titles = { buying:'Buying Leads', rental:'Rental Leads', selling:'Selling Leads', agent:'Agent Leads' };
+    document.getElementById('pageTitle').textContent = titles[sheet];
+    document.getElementById('leadSearch').value = '';
+
+    if (allLeads[sheet]) renderSheet(sheet, allLeads[sheet]);
+    else fetchLeads(sheet);
+}
+
+/* ─── Tab click ─────────────────────────────── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.sheet));
+});
+
+/* ─── Delete ────────────────────────────────── */
+async function deleteLead(id) {
+    if (!confirm('⚠️ Delete this lead?')) return;
+    const map = { buying:'Leads', rental:'RentalLeads', selling:'sellingLeads', agent:'agentLeads' };
+    showLoader();
+    try {
+        const res  = await fetch('https://api.phishnix.site/api/delete-lead', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, collection: map[currentSheet] })
+        });
+        const data = await res.json();
+        if (data.success) { fetchLeads(currentSheet); }
+        else alert('❌ ' + data.error);
+    } catch(e) { alert('Error deleting lead'); hideLoader(); }
+}
+
+/* ─── Select mode ───────────────────────────── */
+document.getElementById('toggleSelectBtn').addEventListener('click', () => {
+    selectMode = !selectMode;
+    document.getElementById('toggleSelectLabel').textContent = selectMode ? 'Cancel' : 'Select';
+    document.getElementById('toggleSelectBtn').classList.toggle('active', selectMode);
+    document.getElementById('cardsGrid').classList.toggle('select-mode', selectMode);
+    document.getElementById('bulkStrip').classList.toggle('visible', selectMode);
+    if (!selectMode) {
+        selectedLeads.clear();
+        document.querySelectorAll('.card-checkbox').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.lead-card').forEach(c => c.classList.remove('selected'));
+        updateBulkCount();
+    }
+});
+
+document.addEventListener('change', e => {
+    if (!e.target.classList.contains('card-checkbox')) return;
+    const card  = e.target.closest('.lead-card');
+    const phone = card.dataset.phone;
+    const name  = card.dataset.name;
+    if (e.target.checked) { selectedLeads.set(phone, {name, phone}); card.classList.add('selected'); }
+    else                  { selectedLeads.delete(phone); card.classList.remove('selected'); }
+    updateBulkCount();
+});
+
+function updateBulkCount() {
+    document.getElementById('bulkCount').textContent = `${selectedLeads.size} selected`;
+}
+
+document.getElementById('selectAllBtn').addEventListener('click', () => {
+    document.querySelectorAll('.card-checkbox').forEach(cb => {
+        cb.checked = true;
+        const card = cb.closest('.lead-card');
+        card.classList.add('selected');
+        selectedLeads.set(card.dataset.phone, { name: card.dataset.name, phone: card.dataset.phone });
+    });
+    updateBulkCount();
+});
+
+document.getElementById('sendSelectedBtn').addEventListener('click', () => {
+    if (!selectedLeads.size) { alert('No leads selected'); return; }
+    const n = selectedLeads.size;
+    document.getElementById('modalSubtext').textContent = `Sending to ${n} lead${n>1?'s':''}.`;
+    document.getElementById('templateModal').classList.add('open');
+});
+
+/* ─── Templates ─────────────────────────────── */
+async function loadTemplates() {
+    try {
+        const res = await fetch('https://api.phishnix.site/api/wp-template');
+        const templates = await res.json();
+        wpTemplates = (templates || []).filter(Boolean);
+        populateDropdown();
+    } catch(e) { console.error(e); }
+}
+
+function populateDropdown() {
+    const sel = document.getElementById('templateSelect');
+    sel.innerHTML = wpTemplates.length
+        ? wpTemplates.map((t,i) => t?.name ? `<option value="${i}">${t.name}</option>` : '').join('')
+        : '<option>No Templates Available</option>';
+}
+
+document.getElementById('closeTemplateModal').addEventListener('click', () => {
+    document.getElementById('templateModal').classList.remove('open');
+});
+
+document.getElementById('templateModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('templateModal'))
+        document.getElementById('templateModal').classList.remove('open');
+});
+
+document.getElementById('confirmSendBtn').addEventListener('click', async () => {
+    const idx      = document.getElementById('templateSelect').value;
+    const template = wpTemplates[idx];
+    const leads    = Array.from(selectedLeads.values());
+    const mediaUrl = template.media ? `https://api.phishnix.site/uploads/${template.media}` : '';
+    const payload  = { type:'tempWPmsg', templateName:template.name, message:template.message, mediaUrl, leads };
+    try {
+        await fetch('https://n8n.phishnix.site/webhook/nishahomesNotification', {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        alert('✅ Bulk message sent successfully!');
+    } catch(e) { alert('❌ Failed to send'); }
+    document.getElementById('templateModal').classList.remove('open');
+});
+
+/* ─── Search ────────────────────────────────── */
+document.getElementById('leadSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    document.querySelectorAll('.lead-card').forEach(card => {
+        const match = ['name','phone','location','assigned'].some(k => (card.dataset[k]||'').toLowerCase().includes(q));
+        card.style.display = match ? '' : 'none';
+    });
+});
+
+
+
+
+//re assign logic 
+const TEAM_ASSIGN_URL = "https://api.phishnix.site/api/get-team-assign";
+let currentLeadId = null;
+
+let reassignPhone = null;
+
+async function openReassignModal(phone) {
+    reassignPhone = phone;
+    document.getElementById('reassignPhone').value = phone;
+
+    try {
+        const res = await fetch(TEAM_ASSIGN_URL);
+        const employees = await res.json();
+
+        const select = document.getElementById('newEmployeeSelect');
+        select.innerHTML = '';
+
+        employees.forEach(emp => {
+            select.innerHTML += `
+                <option value="${emp['Employee number']}">
+                    ${emp['Employee name']}
+                </option>
+            `;
+        });
+
+        document.getElementById('reassignModal').classList.add('open');
+
+    } catch (err) {
+        console.error(err);
+        alert("Error loading employees");
+    }
+}
+
+function closeReassignModal() {
+    document.getElementById('reassignModal').classList.remove('open');
+}
+
+async function submitReassign() {
+
+    const phone = document.getElementById('reassignPhone').value;
+    const newEmployeeNumber = document.getElementById('newEmployeeSelect').value;
+
+    const collectionName = "Leads";
+
+    showLoader();
+
+    try {
+        const res = await fetch(`${BASE_API_URL}/reassign-lead`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                phone: phone.replace("+", ""),
+                newEmployeeNumber: newEmployeeNumber,
+                collection: collectionName
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert("✅ Lead reassigned successfully");
+            closeReassignModal();
+            fetchLeads(currentSheet);
+        } else {
+            alert("❌ " + data.error);
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert("Error reassigning");
+    } finally {
+        hideLoader();
+    }
+}
+
+
+function getCollectionName(type) {
+    if (type === 'selling') return 'sellingLeads';
+    if (type === 'rental') return 'RentalLeads';
+    if (type === 'agent') return 'agentLeads';
+    if (type === 'buying') return 'Leads';
+}
+
+
+
+/* ─── Init ──────────────────────────────────── */
+window.addEventListener('load', () => {
+    loadTemplates();
+    setTimeout(() => { hideLoader(); fetchLeads('buying'); }, 700);
+});
+</script>
+</body>
+</html>

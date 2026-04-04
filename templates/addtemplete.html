@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WP Templates</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Work+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #2D3142;
+  --accent: #EF8354;
+  --accent-light: #FFA07A;
+  --accent-glow: rgba(239,131,84,0.25);
+  --bg: #FAF9F6;
+  --card-bg: #FFFFFF;
+  --text: #2D3142;
+  --text-light: #6B7280;
+  --border: #E5E7EB;
+  --border-focus: rgba(239,131,84,0.5);
+  --shadow: rgba(45,49,66,0.07);
+  --shadow-md: rgba(45,49,66,0.12);
+  --shadow-lg: rgba(45,49,66,0.18);
+  --glass: rgba(255,255,255,0.7);
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  --spring: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+
+body {
+  font-family:'Work Sans',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* Noise overlay */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events:none; z-index:9999; opacity:0.5;
+}
+
+/* ─── LOADER ─── */
+.loader-overlay {
+  position:fixed; inset:0; background:var(--bg);
+  display:flex; align-items:center; justify-content:center;
+  z-index:10000; transition:opacity 0.6s ease, visibility 0.6s ease;
+}
+.loader-overlay.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+.loader-inner {
+  display:flex; flex-direction:column; align-items:center; gap:1.5rem;
+  animation:loaderPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+.loader-ring {
+  width:56px; height:56px; border-radius:50%;
+  border:3px solid var(--border); border-top-color:var(--accent);
+  animation:spin 0.8s linear infinite;
+  box-shadow:0 0 20px var(--accent-glow);
+}
+.loader-text {
+  font-family:'Playfair Display',serif; font-size:1.3rem;
+  color:var(--primary); letter-spacing:2px;
+  animation:pulse 1.4s ease infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+@keyframes loaderPop { from{opacity:0;transform:scale(0.6);} to{opacity:1;transform:scale(1);} }
+
+/* ─── NAV ─── */
+nav {
+  background:rgba(250,249,246,0.88);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  border-bottom:1px solid rgba(229,231,235,0.6);
+  box-shadow:0 1px 30px var(--shadow);
+  position:sticky; top:0; z-index:1000;
+  animation:slideDown 0.6s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+@keyframes slideDown { from{transform:translateY(-100%);opacity:0;} to{transform:translateY(0);opacity:1;} }
+
+.nav-inner {
+  max-width:1400px; margin:0 auto;
+  padding:clamp(0.75rem,2vw,1.25rem) clamp(1rem,4vw,2rem);
+  display:flex; align-items:center; justify-content:space-between;
+  gap:0.75rem; flex-wrap:wrap;
+}
+.logo {
+  font-family:'Playfair Display',serif;
+  font-size:clamp(1.5rem,4vw,1.9rem); font-weight:900;
+  background:linear-gradient(135deg,var(--primary) 0%,var(--accent) 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  white-space:nowrap; flex-shrink:0;
+}
+.nav-right { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
+
+.back-btn {
+  display:inline-flex; align-items:center; gap:0.45rem;
+  padding:0.6rem 1.1rem; min-height:44px;
+  border:1.5px solid var(--border); background:transparent; color:var(--text);
+  border-radius:var(--radius-sm); font-family:'Work Sans',sans-serif;
+  font-size:0.875rem; font-weight:500; text-decoration:none;
+  transition:var(--spring); white-space:nowrap;
+}
+.back-btn:hover { border-color:var(--accent); color:var(--accent); transform:translateX(-3px); background:rgba(239,131,84,0.05); }
+.back-btn svg { transition:transform 0.3s ease; flex-shrink:0; }
+.back-btn:hover svg { transform:translateX(-3px); }
+
+.add-btn {
+  display:inline-flex; align-items:center; gap:0.45rem;
+  padding:0.65rem 1.3rem; min-height:44px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:white; border:none; border-radius:var(--radius-sm);
+  font-family:'Work Sans',sans-serif; font-size:0.9rem; font-weight:600;
+  cursor:pointer; transition:var(--spring); letter-spacing:0.3px;
+  box-shadow:0 4px 14px rgba(239,131,84,0.3); white-space:nowrap;
+  position:relative; overflow:hidden;
+}
+.add-btn::after {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg,transparent,rgba(255,255,255,0.15),transparent);
+  transform:translateX(-100%); transition:transform 0.5s ease;
+}
+.add-btn:hover::after { transform:translateX(100%); }
+.add-btn:hover { transform:translateY(-3px) scale(1.03); box-shadow:0 8px 24px rgba(239,131,84,0.45); }
+.add-btn:active { transform:scale(0.97); }
+.add-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+.add-btn .plus { font-size:1.15rem; line-height:1; }
+
+/* ─── HERO ─── */
+.hero {
+  max-width:1400px; margin:0 auto;
+  padding:clamp(2rem,5vw,4rem) clamp(1rem,4vw,2rem) clamp(1rem,3vw,2rem);
+  display:flex; align-items:flex-end; justify-content:space-between;
+  gap:1rem; flex-wrap:wrap;
+  animation:fadeInUp 0.7s ease both 0.15s;
+}
+@keyframes fadeInUp { from{opacity:0;transform:translateY(28px);} to{opacity:1;transform:translateY(0);} }
+
+.hero-text h1 {
+  font-family:'Playfair Display',serif;
+  font-size:clamp(2.2rem,7vw,4.5rem);
+  font-weight:900; color:var(--primary); letter-spacing:-2px; line-height:1;
+}
+.hero-text h1 span {
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.hero-text p { margin-top:0.6rem; font-size:clamp(0.9rem,2vw,1.1rem); color:var(--text-light); font-weight:300; }
+.hero-count {
+  font-family:'Playfair Display',serif; font-size:clamp(4rem,10vw,6rem);
+  font-weight:900; color:var(--border); line-height:1; user-select:none;
+  transition:color 0.5s ease;
+}
+
+/* ─── CONTAINER ─── */
+.container { max-width:1400px; margin:0 auto; padding:clamp(1rem,3vw,2rem) clamp(1rem,4vw,2rem) clamp(2rem,5vw,4rem); }
+
+/* ─── CARDS GRID ─── */
+.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:clamp(1rem,3vw,2rem); }
+
+/* ─── SKELETON LOADER ─── */
+.skeleton-card { background:var(--card-bg); border-radius:var(--radius-lg); overflow:hidden; box-shadow:0 4px 20px var(--shadow); }
+.skeleton-media { height:180px; background:linear-gradient(90deg,#f0ede8 25%,#e8e4de 50%,#f0ede8 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; }
+.skeleton-body { padding:1.75rem; }
+.skeleton-line { height:12px; border-radius:6px; background:linear-gradient(90deg,#f0ede8 25%,#e8e4de 50%,#f0ede8 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; margin-bottom:12px; }
+.skeleton-line.short { width:40%; }
+.skeleton-line.medium { width:70%; }
+.skeleton-line.title { height:18px; width:85%; margin-bottom:16px; }
+@keyframes shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+/* ─── CARD ─── */
+.wp-card {
+  background:var(--card-bg); border-radius:var(--radius-lg);
+  overflow:hidden; box-shadow:0 2px 12px var(--shadow), 0 1px 3px var(--shadow);
+  transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.4s ease;
+  position:relative; animation:cardIn 0.55s cubic-bezier(0.34,1.56,0.64,1) both;
+  cursor:default; will-change:transform;
+}
+@keyframes cardIn { from{opacity:0;transform:translateY(36px) scale(0.94);} to{opacity:1;transform:translateY(0) scale(1);} }
+
+.wp-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg,var(--accent),var(--accent-light));
+  transform:scaleX(0); transform-origin:left; transition:transform 0.35s ease;
+  z-index:1;
+}
+.wp-card:hover::before { transform:scaleX(1); }
+.wp-card:hover {
+  transform:translateY(-8px) scale(1.012);
+  box-shadow:0 20px 50px var(--shadow-md), 0 8px 20px var(--shadow), 0 0 0 1px rgba(239,131,84,0.08);
+}
+
+.card-media { position:relative; width:100%; background:linear-gradient(135deg,#f5f0ea,#e8e2d9); overflow:hidden; }
+.card-media img, .card-media video {
+  width:100%; display:block; max-height:260px; object-fit:cover;
+  transition:transform 0.5s ease;
+}
+.wp-card:hover .card-media img, .wp-card:hover .card-media video { transform:scale(1.06); }
+
+.no-media {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:130px; gap:0.4rem; color:var(--text-light);
+}
+.no-media svg { opacity:0.3; }
+.no-media span { font-size:0.8rem; font-weight:500; letter-spacing:0.5px; }
+
+.card-body { padding:clamp(1.25rem,3vw,1.75rem); }
+.card-tag {
+  display:inline-block; padding:0.25rem 0.75rem;
+  background:rgba(239,131,84,0.1); color:var(--accent);
+  border-radius:6px; font-size:0.7rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:1px; margin-bottom:0.65rem;
+}
+.card-name {
+  font-family:'Playfair Display',serif; font-size:clamp(1.2rem,3vw,1.5rem);
+  font-weight:700; color:var(--primary); margin-bottom:0.65rem; line-height:1.25;
+}
+.card-message {
+  font-size:0.9rem; color:var(--text-light); line-height:1.7;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.card-footer {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:1.1rem; padding-top:0.9rem; border-top:1px solid var(--border);
+}
+.card-type-badge { display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; color:var(--text-light); font-weight:500; }
+.wa-icon {
+  width:20px; height:20px; background:#25D366; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.wa-icon svg { width:12px; height:12px; fill:white; }
+
+.delete-btn {
+  width:34px; height:34px; min-height:34px;
+  border:none; background:rgba(239,68,68,0.06);
+  color:#EF4444; border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:var(--transition);
+  opacity:0; pointer-events:none;
+}
+.wp-card:hover .delete-btn { opacity:1; pointer-events:auto; }
+.delete-btn:hover { background:#EF4444; color:white; transform:scale(1.1); }
+@media (hover:none) { .delete-btn { opacity:1; pointer-events:auto; } }
+
+/* ─── EMPTY STATE ─── */
+.empty-state { grid-column:1/-1; text-align:center; padding:clamp(3rem,8vw,5rem) 2rem; animation:fadeInUp 0.5s ease; }
+.empty-icon { font-size:clamp(3.5rem,8vw,5rem); margin-bottom:1rem; display:block; animation:float 3s ease-in-out infinite; }
+@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-12px);} }
+.empty-state h3 { font-family:'Playfair Display',serif; font-size:clamp(1.5rem,4vw,2rem); color:var(--primary); margin-bottom:0.5rem; }
+.empty-state p { color:var(--text-light); font-size:1rem; }
+
+/* ─── ERROR BANNER ─── */
+.error-banner { max-width:1400px; margin:0 auto; padding:0 clamp(1rem,4vw,2rem) 1.5rem; animation:fadeInUp 0.4s ease; }
+.error-inner {
+  background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.18);
+  border-radius:var(--radius-md); padding:1rem 1.5rem;
+  color:#DC2626; font-size:0.875rem; font-weight:500;
+  display:flex; align-items:center; gap:0.5rem;
+}
+
+/* ─── MODAL ─── */
+.modal-overlay {
+  position:fixed; inset:0;
+  background:rgba(30,34,50,0.6);
+  backdrop-filter:blur(10px) saturate(150%);
+  -webkit-backdrop-filter:blur(10px);
+  display:none; align-items:center; justify-content:center;
+  z-index:5000; padding:clamp(0.5rem,3vw,1rem);
+  transition:opacity 0.25s ease;
+}
+.modal-overlay.open { display:flex; animation:overlayIn 0.25s ease; }
+@keyframes overlayIn { from{opacity:0;} to{opacity:1;} }
+
+.modal {
+  background:var(--card-bg); border-radius:var(--radius-xl);
+  padding:clamp(1.5rem,4vw,2.5rem);
+  width:100%; max-width:520px;
+  max-height:calc(100dvh - 2rem);
+  overflow-y:auto; position:relative;
+  box-shadow:0 30px 80px rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.05);
+  animation:modalIn 0.45s cubic-bezier(0.34,1.56,0.64,1);
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+@media (max-width:480px) {
+  .modal-overlay { align-items:flex-end; padding:0; }
+  .modal {
+    max-width:100%; border-bottom-left-radius:0; border-bottom-right-radius:0;
+    max-height:92dvh; animation:modalInMobile 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes modalInMobile { from{opacity:0;transform:translateY(100%);} to{opacity:1;transform:translateY(0);} }
+}
+@keyframes modalIn { from{opacity:0;transform:scale(0.78) translateY(30px);} to{opacity:1;transform:scale(1) translateY(0);} }
+
+.modal-close {
+  position:absolute; top:1.25rem; right:1.25rem;
+  width:36px; height:36px; border:none; background:var(--bg);
+  border-radius:50%; font-size:1.2rem;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; color:var(--text-light); transition:var(--spring);
+  z-index:1;
+}
+.modal-close:hover { background:var(--accent); color:white; transform:rotate(90deg) scale(1.1); }
+
+.modal-title { font-family:'Playfair Display',serif; font-size:clamp(1.5rem,5vw,2rem); font-weight:900; color:var(--primary); margin-bottom:0.2rem; }
+.modal-sub { color:var(--text-light); font-size:0.875rem; margin-bottom:1.75rem; line-height:1.5; }
+
+/* ─── FORM ─── */
+.form-group { margin-bottom:1.4rem; }
+.form-label { display:block; font-size:0.75rem; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:0.55rem; }
+
+.form-input, .form-textarea {
+  width:100%; padding:0.9rem 1rem;
+  border:1.5px solid var(--border); border-radius:var(--radius-md);
+  font-family:'Work Sans',sans-serif; font-size:0.95rem; color:var(--text);
+  background:var(--bg); transition:var(--transition); outline:none;
+  min-height:44px;
+}
+.form-textarea { resize:vertical; min-height:110px; line-height:1.65; }
+.form-input:focus, .form-textarea:focus {
+  border-color:var(--accent);
+  box-shadow:0 0 0 4px rgba(239,131,84,0.1), 0 2px 8px var(--shadow);
+  background:white;
+}
+.form-input::placeholder, .form-textarea::placeholder { color:var(--text-light); opacity:0.7; }
+
+.file-upload-area {
+  border:2px dashed var(--border); border-radius:var(--radius-md);
+  padding:clamp(1.25rem,4vw,2rem) 1rem; text-align:center;
+  cursor:pointer; transition:var(--transition); background:var(--bg);
+}
+.file-upload-area:hover, .file-upload-area.dragover {
+  border-color:var(--accent); background:rgba(239,131,84,0.04);
+  box-shadow:0 0 0 4px rgba(239,131,84,0.06);
+}
+.file-upload-area input { display:none; }
+.file-icon { font-size:2rem; margin-bottom:0.4rem; }
+.file-upload-area p { font-size:0.875rem; color:var(--text-light); line-height:1.5; }
+.file-upload-area p strong { color:var(--accent); }
+.file-name { display:none; margin-top:0.65rem; font-size:0.8rem; font-weight:600; color:var(--accent); background:rgba(239,131,84,0.08); padding:0.35rem 0.9rem; border-radius:6px; }
+
+.submit-btn {
+  width:100%; padding:1rem;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:white; border:none; border-radius:var(--radius-md);
+  font-family:'Work Sans',sans-serif; font-size:1rem; font-weight:600;
+  cursor:pointer; letter-spacing:0.4px;
+  transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
+  box-shadow:0 4px 15px rgba(239,131,84,0.3);
+  position:relative; overflow:hidden; min-height:50px;
+}
+.submit-btn::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg,transparent,rgba(255,255,255,0.18),transparent);
+  transform:translateX(-100%); transition:transform 0.5s ease;
+}
+.submit-btn:hover::before { transform:translateX(100%); }
+.submit-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(239,131,84,0.45); }
+.submit-btn:active { transform:scale(0.98); }
+.submit-btn:disabled { opacity:0.55; cursor:not-allowed; transform:none; box-shadow:none; }
+.submit-btn .label { display:flex; align-items:center; justify-content:center; gap:0.5rem; }
+.submit-btn .loading { display:none; align-items:center; justify-content:center; gap:0.5rem; }
+.submit-btn.loading-state .label { display:none; }
+.submit-btn.loading-state .loading { display:flex; }
+
+.btn-spinner {
+  width:16px; height:16px; border:2px solid rgba(255,255,255,0.3);
+  border-top-color:white; border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0;
+}
+
+/* ─── AI PANEL STATUS ─── */
+.ai-status {
+  display:none; align-items:center; gap:0.6rem;
+  padding:0.75rem 1rem; border-radius:var(--radius-md);
+  font-size:0.85rem; font-weight:500; margin-top:0.5rem;
+  animation:fadeInUp 0.3s ease;
+}
+.ai-status.transcribing { display:flex; background:rgba(59,130,246,0.08); color:#1D4ED8; border:1px solid rgba(59,130,246,0.2); }
+.ai-status.generating { display:flex; background:rgba(124,58,237,0.08); color:#5B21B6; border:1px solid rgba(124,58,237,0.2); }
+.ai-status.error { display:flex; background:rgba(239,68,68,0.08); color:#DC2626; border:1px solid rgba(239,68,68,0.2); }
+.ai-status.success { display:flex; background:rgba(16,185,129,0.08); color:#065F46; border:1px solid rgba(16,185,129,0.2); }
+.status-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+  animation:pulse 1.2s ease infinite;
+}
+.transcribing .status-dot { background:#3B82F6; }
+.generating .status-dot { background:#7C3AED; }
+.error .status-dot { background:#EF4444; animation:none; }
+.success .status-dot { background:#10B981; animation:none; }
+
+/* ─── TOAST ─── */
+.toast {
+  position:fixed; bottom:clamp(1rem,3vw,2rem); right:clamp(1rem,3vw,2rem);
+  z-index:9000; padding:0.9rem 1.4rem; border-radius:var(--radius-md);
+  font-size:0.9rem; font-weight:500;
+  display:flex; align-items:center; gap:0.65rem;
+  box-shadow:0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);
+  transform:translateY(120px); opacity:0;
+  transition:all 0.45s cubic-bezier(0.34,1.56,0.64,1);
+  max-width:min(360px, calc(100vw - 2rem));
+  pointer-events:none;
+}
+.toast.show { transform:translateY(0); opacity:1; pointer-events:auto; }
+.toast.success { background:white; border-left:4px solid #10B981; color:#065F46; }
+.toast.error { background:white; border-left:4px solid #EF4444; color:#991B1B; }
+.toast-icon { flex-shrink:0; font-size:1rem; }
+
+/* ════════════════════════════════════════
+   VOICE BUTTON — WhatsApp-grade UX
+════════════════════════════════════════ */
+.voice-btn-wrap { flex:1; position:relative; min-width:0; }
+
+#voiceBtn {
+  width:100%; display:flex; align-items:center; justify-content:center;
+  gap:8px; padding:14px 18px; min-height:50px;
+  border-radius:var(--radius-md); border:1.5px solid var(--border);
+  background:white; color:var(--primary);
+  font-family:'Work Sans',sans-serif; font-size:0.9rem; font-weight:600;
+  cursor:pointer; letter-spacing:0.3px;
+  transition:border-color 0.3s ease, background 0.3s ease, color 0.3s ease,
+             transform 0.4s cubic-bezier(0.34,1.56,0.64,1),
+             box-shadow 0.3s ease;
+  position:relative; overflow:hidden;
+  -webkit-tap-highlight-color:transparent; user-select:none;
+  will-change:transform;
+}
+/* Ripple layer */
+#voiceBtn::after {
+  content:''; position:absolute; inset:0; border-radius:inherit;
+  background:radial-gradient(circle at center, rgba(255,255,255,0.35) 0%, transparent 70%);
+  transform:scale(0); opacity:0; pointer-events:none;
+  transition:transform 0.5s ease, opacity 0.5s ease;
+}
+#voiceBtn:active::after { transform:scale(2.5); opacity:1; transition:none; }
+
+.idle-inner { display:flex; align-items:center; gap:8px; }
+.mic-icon { display:flex; align-items:center; transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+.btn-label { transition:all 0.25s ease; }
+
+#voiceBtn:hover {
+  border-color:#25D366; color:#0f7c4e;
+  background:rgba(37,211,102,0.04);
+  transform:translateY(-2px);
+  box-shadow:0 6px 18px rgba(37,211,102,0.18);
+}
+#voiceBtn:hover .mic-icon { transform:scale(1.18) rotate(-6deg); }
+#voiceBtn:active { transform:scale(0.96); }
+
+/* ── RECORDING STATE ── */
+#voiceBtn.recording {
+  background:linear-gradient(135deg,#ef4444,#dc2626) !important;
+  border-color:transparent !important; color:white !important;
+  transform:scale(1.01);
+  box-shadow:0 6px 24px rgba(239,68,68,0.4), 0 0 0 0 rgba(239,68,68,0.3) !important;
+  animation:recPulse 2s ease-in-out infinite !important;
+}
+@keyframes recPulse {
+  0%,100% { box-shadow:0 6px 24px rgba(239,68,68,0.4), 0 0 0 0 rgba(239,68,68,0.2); }
+  50%      { box-shadow:0 10px 36px rgba(239,68,68,0.6), 0 0 0 10px rgba(239,68,68,0.06); }
+}
+
+.rec-inner { display:none; align-items:center; justify-content:space-between; width:100%; gap:8px; }
+#voiceBtn.recording .rec-inner  { display:flex; }
+#voiceBtn.recording .idle-inner { display:none !important; }
+
+.rec-dot {
+  width:9px; height:9px; border-radius:50%; background:#fff; flex-shrink:0;
+  animation:dotBlink 1s ease-in-out infinite;
+}
+@keyframes dotBlink { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.35;transform:scale(0.65);} }
+
+.rec-timer {
+  font-family:'Work Sans',sans-serif; font-size:0.85rem; font-weight:700;
+  letter-spacing:1.5px; color:rgba(255,255,255,0.92); min-width:34px; flex-shrink:0;
+  font-variant-numeric:tabular-nums;
+}
+
+.rec-wave { display:flex; align-items:center; gap:2.5px; flex:1; justify-content:center; height:28px; }
+.rec-wave .bar {
+  width:3px; border-radius:3px; background:rgba(255,255,255,0.8);
+  animation:waveDance 0.6s ease-in-out infinite; transform-origin:center;
+}
+.rec-wave .bar:nth-child(1)  { height:7px;  animation-delay:0.00s; animation-duration:0.52s; }
+.rec-wave .bar:nth-child(2)  { height:13px; animation-delay:0.07s; animation-duration:0.63s; }
+.rec-wave .bar:nth-child(3)  { height:19px; animation-delay:0.14s; animation-duration:0.49s; }
+.rec-wave .bar:nth-child(4)  { height:24px; animation-delay:0.21s; animation-duration:0.71s; }
+.rec-wave .bar:nth-child(5)  { height:28px; animation-delay:0.09s; animation-duration:0.44s; }
+.rec-wave .bar:nth-child(6)  { height:20px; animation-delay:0.31s; animation-duration:0.58s; }
+.rec-wave .bar:nth-child(7)  { height:14px; animation-delay:0.17s; animation-duration:0.53s; }
+.rec-wave .bar:nth-child(8)  { height:22px; animation-delay:0.04s; animation-duration:0.67s; }
+.rec-wave .bar:nth-child(9)  { height:16px; animation-delay:0.26s; animation-duration:0.48s; }
+.rec-wave .bar:nth-child(10) { height:10px; animation-delay:0.13s; animation-duration:0.60s; }
+.rec-wave .bar:nth-child(11) { height:18px; animation-delay:0.36s; animation-duration:0.46s; }
+.rec-wave .bar:nth-child(12) { height:11px; animation-delay:0.20s; animation-duration:0.68s; }
+@keyframes waveDance { 0%,100%{transform:scaleY(0.3);opacity:0.5;} 50%{transform:scaleY(1);opacity:1;} }
+
+.rec-stop {
+  width:26px; height:26px; border-radius:6px;
+  background:rgba(255,255,255,0.22); border:1.5px solid rgba(255,255,255,0.3);
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  transition:background 0.2s ease;
+}
+.rec-stop svg { width:10px; height:10px; fill:white; }
+#voiceBtn.recording:hover .rec-stop { background:rgba(255,255,255,0.38); }
+
+/* Transcribing state */
+#voiceBtn.transcribing {
+  background:linear-gradient(135deg,#3B82F6,#2563EB) !important;
+  border-color:transparent !important; color:white !important;
+  cursor:wait !important;
+  box-shadow:0 6px 24px rgba(59,130,246,0.4) !important;
+  animation:none !important;
+}
+.transcribing-inner { display:none; align-items:center; gap:10px; }
+#voiceBtn.transcribing .transcribing-inner { display:flex; }
+#voiceBtn.transcribing .idle-inner, #voiceBtn.transcribing .rec-inner { display:none !important; }
+.transcribe-spinner {
+  width:16px; height:16px; border:2px solid rgba(255,255,255,0.3);
+  border-top-color:white; border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0;
+}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:768px) {
+  .nav-inner { gap:0.5rem; }
+  .back-btn span { display:none; }
+  .back-btn { padding:0.6rem 0.75rem; }
+  .modal { padding:1.5rem; }
+  .modal-title { font-size:1.5rem; }
+  #voiceBtn { font-size:0.85rem; padding:12px 14px; }
+  .rec-wave .bar { width:2.5px; }
+  .cards-grid { gap:1rem; }
+}
+@media(max-width:480px) {
+  .add-btn span:not(.plus) { display:none; }
+  .hero-count { display:none; }
+  .nav-right { gap:0.4rem; }
+}
+@media(max-width:360px) {
+  .add-btn { padding:0.6rem 0.8rem; }
+  .logo { font-size:1.3rem; }
+}
+
+/* ─── FADE IN for textarea after transcription ─── */
+@keyframes textFadeIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+.text-arrived { animation:textFadeIn 0.45s ease; }
+</style>
+</head>
+<body>
+
+<!-- Loader -->
+<div class="loader-overlay" id="loader">
+  <div class="loader-inner">
+    <div class="loader-ring"></div>
+    <div class="loader-text">Loading Templates…</div>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav>
+  <div class="nav-inner">
+    <div class="logo">WP Studio</div>
+    <div class="nav-right">
+      <a href="/" class="back-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back Home</span>
+      </a>
+      <button class="add-btn" id="aiTemplateBtn" style="background:linear-gradient(135deg,#7C3AED,#A855F7);box-shadow:0 4px 14px rgba(124,58,237,0.3);">
+        <span>✨</span>
+        <span>AI Template</span>
+      </button>
+      <button class="add-btn" id="openModalBtn">
+        <span class="plus">+</span>
+        <span>New Template</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-text">
+    <h1>WP <span>Templates</span></h1>
+    <p>Craft &amp; manage your WhatsApp message templates</p>
+  </div>
+  <div class="hero-count" id="heroCount">00</div>
+</div>
+
+<!-- Error Banner -->
+<div class="error-banner" id="errorBanner" style="display:none;">
+  <div class="error-inner">
+    <span>⚠️</span>
+    <span id="errorMsg">Could not connect to server. Showing offline state.</span>
+  </div>
+</div>
+
+<!-- Cards -->
+<div class="container">
+  <div class="cards-grid" id="wpCards"></div>
+</div>
+
+<!-- New Template Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" id="closeModal" title="Close">✕</button>
+    <h2 class="modal-title">New Template</h2>
+    <p class="modal-sub">Fill in the details to create a WhatsApp message template</p>
+    <form id="wpForm" enctype="multipart/form-data">
+      <div class="form-group">
+        <label class="form-label" for="nameInput">Template Name</label>
+        <input class="form-input" id="nameInput" type="text" name="name" placeholder="e.g. Welcome Message" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="msgInput">WhatsApp Message</label>
+        <textarea class="form-textarea" id="msgInput" name="message" placeholder="Hello {{name}}, welcome to our service! 🎉" required></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Media (Optional)</label>
+        <div class="file-upload-area" id="uploadArea">
+          <input type="file" name="media" id="mediaInput" accept="image/*,video/*">
+          <div class="file-icon">🖼️</div>
+          <p>Drop your image or video here<br><strong>or click to browse</strong></p>
+          <span class="file-name" id="fileName"></span>
+        </div>
+      </div>
+      <button type="submit" class="submit-btn" id="submitBtn">
+        <span class="label">✦ Create Template</span>
+        <span class="loading"><span class="btn-spinner"></span> Creating…</span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- AI Prompt Modal -->
+<div class="modal-overlay" id="aiModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAIModal()">✕</button>
+    <h2 class="modal-title">AI Template Generator</h2>
+    <p class="modal-sub">Describe what WhatsApp message you want</p>
+    <div class="form-group">
+      <label class="form-label">Prompt</label>
+      <textarea class="form-textarea" id="aiPrompt" placeholder="Example: create a WhatsApp message to invite customer for site visit…" style="min-height:90px;"></textarea>
+    </div>
+
+    <!-- Voice + Generate row -->
+    <div style="display:flex; gap:10px; margin-bottom:14px; align-items:stretch;">
+      <div class="voice-btn-wrap">
+        <button id="voiceBtn" type="button" aria-label="Voice input">
+
+          <!-- Idle -->
+          <span class="idle-inner">
+            <span class="mic-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </span>
+            <span class="btn-label">🎤 Speak</span>
+          </span>
+
+          <!-- Recording -->
+          <span class="rec-inner">
+            <span class="rec-dot"></span>
+            <span class="rec-timer" id="recTimer">0:00</span>
+            <span class="rec-wave">
+              <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+              <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+              <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+              <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+            </span>
+            <span class="rec-stop">
+              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            </span>
+          </span>
+
+          <!-- Transcribing -->
+          <span class="transcribing-inner">
+            <span class="transcribe-spinner"></span>
+            <span>Transcribing…</span>
+          </span>
+
+        </button>
+      </div>
+
+      <button class="submit-btn" id="generateBtn" onclick="generateTemplate()" type="button" style="flex:2; width:auto; min-height:50px;">
+        <span class="label">✨ Generate</span>
+        <span class="loading"><span class="btn-spinner"></span> Generating…</span>
+      </button>
+    </div>
+
+    <!-- Status feedback bar -->
+    <div class="ai-status" id="aiStatus">
+      <span class="status-dot"></span>
+      <span id="aiStatusText"></span>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="alert" aria-live="polite">
+  <span class="toast-icon" id="toastIcon">✅</span>
+  <span id="toastMsg">Template created!</span>
+</div>
+
+<script>
+const BASE = "https://api.phishnix.site/";
+
+/* ─── HELPERS ─── */
+function showToast(msg, type = "success") {
+  const t = document.getElementById("toast");
+  document.getElementById("toastIcon").textContent = type === "success" ? "✅" : "❌";
+  document.getElementById("toastMsg").textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+function hideLoader() {
+  document.getElementById("loader").classList.add("hidden");
+}
+
+function updateCount(n) {
+  document.getElementById("heroCount").textContent = String(n).padStart(2, "0");
+}
+
+function setAIStatus(type, text) {
+  const el = document.getElementById("aiStatus");
+  const tx = document.getElementById("aiStatusText");
+  el.className = "ai-status";
+  if (type) {
+    el.classList.add(type);
+    tx.textContent = text;
+  }
+}
+
+function clearAIStatus() {
+  const el = document.getElementById("aiStatus");
+  el.className = "ai-status";
+}
+
+/* ─── MODAL ─── */
+const modalOverlay = document.getElementById("modalOverlay");
+
+document.getElementById("openModalBtn").addEventListener("click", () => {
+  modalOverlay.classList.add("open");
+  setTimeout(() => document.getElementById("nameInput").focus(), 220);
+});
+document.getElementById("closeModal").addEventListener("click", () => modalOverlay.classList.remove("open"));
+modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) modalOverlay.classList.remove("open"); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    modalOverlay.classList.remove("open");
+    document.getElementById("aiModal").classList.remove("open");
+  }
+});
+
+/* ─── FILE UPLOAD ─── */
+const uploadArea = document.getElementById("uploadArea");
+const mediaInput = document.getElementById("mediaInput");
+const fileNameEl = document.getElementById("fileName");
+
+uploadArea.addEventListener("click", () => mediaInput.click());
+mediaInput.addEventListener("change", () => {
+  if (mediaInput.files[0]) {
+    fileNameEl.textContent = "📎 " + mediaInput.files[0].name;
+    fileNameEl.style.display = "inline-block";
+  }
+});
+uploadArea.addEventListener("dragover", e => { e.preventDefault(); uploadArea.classList.add("dragover"); });
+uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("dragover"));
+uploadArea.addEventListener("drop", e => {
+  e.preventDefault(); uploadArea.classList.remove("dragover");
+  if (e.dataTransfer.files[0]) {
+    mediaInput.files = e.dataTransfer.files;
+    fileNameEl.textContent = "📎 " + e.dataTransfer.files[0].name;
+    fileNameEl.style.display = "inline-block";
+  }
+});
+
+/* ─── RENDER CARDS ─── */
+function showSkeletons(count = 3) {
+  const container = document.getElementById("wpCards");
+  container.innerHTML = Array.from({ length: count }, () => `
+    <div class="skeleton-card">
+      <div class="skeleton-media"></div>
+      <div class="skeleton-body">
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line"></div>
+      </div>
+    </div>`).join('');
+}
+
+function renderCards(templates) {
+  const container = document.getElementById("wpCards");
+  updateCount(templates.length);
+  if (!templates.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">💬</span>
+        <h3>No templates yet</h3>
+        <p>Click <strong>New Template</strong> to get started</p>
+      </div>`;
+    return;
+  }
+  container.innerHTML = "";
+  templates.forEach((t, i) => {
+    let mediaHTML = `<div class="no-media">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="3"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+      <span>No Media Attached</span>
+    </div>`;
+    if (t.type === "image") mediaHTML = `<img src="${BASE}/uploads/${t.media}" alt="${t.name}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'no-media\\'><span>⚠️ Image unavailable</span></div>'">`;
+    if (t.type === "video") mediaHTML = `<video controls preload="metadata"><source src="${BASE}/uploads/${t.media}"></video>`;
+
+    const card = document.createElement("div");
+    card.className = "wp-card";
+    card.style.animationDelay = `${i * 0.06}s`;
+    card.innerHTML = `
+      <div class="card-media">${mediaHTML}</div>
+      <div class="card-body">
+        <div class="card-tag">WhatsApp</div>
+        <div class="card-name">${escapeHTML(t.name)}</div>
+        <div class="card-message">${escapeHTML(t.message)}</div>
+        <div class="card-footer">
+          <div class="card-type-badge">
+            <div class="wa-icon">
+              <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            </div>
+            ${t.type ? t.type.charAt(0).toUpperCase() + t.type.slice(1) : 'Text'} Template
+          </div>
+          <button class="delete-btn" title="Delete template" onclick="deleteTemplate('${t._id || t.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ─── LOAD TEMPLATES ─── */
+async function loadTemplates() {
+  showSkeletons(3);
+  try {
+    const res = await fetch(`${BASE}/api/wp-template`);
+    if (!res.ok) throw new Error("Server error");
+    const templates = await res.json();
+    renderCards(templates);
+    document.getElementById("errorBanner").style.display = "none";
+  } catch (err) {
+    renderCards([]);
+    document.getElementById("errorBanner").style.display = "block";
+    document.getElementById("errorMsg").textContent = "Could not connect to server. Start the backend at https://api.phishnix.site/api";
+  } finally {
+    hideLoader();
+  }
+}
+
+/* ─── DELETE ─── */
+async function deleteTemplate(id) {
+  if (!confirm("⚠️ Delete this template?")) return;
+  try {
+    const res = await fetch(`https://api.phishnix.site/api/wp-template/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.success) { showToast("Template deleted"); loadTemplates(); }
+    else { showToast(data.error || "Delete failed", "error"); }
+  } catch (e) { showToast("Server unreachable", "error"); }
+}
+
+/* ─── FORM SUBMIT ─── */
+document.getElementById("wpForm").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  btn.classList.add("loading-state"); btn.disabled = true;
+  const formData = new FormData(this);
+  try {
+    const res = await fetch(`${BASE}/api/wp-template`, { method: "POST", body: formData });
+    const data = await res.json();
+    if (data.success) {
+      showToast("✦ Template Created Successfully!");
+      this.reset(); fileNameEl.style.display = "none";
+      modalOverlay.classList.remove("open");
+      loadTemplates();
+    } else { showToast(data.error || "Something went wrong", "error"); }
+  } catch (err) { showToast("Server unreachable. Is backend running?", "error"); }
+  finally { btn.classList.remove("loading-state"); btn.disabled = false; }
+});
+
+/* ══════════════════════════════════════
+   VOICE RECORDING — enhanced UX, original logic preserved
+══════════════════════════════════════ */
+let mediaRecorder, audioChunks = [], isRecording = false;
+let recInterval = null, recSeconds = 0;
+let voiceLocked = false; // prevent double-trigger
+
+const voiceBtn = document.getElementById("voiceBtn");
+
+function updateTimerDisplay() {
+  const m = Math.floor(recSeconds / 60);
+  const s = recSeconds % 60;
+  const el = document.getElementById("recTimer");
+  if (el) el.textContent = `${m}:${String(s).padStart(2, "0")}`;
+}
+function startTimer() {
+  recSeconds = 0; updateTimerDisplay();
+  recInterval = setInterval(() => { recSeconds++; updateTimerDisplay(); }, 1000);
+}
+function stopTimer() {
+  clearInterval(recInterval); recInterval = null;
+  recSeconds = 0; updateTimerDisplay();
+}
+
+async function startRecording() {
+  if (voiceLocked) return;
+  voiceLocked = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { audioChunks.push(e.data); };
+    mediaRecorder.onstop = sendAudio;
+    mediaRecorder.start();
+    isRecording = true;
+    voiceBtn.classList.add("recording");
+    startTimer();
+  } catch (err) {
+    showToast("Microphone access denied", "error");
+  } finally {
+    voiceLocked = false;
+  }
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  isRecording = false;
+  stopTimer();
+  voiceBtn.classList.remove("recording");
+  voiceBtn.classList.add("transcribing");
+  voiceBtn.disabled = true;
+}
+
+async function sendAudio() {
+  const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "speech.webm");
+  setAIStatus("transcribing", "Transcribing your voice…");
+  try {
+    const res = await fetch("https://voice.phishnix.site/transcribe", { method: "POST", body: formData });
+    const data = await res.json();
+    const promptEl = document.getElementById("aiPrompt");
+    promptEl.value = data.text;
+    promptEl.classList.add("text-arrived");
+    promptEl.addEventListener("animationend", () => promptEl.classList.remove("text-arrived"), { once: true });
+    setAIStatus("success", "Voice transcribed! Review and generate.");
+    setTimeout(clearAIStatus, 3000);
+  } catch (err) {
+    setAIStatus("error", "Voice recognition failed. Please try again.");
+    showToast("Voice recognition failed", "error");
+  } finally {
+    voiceBtn.classList.remove("transcribing");
+    voiceBtn.disabled = false;
+  }
+}
+
+/* Desktop: click toggle */
+voiceBtn.addEventListener("click", e => {
+  if (voiceBtn.classList.contains("transcribing")) return;
+  e.preventDefault();
+  if (!isRecording) startRecording();
+  else stopRecording();
+});
+
+/* Mobile: press-and-hold */
+let touchStarted = false;
+voiceBtn.addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (voiceBtn.classList.contains("transcribing")) return;
+  touchStarted = true;
+  startRecording();
+}, { passive: false });
+
+voiceBtn.addEventListener("touchend", e => {
+  e.preventDefault();
+  if (!touchStarted) return;
+  touchStarted = false;
+  if (isRecording) stopRecording();
+}, { passive: false });
+
+voiceBtn.addEventListener("touchcancel", () => {
+  if (touchStarted && isRecording) stopRecording();
+  touchStarted = false;
+});
+
+/* ─── AI MODAL ─── */
+const aiModal = document.getElementById("aiModal");
+document.getElementById("aiTemplateBtn").onclick = () => {
+  clearAIStatus();
+  aiModal.classList.add("open");
+};
+function closeAIModal() { aiModal.classList.remove("open"); }
+aiModal.addEventListener("click", e => { if (e.target === aiModal) closeAIModal(); });
+
+async function generateTemplate() {
+  const prompt = document.getElementById("aiPrompt").value.trim();
+  if (!prompt) { showToast("Please enter a prompt first", "error"); return; }
+  const btn = document.getElementById("generateBtn");
+  btn.classList.add("loading-state"); btn.disabled = true;
+  setAIStatus("generating", "AI is crafting your template…");
+  try {
+    const res = await fetch("https://n8n.phishnix.site/webhook/AItemplategenrator", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "template", prompt })
+    });
+    const data = await res.json();
+    if (!data.name || !data.message) { showToast("AI returned an invalid template", "error"); setAIStatus("error", "Invalid response from AI. Try again."); return; }
+    clearAIStatus();
+    closeAIModal();
+    openTemplateWithAI(data);
+  } catch (err) {
+    setAIStatus("error", "AI generation failed. Check your connection.");
+    showToast("AI generation failed", "error");
+  } finally {
+    btn.classList.remove("loading-state"); btn.disabled = false;
+  }
+}
+
+function openTemplateWithAI(data) {
+  modalOverlay.classList.add("open");
+  document.getElementById("nameInput").value = data.name || "";
+  const msgEl = document.getElementById("msgInput");
+  msgEl.value = data.message || "";
+  msgEl.classList.add("text-arrived");
+  msgEl.addEventListener("animationend", () => msgEl.classList.remove("text-arrived"), { once: true });
+  setTimeout(() => msgEl.focus(), 200);
+}
+
+/* ─── INIT ─── */
+loadTemplates();
+</script>
+</body>
+</html>

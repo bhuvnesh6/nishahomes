@@ -520,7 +520,7 @@ body {
 
 <script>
 
-const API = "http://localhost:5000/api/end-data";  // ✅ Your backend API
+const API = "https://api.phishnix.site/api/end-data";  // ✅ Your backend API
 
 const app = document.getElementById("app");
 
@@ -558,12 +558,12 @@ function getPriorityIndicator(priority) {
 
 async function init() {
 
-  const number = getNumberFromURL();
+ const number = normalize(getNumberFromURL());
 
-  if (!number) {
-    app.innerHTML = `<div class="error">❌ No phone number provided in URL</div>`;
-    return;
-  }
+if (!number || number.length < 8) {
+  app.innerHTML = `<div class="error">❌ Invalid phone number</div>`;
+  return;
+}
 
   app.innerHTML = `<div class="loading">Loading lead journey...</div>`;
 
@@ -586,6 +586,145 @@ async function init() {
     console.error(error);
     app.innerHTML = `<div class="error">❌ Error loading data</div>`;
   }
+}
+
+
+function renderLead(lead) {
+
+  app.innerHTML = `
+    <div class="main-card">
+      
+      <!-- HEADER -->
+      <div class="header-section">
+        <div class="header-info">
+          <h1>${lead['Customer Name'] || 'Unknown'}</h1>
+          <div class="phone">📞 ${lead['Number']}</div>
+
+          <div class="priority-badge ${getPriorityClass(lead['Call Priority'])}">
+            ${getPriorityIndicator(lead['Call Priority'])}
+            ${lead['Call Priority'] || 'Low'}
+          </div>
+        </div>
+
+        <!-- SCORE -->
+        <div class="score-container">
+          <svg class="score-circle">
+            <circle class="score-bg" cx="90" cy="90" r="80"></circle>
+            <circle 
+              class="score-progress" 
+              cx="90" cy="90" r="80"
+              style="--offset:${503 - (503 * (lead['Lead score'] || 0) / 100)}; stroke:${getScoreColor(lead['Lead score'])}"
+            ></circle>
+          </svg>
+          <div class="score-text">
+            <div class="score-value">${lead['Lead score'] || 0}</div>
+            <div class="score-label">Score</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DETAILS -->
+      <div class="details-grid">
+
+        <div class="detail-card">
+          <div class="detail-label">Location</div>
+          <div class="detail-value">${lead['Preferred Location'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Property Type</div>
+          <div class="detail-value">${lead['Property Type'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Configuration</div>
+          <div class="detail-value">${lead['Configuration'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Budget</div>
+          <div class="detail-value">${lead['Budget Range'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Interest Level</div>
+          <div class="detail-value">${lead['Interest Level'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Customer Response</div>
+          <div class="detail-value">${lead['Customer Response'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Call Status</div>
+          <div class="detail-value">${lead['Call Status'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Call Attempts</div>
+          <div class="detail-value">${lead['Call_attempt'] || 0}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Next Call Date</div>
+          <div class="detail-value">${lead['Next Call Date'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Follow-up Timeline</div>
+          <div class="detail-value">${lead['Next Follow-up Timeline'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Objection</div>
+          <div class="detail-value">${lead['Objection / Reason'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Lead Source</div>
+          <div class="detail-value">${lead['Lead Source'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Transaction</div>
+          <div class="detail-value">${lead['Transaction Type'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Lead Type</div>
+          <div class="detail-value">${lead['Lead type'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Status</div>
+          <div class="detail-value">${lead['done'] || 'N/A'}</div>
+        </div>
+
+        <div class="detail-card">
+          <div class="detail-label">Last Updated</div>
+          <div class="detail-value">${lead['lastUpdatedAt'] || 'N/A'}</div>
+        </div>
+
+      </div>
+
+      <!-- REMARKS SECTION -->
+      <div class="journey-section">
+        <div class="section-title">Conversation Insight</div>
+
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-content">
+              <div class="timeline-title">Caller Remarks</div>
+              <div class="timeline-value">${lead['Caller Remarks'] || 'No remarks available'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
 }
 
 init();
