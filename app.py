@@ -19,6 +19,7 @@ from flask import session
 import random
 import requests
 
+
 # Load env
 load_dotenv()
 
@@ -237,6 +238,13 @@ def leads():
     return jsonify(get_collection_data("Leads"))
 
 #single lead
+def clean_nan(data):
+    for key, value in data.items():
+        if isinstance(value, float) and math.isnan(value):
+            data[key] = None
+    return data
+
+
 @app.route("/api/get-lead-single", methods=["POST"])
 def get_lead():
     try:
@@ -250,7 +258,6 @@ def get_lead():
 
         collection = db[collection_name]
 
-        # Find lead by phone number
         lead = collection.find_one({"Phone Number": str(phone_number)})
 
         if not lead:
@@ -260,10 +267,14 @@ def get_lead():
         lead.pop("_id", None)
         lead.pop("Phone Number", None)
 
+        # 🔥 FIX HERE
+        lead = clean_nan(lead)
+
         return jsonify(lead), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/hofcorders")
 def hofcorders():
