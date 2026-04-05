@@ -353,7 +353,7 @@ def add_team_member():
         new_member = {
             "Employee name": name,
             "Employee number": number,
-            "Password": password,
+            "password": password,
             "roll": role,  # ✅ as requested (roll, not role)
             "Leads": [],
             "Active": True
