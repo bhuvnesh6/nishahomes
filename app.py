@@ -236,6 +236,35 @@ def upload():
 def leads():
     return jsonify(get_collection_data("Leads"))
 
+#single lead
+@app.route("/api/get-lead-single", methods=["POST"])
+def get_lead():
+    try:
+        data = request.get_json()
+
+        collection_name = data.get("collection")
+        phone_number = data.get("phone")
+
+        if not collection_name or not phone_number:
+            return jsonify({"error": "collection and phone are required"}), 400
+
+        collection = db[collection_name]
+
+        # Find lead by phone number
+        lead = collection.find_one({"Phone Number": str(phone_number)})
+
+        if not lead:
+            return jsonify({"message": "No Lead"}), 404
+
+        # Remove unwanted fields
+        lead.pop("_id", None)
+        lead.pop("Phone Number", None)
+
+        return jsonify(lead), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/hofcorders")
 def hofcorders():
     return jsonify(get_collection_data("orderhouseofcakes"))
