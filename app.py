@@ -41,6 +41,7 @@ DB_NAME = os.getenv("DB_NAME")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 
+projects_collection = db["project"]
 
 # 🔥 Helper function (YOU WERE MISSING THIS)
 def serialize_doc(doc):
@@ -961,7 +962,8 @@ def modify_document():
             "agentLeads",
             "endData",
             "teamAssign",
-            "orderhouseofcakes"
+            "orderhouseofcakes", 
+            "tasks",
         ]
 
         if collection_name not in allowed_collections:
@@ -1151,6 +1153,56 @@ def video_to_frames():
         "frames": frame_urls,
         "total_frames": count
     })
+
+
+#project 
+
+@app.route("/api/projects", methods=["GET"])
+def get_projects():
+    try:
+        projects = list(projects_collection.find({}, {"_id": 0}))
+        return jsonify({
+            "status": "success",
+            "count": len(projects),
+            "data": projects
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+
+# POST: Add new project
+# -------------------------------
+@app.route("/api/projects", methods=["POST"])
+def add_project():
+    try:
+        data = request.get_json()
+
+        # Required fields validation
+        required_fields = ["name", "location", "description", "budget", "category", "img"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "status": "error",
+                    "message": f"{field} is required"
+                }), 400
+
+        # Insert into DB
+        projects_collection.insert_one(data)
+
+        return jsonify({
+            "status": "success",
+            "message": "Project added successfully"
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 if __name__ == "__main__":

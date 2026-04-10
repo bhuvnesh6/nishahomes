@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexEstate Admin // Premium Task Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- THEME BASE (PROVIDED) --- 
+        */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2D3142;
+            --primary-dark: #1e2235;
+            --secondary: #3d4152;
+            --accent: #EF8354;
+            --accent-light: #FFA07A;
+            --success: #10B981;
+            --danger: #EF4444;
+            --warning: #F59E0B;
+            --dark: #2D3142;
+            --light: #FAF9F6;
+            --bg: #FAF9F6;
+            --card-bg: linear-gradient(135deg, #2D3142 0%, #3d4152 100%);
+            --border: #E5E7EB;
+            --shadow: 0 4px 20px rgba(45, 49, 66, 0.08);
+            --shadow-lg: 0 10px 40px rgba(45, 49, 66, 0.15);
+            --text-light: #6B7280;
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Work Sans', sans-serif;
+            background: #0f111a; /* Overriding for Dark Premium UI */
+            min-height: 100vh;
+            color: var(--light);
+            overflow-x: hidden;
+        }
+
+        /* Loading Overlay */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1e2235;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+
+        .loader-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- DASHBOARD LAYOUT --- */
+        .app-wrapper {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        aside {
+            background: var(--primary-dark);
+            border-right: 1px solid var(--glass-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        /* Header / Navbar */
+        header {
+            background: rgba(30, 34, 53, 0.8);
+            backdrop-filter: blur(15px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 90;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideDown 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            background: linear-gradient(to right, #fff, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Main Content */
+        main {
+            padding: 2.5rem;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 2.5rem;
+            align-items: start;
+        }
+
+        /* Section Cards */
+        .glass-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(239, 131, 84, 0.05) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .section-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Form Styling */
+        .form-group { margin-bottom: 1.25rem; }
+        label {
+            display: block;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+            color: var(--accent-light);
+            font-weight: 600;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            color: white;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 4px rgba(239, 131, 84, 0.15);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+            color: white;
+            border: none;
+            padding: 1.1rem;
+            border-radius: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            width: 100%;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 10px 25px rgba(239, 131, 84, 0.4);
+        }
+
+        .btn-primary:active { transform: scale(0.98); }
+
+        /* Task Cards */
+        .task-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .task-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            animation: fadeIn 0.6s ease-out forwards;
+            position: relative;
+        }
+
+        .task-status {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid var(--warning); }
+        .status-completed { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid var(--success); }
+        .status-progress { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid #60a5fa; }
+
+        .task-card h4 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+            padding-right: 80px;
+        }
+
+        .task-assignee {
+            font-size: 0.85rem;
+            color: var(--accent-light);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .task-desc {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Particles / Blobs */
+        .floating-blob {
+            position: fixed;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(239, 131, 84, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: -1;
+            filter: blur(60px);
+            animation: float 20s infinite alternate;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0,0); }
+            100% { transform: translate(100px, 50px); }
+        }
+
+        /* Toast Notification */
+        #toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: white;
+            color: var(--primary-dark);
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: var(--shadow-lg);
+            transform: translateY(150%);
+            transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 10000;
+        }
+
+        #toast.show { transform: translateY(0); }
+
+        /* Skeleton */
+        .skeleton {
+            height: 180px;
+            background: linear-gradient(90deg, #2D3142 25%, #3d4152 50%, #2D3142 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+            border-radius: 20px;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Responsiveness */
+        @media (max-width: 1100px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .app-wrapper { grid-template-columns: 1fr; }
+            aside { display: none; } /* Simplified for mobile */
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--primary-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <div class="loader-overlay" id="loader">
+        <div class="loader"></div>
+    </div>
+    <div class="floating-blob" style="top: -10%; right: -10%;"></div>
+    <div class="floating-blob" style="bottom: -10%; left: -5%; background: radial-gradient(circle, rgba(16, 185, 129, 0.05) 0%, transparent 70%);"></div>
+
+    <div class="app-wrapper">
+        <aside>
+            <div class="logo">NexEstate</div>
+            <nav style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div class="nav-tab active" onclick="location.reload()">📊 Dashboard</div>
+                <div class="nav-tab" onclick="showToast('Feature coming soon!')">🏡 Properties</div>
+                <div class="nav-tab" onclick="showToast('Feature coming soon!')">👤 Clients</div>
+                <div class="nav-tab" onclick="showToast('Feature coming soon!')">⚙️ Settings</div>
+            </nav>
+            <div style="margin-top: auto;">
+                <button class="logout-btn" style="width: 100%;" onclick="alert('Logging out...')">Logout</button>
+            </div>
+        </aside>
+
+        <div class="content-body">
+            <header>
+                <div style="display: flex; gap: 1rem;">
+                    <button class="admin-btn" onclick="location.reload()">🏠 Home</button>
+                    <button class="admin-btn" onclick="showToast('Redirecting to Leads...')">➕ Add Lead</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-badge">Admin Panel</span>
+                    <div style="width: 40px; height: 40px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 900;">A</div>
+                </div>
+            </header>
+
+            <main>
+                <div class="dashboard-grid">
+                    <section class="glass-card">
+                        <h2 class="section-title">✨ Create Task</h2>
+                        <form id="taskForm">
+                            <div class="form-group">
+                                <label>Task Title</label>
+                                <input type="text" id="taskTitle" placeholder="e.g., Client Follow-up" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Assign To Employee</label>
+                                <select id="assignTo" required>
+                                    <option value="">Fetching team...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Deadline</label>
+                                <input type="date" id="deadline">
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="taskDesc" placeholder="Describe the task details..." rows="4"></textarea>
+                            </div>
+                            <button type="submit" class="btn-primary" id="submitBtn">Assign Task</button>
+                        </form>
+                    </section>
+
+                    <section>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                            <h2 class="section-title" style="margin-bottom: 0;">📋 Task Pipeline</h2>
+                            <select id="filterEmployee" style="width: auto; padding: 0.5rem 1rem;">
+                                <option value="all">All Employees</option>
+                            </select>
+                        </div>
+
+                        <div id="taskContainer" class="task-grid">
+                            </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div id="pwa-popup" class="glass-card" style="position: fixed; bottom: 20px; left: 20px; z-index: 1000; padding: 1rem; width: 250px; display: none;">
+        <p style="font-size: 0.8rem; margin-bottom: 0.5rem;">Install NexEstate on your desktop for better access.</p>
+        <button class="btn-primary" style="padding: 0.5rem;" onclick="this.parentElement.style.display='none'">Install App</button>
+    </div>
+
+    <div id="toast">Task Created Successfully! ✅</div>
+
+    <script>
+        /**
+         * NEXESTATE CORE ENGINE
+         * Vanilla JS - Premium Real Estate Dashboard
+         */
+
+        const state = {
+            team: [],
+            tasks: [],
+            isFetching: false
+        };
+
+        const dom = {
+            assignSelect: document.getElementById('assignTo'),
+            filterSelect: document.getElementById('filterEmployee'),
+            taskForm: document.getElementById('taskForm'),
+            taskContainer: document.getElementById('taskContainer'),
+            loader: document.getElementById('loader'),
+            toast: document.getElementById('toast'),
+            pwaPopup: document.getElementById('pwa-popup')
+        };
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            showLoader(true);
+            await fetchTeam();
+            await fetchAllTasks();
+            showLoader(false);
+
+            // Show PWA popup after 3 seconds
+            setTimeout(() => { dom.pwaPopup.style.display = 'block'; }, 3000);
+        });
+
+        // --- API HELPERS ---
+
+        // 1. GET TEAM
+        async function fetchTeam() {
+            try {
+                const res = await fetch('https://api.phishnix.site/api/get-team-assign');
+                const data = await res.json();
+                state.team = data;
+
+                // Update UI selects
+                const options = data.map(emp => 
+                    `<option value="${emp["Employee number"]}" data-name="${emp["Employee name"]}">${emp["Employee name"]}</option>`
+                ).join('');
+
+                dom.assignSelect.innerHTML = '<option value="">Select Employee</option>' + options;
+                dom.filterSelect.innerHTML = '<option value="all">All Employees</option>' + options;
+            } catch (err) {
+                console.error('Team Fetch Error:', err);
+                showToast("Failed to load team data ❌");
+            }
+        }
+
+        // 2. CREATE TASK (POST)
+        dom.taskForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const selectedOpt = dom.assignSelect.options[dom.assignSelect.selectedIndex];
+            
+            const payload = {
+                collection: "tasks",
+                Name: selectedOpt.getAttribute('data-name'),
+                "Phone Number": dom.assignSelect.value,
+                task: document.getElementById('taskTitle').value,
+                deadline: document.getElementById('deadline').value || "No Deadline",
+                process: "pending"
+            };
+
+            btn.disabled = true;
+            btn.textContent = "Processing...";
+
+            try {
+                const res = await fetch('https://api.phishnix.site/api/get-team-assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                showToast("Task Assigned Successfully ✅");
+                dom.taskForm.reset();
+                await fetchAllTasks(); // Refresh UI
+            } catch (err) {
+                showToast("Error creating task ❌");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Assign Task";
+            }
+        });
+
+        // 3. GET ALL TASKS (AGGREGATED)
+        async function fetchAllTasks() {
+            renderSkeletons();
+            let aggregatedTasks = [];
+
+            try {
+                // Loop through all employees and fetch their leads/tasks
+                const taskPromises = state.team.map(emp => 
+                    fetch('https://api.phishnix.site/api/get-lead-single', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            collection: "Leads",
+                            phone: emp["Employee number"]
+                        })
+                    }).then(res => res.json())
+                );
+
+                const results = await Promise.all(taskPromises);
+                
+                results.forEach(res => {
+                    if (Array.isArray(res)) aggregatedTasks = [...aggregatedTasks, ...res];
+                });
+
+                state.tasks = aggregatedTasks;
+                renderTasks(state.tasks);
+            } catch (err) {
+                console.error('Fetch Tasks Error:', err);
+                dom.taskContainer.innerHTML = `<p style="text-align:center; color: var(--danger);">Failed to sync tasks from server.</p>`;
+            }
+        }
+
+        // --- UI RENDERING ---
+
+        function renderTasks(tasks) {
+            if (tasks.length === 0) {
+                dom.taskContainer.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                        <h3 style="opacity: 0.5;">No tasks found in the pipeline</h3>
+                        <p style="color: var(--text-light);">Start by assigning a new task on the left.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            dom.taskContainer.innerHTML = tasks.map((t, index) => `
+                <div class="task-card" style="animation-delay: ${index * 0.05}s">
+                    <span class="task-status status-${t.process || 'pending'}">${t.process || 'pending'}</span>
+                    <div class="task-assignee">👤 ${t.Name || 'Unknown'}</div>
+                    <h4>${t.task || 'Untitled Task'}</h4>
+                    <p class="task-desc">${t.Description || 'No detailed description provided.'}</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
+                        <span style="font-size: 0.75rem; color: var(--accent);">📅 ${t.deadline || 'No Date'}</span>
+                        <button class="admin-btn" style="padding: 0.3rem 0.6rem; font-size: 0.7rem;">Update</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Filter Functionality
+        dom.filterSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (val === 'all') {
+                renderTasks(state.tasks);
+            } else {
+                const filtered = state.tasks.filter(t => t["Phone Number"] === val);
+                renderTasks(filtered);
+            }
+        });
+
+        // --- MICRO INTERACTIONS & UTILS ---
+
+        function showToast(msg) {
+            dom.toast.textContent = msg;
+            dom.toast.classList.add('show');
+            setTimeout(() => dom.toast.classList.remove('show'), 3000);
+        }
+
+        function showLoader(show) {
+            if (show) dom.loader.classList.remove('hidden');
+            else dom.loader.classList.add('hidden');
+        }
+
+        function renderSkeletons() {
+            dom.taskContainer.innerHTML = Array(6).fill('<div class="skeleton"></div>').join('');
+        }
+
+        // Add lead navigation simulation
+        function simulateRoute(path) {
+            showLoader(true);
+            setTimeout(() => {
+                showLoader(false);
+                showToast(`Mapsd to ${path}`);
+            }, 800);
+        }
+
+    </script>
+</body>
+</html>

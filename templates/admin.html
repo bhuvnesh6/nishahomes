@@ -962,6 +962,84 @@
     border-color: #60a5fa !important;
     transform: translateY(-1px);
 }
+
+/* 3 dot menu */
+.card-menu {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.menu-btn {
+    background: rgba(255,255,255,0.08);
+    border: none;
+    color: white;
+    font-size: 18px;
+    border-radius: 10px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.menu-btn:hover {
+    background: rgba(255,255,255,0.18);
+}
+
+.menu-dropdown {
+    position: absolute;
+    top: 30px;
+    right: 0;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    display: none;
+    flex-direction: column;
+    min-width: 140px;
+    overflow: hidden;
+    z-index: 10;
+}
+
+.menu-dropdown button {
+    padding: 10px;
+    border: none;
+    background: white;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.menu-dropdown button:hover {
+    background: #f3f4f6;
+}
+
+/* bottom buttons */
+.card-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.action-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+/* call */
+.call-btn {
+    background: rgba(16,185,129,0.15);
+    color: #10B981;
+}
+
+/* whatsapp */
+.wp-btn {
+    background: rgba(37,211,102,0.15);
+    color: #25D366;
+}
     </style>
 </head>
 <body>
@@ -1393,365 +1471,399 @@ const API_CONFIG = {
         }
 
         // Render buying leads
+      
         function renderBuyingLeads(leads) {
-            const grid = document.getElementById('cardsGrid');
-            
-            if (!leads || leads.length === 0) {
-                grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h3>No leads found</h3>
-                        <p>Check back later for new leads</p>
-                    </div>
-                `;
-                return;
-            }
+    const grid = document.getElementById('cardsGrid');
 
-            grid.innerHTML = leads.map((lead, index) => `
-                <div class="lead-card" style="animation-delay: ${index * 0.1}s" data-name="${lead['Lead Name'] || lead.Name || ''}" 
-     data-phone="${formatPhone(lead['Phone Number'])}" data-location="${lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || ''}" data-budget="${lead['Budget Range'] || ''}" >
+    if (!leads || leads.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <h3>No leads found</h3>
+                <p>Check back later for new leads</p>
+            </div>
+        `;
+        return;
+    }
 
-      <input type="checkbox" class="select-checkbox">
-                    <div class="card-header">
-                        <div>
-                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
-                        </div>
-                        <div class="lead-date">${lead.Date || 'N/A'}</div>
-                    </div>
-                    
-                    <div class="lead-info">
-                        <div class="info-row">
-                            <span class="info-label">Phone</span>
-                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
-                                ${formatPhone(lead['Phone Number'])}
-                            </a>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Location</span>
-                            <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
-                        </div>
-                        
-                        ${lead['Sub_location'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Sub-Location</span>
-                            <span class="info-value">${lead['Sub_location']}</span>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="info-row">
-                            <span class="info-label">Property</span>
-                            <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Budget</span>
-                            <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Intent</span>
-                            <span class="intent-badge ${getIntentClass(lead['Final Intent'])}">
-                                ${lead['Final Intent'] || 'Cold'}
-                            </span>
-                        </div>
-                        
-                        ${lead['Lead Intent %'] ? `
-                        <div class="intent-progress">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${lead['Lead Intent %']}%"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    
-                    ${lead.note ? `
-                    <div class="note-box">
-                        <div class="note-label">Note</div>
-                        <div class="note-text">${lead.note}</div>
-                    </div>
-                    ` : ''}
-                    
-                    <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
-                        Assign Lead
+    grid.innerHTML = leads.map((lead, index) => `
+        <div class="lead-card" style="animation-delay: ${index * 0.1}s"
+            data-name="${lead['Lead Name'] || lead.Name || ''}" 
+            data-phone="${formatPhone(lead['Phone Number'])}">
+
+            <!-- 3 DOT MENU -->
+            <div class="card-menu">
+                <button class="menu-btn" onclick="toggleMenu(this)">⋮</button>
+
+                <div class="menu-dropdown">
+                    <button onclick="openEditModal(this)">✏️ Edit</button>
+                    <button onclick="deleteLead('${lead._id}')">🗑 Delete</button>
+                    <button onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || ''}')">
+                        👤 Assign
                     </button>
-                    <button class="assign-btn"
-        style="background:#e74c3c;margin-top:10px;"
-        onclick="deleteLead('${lead._id}')">
-    🗑 Delete Lead
-</button>
-
-<button class="assign-btn edit-btn" onclick="openEditModal(this)">
-    ✏️ Edit Lead
-</button>
                 </div>
-            `).join('');
-        }
+            </div>
+
+            <input type="checkbox" class="select-checkbox">
+
+            <div class="card-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                <div class="lead-date">${lead.Date || 'N/A'}</div>
+            </div>
+
+            <div class="lead-info">
+                <div class="info-row">
+                    <span class="info-label">Phone</span>
+                    <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                        ${formatPhone(lead['Phone Number'])}
+                    </a>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Location</span>
+                    <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Property</span>
+                    <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Budget</span>
+                    <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
+                </div>
+            </div>
+
+            <!-- BOTTOM ACTIONS -->
+            <div class="card-actions">
+                <a href="tel:${formatPhone(lead['Phone Number'])}" class="action-btn call-btn">
+                    📞 Call
+                </a>
+
+                <a href="https://wa.me/${formatPhone(lead['Phone Number'])}" target="_blank" class="action-btn wp-btn">
+                    💬 WhatsApp
+                </a>
+            </div>
+
+        </div>
+    `).join('');
+}
 
         // Render rental leads
-        function renderRentalLeads(leads) {
-            const grid = document.getElementById('cardsGrid');
-            
-            if (!leads || leads.length === 0) {
-                grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h3>No leads found</h3>
-                        <p>Check back later for new leads</p>
-                    </div>
-                `;
-                return;
-            }
+function renderRentalLeads(leads) {
+    const grid = document.getElementById('cardsGrid');
+    
+    if (!leads || leads.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <h3>No leads found</h3>
+                <p>Check back later for new leads</p>
+            </div>
+        `;
+        return;
+    }
 
-            grid.innerHTML = leads.map((lead, index) => `
-                <div class="lead-card" style="animation-delay: ${index * 0.1}s" data-name="${lead['Lead Name'] || lead.Name || ''}" 
-     data-phone="${formatPhone(lead['Phone Number'])}" data-location="${lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || ''}">
+    grid.innerHTML = leads.map((lead, index) => `
+        <div class="lead-card" 
+            style="animation-delay: ${index * 0.1}s" 
+            data-name="${lead['Lead Name'] || lead.Name || ''}" 
+            data-phone="${formatPhone(lead['Phone Number'])}" 
+            data-location="${lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || ''}">
 
-      <input type="checkbox" class="select-checkbox">
-                    <div class="card-header">
-                        <div>
-                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
-                        </div>
-                        <div class="lead-date">${lead.Date || 'N/A'}</div>
-                    </div>
-                    
-                    <div class="lead-info">
-                        <div class="info-row">
-                            <span class="info-label">Phone</span>
-                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
-                                ${formatPhone(lead['Phone Number'])}
-                            </a>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Location</span>
-                            <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
-                        </div>
-                        
-                        ${lead['Sub_location'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Sub-Location</span>
-                            <span class="info-value">${lead['Sub_location']}</span>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="info-row">
-                            <span class="info-label">Property</span>
-                            <span class="info-value">${lead['Property_Type'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Budget</span>
-                            <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
-                        </div>
-                        
-                        ${lead['Tenant_Profile'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Profile</span>
-                            <span class="info-value">${lead['Tenant_Profile']}</span>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="info-row">
-                            <span class="info-label">Intent</span>
-                            <span class="intent-badge ${getIntentClass(lead['Final Intent'])}">
-                                ${lead['Final Intent'] || 'Cold'}
-                            </span>
-                        </div>
-                        
-                        ${lead['Lead Intent %'] ? `
-                        <div class="intent-progress">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${lead['Lead Intent %']}%"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    
-                    ${lead.note ? `
-                    <div class="note-box">
-                        <div class="note-label">Note</div>
-                        <div class="note-text">${lead.note}</div>
-                    </div>
-                    ` : ''}
-                    
-                     <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
-                        Assign Lead
+            <!-- 3 DOT MENU -->
+            <div class="card-menu">
+                <button class="menu-btn" onclick="toggleMenu(this)">⋮</button>
+
+                <div class="menu-dropdown">
+                    <button onclick="openEditModal(this)">✏️ Edit</button>
+                    <button onclick="deleteLead('${lead._id}')">🗑 Delete</button>
+                    <button onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
+                        👤 Assign
                     </button>
-
-                    <button class="assign-btn"
-        style="background:#e74c3c;margin-top:10px;"
-        onclick="deleteLead('${lead._id}')">
-    🗑 Delete Lead
-</button>
                 </div>
-            `).join('');
-        }
+            </div>
 
-        // Render selling leads
-        function renderSellingLeads(leads) {
-            const grid = document.getElementById('cardsGrid');
+            <input type="checkbox" class="select-checkbox">
+
+            <div class="card-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                <div class="lead-date">${lead.Date || 'N/A'}</div>
+            </div>
             
-            if (!leads || leads.length === 0) {
-                grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h3>No leads found</h3>
-                        <p>Check back later for new leads</p>
-                    </div>
-                `;
-                return;
-            }
-
-            grid.innerHTML = leads.map((lead, index) => `
-                <div class="lead-card" style="animation-delay: ${index * 0.1}s" data-name="${lead['Lead Name'] || lead.Name || ''}" 
-     data-phone="${formatPhone(lead['Phone Number'])}" data-location="${lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || ''}">
-
-      <input type="checkbox" class="select-checkbox">
-                    <div class="card-header">
-                        <div>
-                            <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
-                        </div>
-                        <div class="lead-date">${lead.Date || 'N/A'}</div>
-                    </div>
-                    
-                    <div class="lead-info">
-                        <div class="info-row">
-                            <span class="info-label">Phone</span>
-                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
-                                ${formatPhone(lead['Phone Number'])}
-                            </a>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Location</span>
-                            <span class="info-value">${lead['Property Location'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Property</span>
-                            <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Price</span>
-                            <span class="info-value">${lead['Expected Price'] || 'N/A'}</span>
-                        </div>
-                        
-                        ${lead['Property Size + Floor'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Size</span>
-                            <span class="info-value">${lead['Property Size + Floor']}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${lead['Occupancy Status'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Status</span>
-                            <span class="info-value">${lead['Occupancy Status']}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${lead['Selling Timeline'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Timeline</span>
-                            <span class="info-value">${lead['Selling Timeline']}</span>
-                        </div>
-                        ` : ''}
-                    </div>
-                    
-                    ${lead.Note ? `
-                    <div class="note-box">
-                        <div class="note-label">Note</div>
-                        <div class="note-text">${lead.Note}</div>
-                    </div>
-                    ` : ''}
-                    
-                     <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
-                        Assign Lead
-                    </button>
-
-                    <button class="assign-btn"
-        style="background:#e74c3c;margin-top:10px;"
-        onclick="deleteLead('${lead._id}')">
-    🗑 Delete Lead
-</button>
+            <div class="lead-info">
+                <div class="info-row">
+                    <span class="info-label">Phone</span>
+                    <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                        ${formatPhone(lead['Phone Number'])}
+                    </a>
                 </div>
-            `).join('');
-        }
+                
+                <div class="info-row">
+                    <span class="info-label">Location</span>
+                    <span class="info-value">${lead['Location Interested In'] || 'N/A'}</span>
+                </div>
+                
+                ${lead['Sub_location'] ? `
+                <div class="info-row">
+                    <span class="info-label">Sub-Location</span>
+                    <span class="info-value">${lead['Sub_location']}</span>
+                </div>
+                ` : ''}
+                
+                <div class="info-row">
+                    <span class="info-label">Property</span>
+                    <span class="info-value">${lead['Property_Type'] || 'N/A'}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Budget</span>
+                    <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
+                </div>
+                
+                ${lead['Tenant_Profile'] ? `
+                <div class="info-row">
+                    <span class="info-label">Profile</span>
+                    <span class="info-value">${lead['Tenant_Profile']}</span>
+                </div>
+                ` : ''}
+                
+                <div class="info-row">
+                    <span class="info-label">Intent</span>
+                    <span class="intent-badge ${getIntentClass(lead['Final Intent'])}">
+                        ${lead['Final Intent'] || 'Cold'}
+                    </span>
+                </div>
+                
+                ${lead['Lead Intent %'] ? `
+                <div class="intent-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${lead['Lead Intent %']}%"></div>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            
+            ${lead.note ? `
+            <div class="note-box">
+                <div class="note-label">Note</div>
+                <div class="note-text">${lead.note}</div>
+            </div>
+            ` : ''}
+
+            <!-- BOTTOM ACTIONS -->
+            <div class="card-actions">
+                <a href="tel:${formatPhone(lead['Phone Number'])}" class="action-btn call-btn">
+                    📞 Call
+                </a>
+
+                <a href="https://wa.me/${formatPhone(lead['Phone Number'])}" target="_blank" class="action-btn wp-btn">
+                    💬 WhatsApp
+                </a>
+            </div>
+
+        </div>
+    `).join('');
+}
+        
+     // Render selling leads
+     function renderSellingLeads(leads) {
+    const grid = document.getElementById('cardsGrid');
+    
+    if (!leads || leads.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <h3>No leads found</h3>
+                <p>Check back later for new leads</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = leads.map((lead, index) => `
+        <div class="lead-card" 
+            style="animation-delay: ${index * 0.1}s" 
+            data-name="${lead['Lead Name'] || lead.Name || ''}" 
+            data-phone="${formatPhone(lead['Phone Number'])}" 
+            data-location="${lead['Property Location'] || lead['Operating City'] || ''}">
+
+            <!-- 3 DOT MENU -->
+            <div class="card-menu">
+                <button class="menu-btn" onclick="toggleMenu(this)">⋮</button>
+
+                <div class="menu-dropdown">
+                    <button onclick="openEditModal(this)">✏️ Edit</button>
+                    <button onclick="deleteLead('${lead._id}')">🗑 Delete</button>
+                    <button onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
+                        👤 Assign
+                    </button>
+                </div>
+            </div>
+
+            <input type="checkbox" class="select-checkbox">
+
+            <div class="card-header">
+                <div class="lead-name">${lead['Lead Name'] || 'Unknown'}</div>
+                <div class="lead-date">${lead.Date || 'N/A'}</div>
+            </div>
+            
+            <div class="lead-info">
+                <div class="info-row">
+                    <span class="info-label">Phone</span>
+                    <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                        ${formatPhone(lead['Phone Number'])}
+                    </a>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Location</span>
+                    <span class="info-value">${lead['Property Location'] || 'N/A'}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Property</span>
+                    <span class="info-value">${lead['Property Type'] || 'N/A'}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Price</span>
+                    <span class="info-value">${lead['Expected Price'] || 'N/A'}</span>
+                </div>
+                
+                ${lead['Property Size + Floor'] ? `
+                <div class="info-row">
+                    <span class="info-label">Size</span>
+                    <span class="info-value">${lead['Property Size + Floor']}</span>
+                </div>
+                ` : ''}
+                
+                ${lead['Occupancy Status'] ? `
+                <div class="info-row">
+                    <span class="info-label">Status</span>
+                    <span class="info-value">${lead['Occupancy Status']}</span>
+                </div>
+                ` : ''}
+                
+                ${lead['Selling Timeline'] ? `
+                <div class="info-row">
+                    <span class="info-label">Timeline</span>
+                    <span class="info-value">${lead['Selling Timeline']}</span>
+                </div>
+                ` : ''}
+            </div>
+            
+            ${lead.Note ? `
+            <div class="note-box">
+                <div class="note-label">Note</div>
+                <div class="note-text">${lead.Note}</div>
+            </div>
+            ` : ''}
+
+            <!-- BOTTOM ACTIONS -->
+            <div class="card-actions">
+                <a href="tel:${formatPhone(lead['Phone Number'])}" class="action-btn call-btn">
+                    📞 Call
+                </a>
+
+                <a href="https://wa.me/${formatPhone(lead['Phone Number'])}" target="_blank" class="action-btn wp-btn">
+                    💬 WhatsApp
+                </a>
+            </div>
+
+        </div>
+    `).join('');
+}
 
         // Render agent leads
-        function renderAgentLeads(leads) {
-            const grid = document.getElementById('cardsGrid');
-            
-            if (!leads || leads.length === 0) {
-                grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h3>No leads found</h3>
-                        <p>Check back later for new leads</p>
-                    </div>
-                `;
-                return;
-            }
+function renderAgentLeads(leads) {
+    const grid = document.getElementById('cardsGrid');
+    
+    if (!leads || leads.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📭</div>
+                <h3>No leads found</h3>
+                <p>Check back later for new leads</p>
+            </div>
+        `;
+        return;
+    }
 
-            grid.innerHTML = leads.map((lead, index) => `
-               <div class="lead-card" style="animation-delay: ${index * 0.1}s" data-name="${lead['Lead Name'] || lead.Name || ''}" 
-     data-phone="${formatPhone(lead['Phone Number'])}" data-location="${lead['Location Interested In'] || lead['Property Location'] || lead['Operating City'] || ''}">
+    grid.innerHTML = leads.map((lead, index) => `
+        <div class="lead-card" 
+            style="animation-delay: ${index * 0.1}s" 
+            data-name="${lead['Lead Name'] || lead.Name || ''}" 
+            data-phone="${formatPhone(lead['Phone Number'])}" 
+            data-location="${lead['Operating City'] || ''}">
 
-      <input type="checkbox" class="select-checkbox">
-                    <div class="card-header">
-                        <div>
-                            <div class="lead-name">${lead.Name || 'Unknown'}</div>
-                        </div>
-                        <div class="lead-date">${lead.Date || 'N/A'}</div>
-                    </div>
-                    
-                    <div class="lead-info">
-                        <div class="info-row">
-                            <span class="info-label">Company</span>
-                            <span class="info-value">${lead['Company Name'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Phone</span>
-                            <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
-                                ${formatPhone(lead['Phone Number'])}
-                            </a>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">City</span>
-                            <span class="info-value">${lead['Operating City'] || 'N/A'}</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <span class="info-label">Inventory</span>
-                            <span class="info-value">${lead[' Inventory Type (Flats / Villas / Plots / Commercial)'] || 'N/A'}</span>
-                        </div>
-                        
-                        ${lead[' Contact Details'] ? `
-                        <div class="info-row">
-                            <span class="info-label">Contact</span>
-                            <span class="info-value">${lead[' Contact Details']}</span>
-                        </div>
-                        ` : ''}
+            <!-- 3 DOT MENU -->
+            <div class="card-menu">
+                <button class="menu-btn" onclick="toggleMenu(this)">⋮</button>
 
-
-                        <button class="assign-btn" onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
-                        Assign Lead
+                <div class="menu-dropdown">
+                    <button onclick="openEditModal(this)">✏️ Edit</button>
+                    <button onclick="deleteLead('${lead._id}')">🗑 Delete</button>
+                    <button onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || lead.Name || ''}')">
+                        👤 Assign
                     </button>
-
-
-                    <button class="assign-btn"
-        style="background:#e74c3c;margin-top:10px;"
-        onclick="deleteLead('${lead._id}')">
-    🗑 Delete Lead
-</button>
-                    </div>
                 </div>
-            `).join('');
-        }
+            </div>
+
+            <input type="checkbox" class="select-checkbox">
+
+            <div class="card-header">
+                <div class="lead-name">${lead.Name || 'Unknown'}</div>
+                <div class="lead-date">${lead.Date || 'N/A'}</div>
+            </div>
+            
+            <div class="lead-info">
+                <div class="info-row">
+                    <span class="info-label">Company</span>
+                    <span class="info-value">${lead['Company Name'] || 'N/A'}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Phone</span>
+                    <a href="tel:${formatPhone(lead['Phone Number'])}" class="info-value phone-number">
+                        ${formatPhone(lead['Phone Number'])}
+                    </a>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">City</span>
+                    <span class="info-value">${lead['Operating City'] || 'N/A'}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Inventory</span>
+                    <span class="info-value">${lead[' Inventory Type (Flats / Villas / Plots / Commercial)'] || 'N/A'}</span>
+                </div>
+                
+                ${lead[' Contact Details'] ? `
+                <div class="info-row">
+                    <span class="info-label">Contact</span>
+                    <span class="info-value">${lead[' Contact Details']}</span>
+                </div>
+                ` : ''}
+            </div>
+
+            <!-- BOTTOM ACTIONS -->
+            <div class="card-actions">
+                <a href="tel:${formatPhone(lead['Phone Number'])}" class="action-btn call-btn">
+                    📞 Call
+                </a>
+
+                <a href="https://wa.me/${formatPhone(lead['Phone Number'])}" target="_blank" class="action-btn wp-btn">
+                    💬 WhatsApp
+                </a>
+            </div>
+
+        </div>
+    `).join('');
+}
+
 
         // Switch sheet
         function switchSheet(sheet) {
@@ -2404,7 +2516,25 @@ const phone = rawPhone.replace(/[^0-9]/g, '');
     }
 });
 
+function toggleMenu(btn) {
+    const dropdown = btn.nextElementSibling;
 
+    // close all first
+    document.querySelectorAll('.menu-dropdown').forEach(d => {
+        if (d !== dropdown) d.style.display = 'none';
+    });
+
+    dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
+}
+
+// close when clicking outside
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.card-menu')) {
+        document.querySelectorAll('.menu-dropdown').forEach(d => {
+            d.style.display = 'none';
+        });
+    }
+});
 </script>
 </body>
 </html>
