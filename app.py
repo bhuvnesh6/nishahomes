@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-from video_to_audio import extract_audio_from_video
+#from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -18,12 +18,14 @@ import time
 from flask import session
 import random
 import requests
+from datetime import timedelta
 
 
 # Load env
 load_dotenv()
 
 app = Flask(__name__)
+app.permanent_session_lifetime = timedelta(days=60) 
 app.secret_key = "supersecretkey"
 
 CORS(app)
@@ -95,6 +97,10 @@ def login():
      return redirect("/")
     password = request.form.get("password")
 
+    remember = request.form.get("remember")
+
+    
+    
     collection = db["teamAssign"]
 
     user = collection.find_one({
@@ -109,6 +115,11 @@ def login():
         session["employee_name"] = user.get("Employee name")
         session["employee_number"] = user.get("Employee number")
 
+        if remember:
+         session.permanent = True
+        else:
+         session.permanent = False
+    
         # Redirect based on role
         if user.get("roll") == "admin":
             return redirect("/admin")

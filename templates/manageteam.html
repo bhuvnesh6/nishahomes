@@ -535,6 +535,92 @@
   background: rgba(255,255,255,0.09);
   box-shadow: 0 0 0 3px rgba(239,131,84,0.14);
 }
+
+/* ── 3 DOT MENU ── */
+.card-menu {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.menu-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: 0.25s;
+}
+
+.menu-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  background: #2D3142;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: none;
+  min-width: 140px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  z-index: 20;
+}
+
+.menu-dropdown button {
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: #f87171;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.menu-dropdown button:hover {
+  background: rgba(239,68,68,0.15);
+}
+
+/* ── ACTION BUTTONS ── */
+.card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  transition: 0.25s;
+}
+
+.call-btn {
+  background: #3b82f6;
+}
+.call-btn:hover {
+  background: #2563eb;
+}
+
+.wa-btn {
+  background: #25D366;
+}
+.wa-btn:hover {
+  background: #1ebe5d;
+}
 </style>
 </head>
 <body>
@@ -707,31 +793,50 @@ async function loadMembers() {
     json.forEach((emp, idx) => {
       const name = emp["Employee name"];
       const phone = emp["Employee number"];
+      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
       const card = document.createElement('div');
       card.className = 'card';
       card.style.animationDelay = `${idx * 0.06}s`;
       card.innerHTML = `
-        <div class="card-header">
-          <div class="card-avatar">${getInitials(name)}</div>
-          <div class="card-info">
-            <h4>${name}</h4>
-            <div class="card-phone">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11.5a19.79 19.79 0 01-3.07-8.67A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.84a16 16 0 006.29 6.29l1.21-1.21a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
-              </svg>
-              ${phone}
-            </div>
-          </div>
-        </div>
-        <div class="status-badge"><div class="status-dot"></div>Active</div>
-        <div class="card-divider"></div>
-        <button class="delete-btn" onclick="removeMember('${phone}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-          </svg>
-          Remove Member
-        </button>`;
-      list.appendChild(card);
+  <div class="card-menu">
+    <div class="menu-btn" onclick="toggleMenu(this)">
+      ⋮
+    </div>
+    <div class="menu-dropdown">
+      <button onclick="removeMember('${phone}')">🗑 Remove</button>
+    </div>
+  </div>
+
+  <div class="card-header">
+    <div class="card-avatar">${getInitials(name)}</div>
+    <div class="card-info">
+      <h4>${name}</h4>
+      <div class="card-phone">
+        ${phone}
+      </div>
+    </div>
+  </div>
+
+  <div class="status-badge">
+    <div class="status-dot"></div>Active
+  </div>
+
+  <div class="card-divider"></div>
+
+  <div class="card-actions">
+    <button class="action-btn call-btn"
+      onclick="window.location.href='tel:${phone}'">
+      📞 Call
+    </button>
+
+    <button class="action-btn wa-btn"
+      onclick="window.open('https://wa.me/${cleanPhone}', '_blank')">
+      💬 WhatsApp
+    </button>
+  </div>
+`;
+      
+        list.appendChild(card);
     });
 
   } catch {
@@ -807,6 +912,27 @@ document.getElementById('modal').addEventListener('click', e => {
 });
 
 loadMembers();
+
+
+
+function toggleMenu(btn) {
+  const dropdown = btn.nextElementSibling;
+
+  document.querySelectorAll('.menu-dropdown').forEach(d => {
+    if (d !== dropdown) d.style.display = 'none';
+  });
+
+  dropdown.style.display =
+    dropdown.style.display === 'block' ? 'none' : 'block';
+}
+
+// close when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.card-menu')) {
+    document.querySelectorAll('.menu-dropdown')
+      .forEach(d => d.style.display = 'none');
+  }
+});
 </script>
 </body>
 </html>
