@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Add Project</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #2D3142;
+    --primary-deep: #1e2235;
+    --primary-light: #3a3f56;
+    --accent: #EF8354;
+    --accent-light: #FFA07A;
+    --text-main: #ffffff;
+    --text-muted: rgba(255,255,255,0.5);
+    --text-sub: rgba(255,255,255,0.7);
+    --radius-card: 20px;
+    --radius-btn: 12px;
+    --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html, body {
+    min-height: 100vh;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--primary-deep);
+    color: var(--text-main);
+  }
+
+  /* ─── BACKGROUND ─── */
+  .bg {
+    position: fixed; inset: 0; z-index: 0;
+    background: radial-gradient(ellipse 80% 70% at 20% 20%, #3a3f56 0%, transparent 60%),
+                radial-gradient(ellipse 60% 80% at 80% 80%, #1e2235 0%, transparent 60%),
+                radial-gradient(ellipse 70% 60% at 50% 50%, #2D3142 0%, #1a1d2e 100%);
+  }
+
+  .bg::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    opacity: 0.04;
+    pointer-events: none;
+  }
+
+  .blob {
+    position: fixed; border-radius: 50%;
+    filter: blur(90px); pointer-events: none; will-change: transform;
+  }
+  .blob-1 {
+    width: 520px; height: 520px;
+    background: radial-gradient(circle, rgba(239,131,84,0.18) 0%, transparent 70%);
+    top: -120px; right: -80px;
+    animation: floatBlob1 14s ease-in-out infinite alternate;
+  }
+  .blob-2 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(45,49,66,0.6) 0%, transparent 70%);
+    bottom: -80px; left: -100px;
+    animation: floatBlob2 18s ease-in-out infinite alternate;
+  }
+  .blob-3 {
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(239,131,84,0.10) 0%, transparent 70%);
+    top: 50%; left: 15%;
+    animation: floatBlob3 11s ease-in-out infinite alternate;
+  }
+
+  @keyframes floatBlob1 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(-40px, 50px) scale(1.12); } }
+  @keyframes floatBlob2 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(40px, -30px) scale(1.08); } }
+  @keyframes floatBlob3 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(25px, -45px) scale(0.92); } }
+
+  .grid-overlay {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  .light-ray {
+    position: fixed;
+    width: 600px; height: 600px;
+    background: conic-gradient(from 220deg at 70% 10%, rgba(239,131,84,0.12) 0deg, transparent 40deg);
+    top: 0; right: 0; z-index: 0;
+    pointer-events: none;
+    animation: rayPulse 8s ease-in-out infinite;
+  }
+  @keyframes rayPulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+  /* ─── TOP BAR ─── */
+  .top-bar {
+    position: relative; z-index: 10;
+    background: rgba(30, 34, 53, 0.75);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    animation: slideDown 0.7s var(--ease-out-expo) forwards;
+  }
+
+  @keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(239,131,84,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(239,131,84,0.3);
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    white-space: nowrap;
+  }
+  .back-btn:hover {
+    background: rgba(239,131,84,0.25);
+    border-color: rgba(239,131,84,0.55);
+    transform: translateX(-2px);
+  }
+
+  .top-bar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-main);
+    letter-spacing: -0.2px;
+  }
+
+  /* ─── PAGE WRAPPER ─── */
+  .page {
+    position: relative; z-index: 5;
+    padding: 40px 20px 60px;
+  }
+
+  /* ─── CARD ─── */
+  .card {
+    max-width: 600px;
+    margin: 0 auto;
+    background: linear-gradient(145deg, #2D3142 0%, #3a3f56 100%);
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255,255,255,0.09);
+    padding: 44px 40px 40px;
+    box-shadow:
+      0 2px 0 rgba(255,255,255,0.06) inset,
+      0 32px 80px rgba(0,0,0,0.5),
+      0 8px 32px rgba(0,0,0,0.3),
+      0 0 0 1px rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(30px);
+    animation: cardIn 0.9s var(--ease-out-expo) 0.3s forwards;
+  }
+
+  @keyframes cardIn { to { opacity: 1; transform: translateY(0); } }
+
+  .card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(239,131,84,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .card-accent-bar {
+    position: absolute;
+    top: 0; left: 40px; right: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(239,131,84,0.6), transparent);
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* ─── HEADING ─── */
+  .card-header {
+    text-align: center;
+    margin-bottom: 32px;
+    opacity: 0;
+    animation: fadeUp 0.7s var(--ease-out-expo) 0.55s forwards;
+  }
+
+  .brand-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, #EF8354, #FFA07A);
+    border-radius: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 24px rgba(239,131,84,0.4), 0 2px 8px rgba(239,131,84,0.2);
+    animation: iconGlow 3s ease-in-out 1.5s infinite;
+  }
+
+  @keyframes iconGlow {
+    0%,100% { box-shadow: 0 8px 24px rgba(239,131,84,0.4), 0 2px 8px rgba(239,131,84,0.2); }
+    50%      { box-shadow: 0 8px 32px rgba(239,131,84,0.65), 0 2px 12px rgba(239,131,84,0.35); }
+  }
+
+  .brand-icon svg { width: 24px; height: 24px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 24px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.3px;
+  }
+  .card-title span { color: var(--accent); }
+
+  .card-sub {
+    margin-top: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ─── DIVIDER ─── */
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: fadeUp 0.6s var(--ease-out-expo) 0.65s forwards;
+  }
+  .divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
+  .divider-text { font-size: 11px; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; }
+
+  /* ─── FIELDS ─── */
+  .field {
+    margin-bottom: 16px;
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  .field:nth-child(1) { animation: fadeUp 0.6s var(--ease-out-expo) 0.70s forwards; }
+  .field:nth-child(2) { animation: fadeUp 0.6s var(--ease-out-expo) 0.77s forwards; }
+  .field:nth-child(3) { animation: fadeUp 0.6s var(--ease-out-expo) 0.84s forwards; }
+  .field:nth-child(4) { animation: fadeUp 0.6s var(--ease-out-expo) 0.91s forwards; }
+  .field:nth-child(5) { animation: fadeUp 0.6s var(--ease-out-expo) 0.98s forwards; }
+  .field:nth-child(6) { animation: fadeUp 0.6s var(--ease-out-expo) 1.05s forwards; }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .input-wrap {
+    position: relative;
+    display: flex; align-items: center;
+  }
+
+  .input-icon {
+    position: absolute; left: 16px;
+    display: flex; align-items: center;
+    color: rgba(255,255,255,0.35);
+    pointer-events: none;
+    transition: color 0.3s;
+    z-index: 1;
+  }
+  .input-icon svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .field-input {
+    width: 100%;
+    height: 50px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px;
+    color: #fff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 0 16px 0 46px;
+    outline: none;
+    transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+    -webkit-appearance: none;
+  }
+
+  .field-input.no-icon { padding-left: 16px; }
+
+  textarea.field-input {
+    height: auto;
+    min-height: 100px;
+    padding: 14px 16px 14px 46px;
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  select.field-input {
+    cursor: pointer;
+    appearance: none;
+  }
+
+  .field-input::placeholder { color: rgba(255,255,255,0.28); }
+
+  .field-input:focus {
+    border-color: rgba(239,131,84,0.7);
+    background: rgba(255,255,255,0.09);
+    box-shadow: 0 0 0 3px rgba(239,131,84,0.15), 0 4px 20px rgba(0,0,0,0.2);
+  }
+
+  .input-wrap:focus-within .input-icon { color: var(--accent); }
+
+  /* Select arrow */
+  .select-arrow {
+    position: absolute; right: 14px;
+    pointer-events: none;
+    color: rgba(255,255,255,0.35);
+  }
+  .select-arrow svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* File input */
+  .file-label {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+    min-height: 50px;
+    background: rgba(255,255,255,0.06);
+    border: 1px dashed rgba(255,255,255,0.18);
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .file-label:hover {
+    border-color: rgba(239,131,84,0.5);
+    background: rgba(255,255,255,0.08);
+  }
+  .file-label svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .file-label-text { font-size: 13.5px; color: rgba(255,255,255,0.45); }
+  .file-label-text span { color: var(--accent); font-weight: 600; }
+  input[type="file"] { display: none; }
+
+  /* ─── SUBMIT BUTTON ─── */
+  .btn-wrap {
+    opacity: 0;
+    animation: fadeUp 0.6s var(--ease-out-expo) 1.12s forwards;
+    margin-top: 8px;
+  }
+
+  .btn-submit {
+    width: 100%;
+    height: 52px;
+    background: linear-gradient(135deg, #EF8354 0%, #FFA07A 100%);
+    border: none; border-radius: var(--radius-btn);
+    color: #fff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 8px 24px rgba(239,131,84,0.45), 0 2px 8px rgba(239,131,84,0.25), 0 1px 0 rgba(255,255,255,0.2) inset;
+    transition: transform 0.25s var(--ease-out-expo), box-shadow 0.25s var(--ease-out-expo), background 0.25s;
+    animation: btnPulse 3s ease-in-out 2s infinite;
+  }
+  .btn-submit::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
+    border-radius: inherit;
+    opacity: 1;
+  }
+  .btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 36px rgba(239,131,84,0.55), 0 4px 12px rgba(239,131,84,0.35), 0 1px 0 rgba(255,255,255,0.2) inset;
+    background: linear-gradient(135deg, #f5915e 0%, #ffaf8a 100%);
+  }
+  .btn-submit:active { transform: translateY(1px); }
+  .btn-submit.loading { pointer-events: none; opacity: 0.85; }
+  .btn-text { transition: opacity 0.2s; position: relative; z-index: 1; }
+  .btn-spinner {
+    display: none;
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  .btn-submit.loading .btn-text { display: none; }
+  .btn-submit.loading .btn-spinner { display: block; }
+
+  @keyframes btnPulse {
+    0%,100% { box-shadow: 0 8px 24px rgba(239,131,84,0.45), 0 2px 8px rgba(239,131,84,0.25), 0 1px 0 rgba(255,255,255,0.2) inset; }
+    50%      { box-shadow: 0 8px 36px rgba(239,131,84,0.65), 0 2px 16px rgba(239,131,84,0.4), 0 1px 0 rgba(255,255,255,0.2) inset; }
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── LOADER OVERLAY ─── */
+  .loader {
+    display: none;
+    margin-top: 14px;
+    text-align: center;
+    padding: 10px 14px;
+    background: rgba(239,131,84,0.08);
+    border: 1px solid rgba(239,131,84,0.2);
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.5px;
+  }
+
+  /* ─── SHARED ─── */
+  @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+  /* ─── MOBILE ─── */
+  @media (max-width: 600px) {
+    .card { padding: 30px 20px 28px; }
+    .card-title { font-size: 20px; }
+    .top-bar { padding: 12px 16px; }
+  }
+</style>
+</head>
+
+<body>
+
+<!-- Background -->
+<div class="bg">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+<div class="grid-overlay"></div>
+<div class="light-ray"></div>
+
+<!-- Top Bar -->
+<div class="top-bar">
+  <button class="back-btn" onclick="window.location.href='/admin'">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    Back
+  </button>
+  <span class="top-bar-title">Add Project</span>
+</div>
+
+<!-- Page -->
+<div class="page">
+  <div class="card">
+    <div class="card-accent-bar"></div>
+
+    <!-- Header -->
+    <div class="card-header">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <div class="card-title">Add New <span>Project</span></div>
+      <div class="card-sub">Fill in your project details below</div>
+    </div>
+
+    <div class="divider">
+      <div class="divider-line"></div>
+      <span class="divider-text">Project Info</span>
+      <div class="divider-line"></div>
+    </div>
+
+    <!-- Form -->
+    <form id="projectForm">
+
+      <div class="field">
+        <label class="field-label">Project Name</label>
+        <div class="input-wrap">
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8L6 7h12l-2-4z"/></svg>
+          </span>
+          <input class="field-input" type="text" name="name" placeholder="e.g. Sunset Villa" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Location</label>
+        <div class="input-wrap">
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          </span>
+          <input class="field-input" type="text" name="location" placeholder="e.g. Bali, Indonesia" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Description</label>
+        <div class="input-wrap">
+          <span class="input-icon" style="top:14px; align-self: flex-start;">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </span>
+          <textarea class="field-input" name="description" placeholder="Describe the project..." required></textarea>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Budget</label>
+        <div class="input-wrap">
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </span>
+          <input class="field-input" type="text" name="budget" placeholder="e.g. $500,000" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Category</label>
+        <div class="input-wrap">
+          <span class="input-icon">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </span>
+          <select class="field-input" name="category" required>
+            <option value="">Select Category</option>
+            <option>Vacation Homes</option>
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
+          <span class="select-arrow">
+            <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Media Upload</label>
+        <label class="file-label" id="fileLabel">
+          <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          <span class="file-label-text" id="fileLabelText"><span>Choose file</span> or drag & drop — image or video</span>
+          <input type="file" name="media" id="mediaInput" accept="image/*,video/*" required>
+        </label>
+      </div>
+
+      <div class="btn-wrap">
+        <button class="btn-submit" type="submit" id="submitBtn">
+          <span class="btn-text">Upload Project</span>
+          <div class="btn-spinner"></div>
+        </button>
+      </div>
+
+      <div class="loader" id="loader">Uploading… please wait</div>
+
+    </form>
+  </div>
+</div>
+
+<script>
+// File label update
+document.getElementById("mediaInput").addEventListener("change", function(){
+  const name = this.files[0]?.name || null;
+  document.getElementById("fileLabelText").innerHTML = name
+    ? `<span>${name}</span>`
+    : `<span>Choose file</span> or drag & drop — image or video`;
+});
+
+// Form submit
+document.getElementById("projectForm").addEventListener("submit", async function(e){
+  e.preventDefault();
+
+  const btn = document.getElementById("submitBtn");
+  const loader = document.getElementById("loader");
+
+  btn.classList.add("loading");
+  loader.style.display = "block";
+
+  let formData = new FormData(this);
+
+  try {
+    let res = await fetch("/api/projects/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    let data = await res.json();
+
+    btn.classList.remove("loading");
+    loader.style.display = "none";
+
+    if(data.status === "success"){
+      alert("✅ Project Added");
+      window.location.href = "/admin";
+    } else {
+      alert("❌ " + data.message);
+    }
+
+  } catch(err){
+    btn.classList.remove("loading");
+    loader.style.display = "none";
+    alert("Error: " + err);
+  }
+});
+</script>
+</body>
+</html>

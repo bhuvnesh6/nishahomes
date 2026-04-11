@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-#from video_to_audio import extract_audio_from_video
+from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -1187,26 +1187,55 @@ def get_projects():
 
 # POST: Add new project
 # -------------------------------
-@app.route("/api/projects", methods=["POST"])
-def add_project():
+@app.route("/api/projects/upload", methods=["POST"])
+def upload_project():
     try:
-        data = request.get_json()
+        name = request.form.get("name")
+        location = request.form.get("location")
+        description = request.form.get("description")
+        budget = request.form.get("budget")
+        category = request.form.get("category")
+        file = request.files.get("media")
 
-        # Required fields validation
-        required_fields = ["name", "location", "description", "budget", "category", "img"]
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    "status": "error",
-                    "message": f"{field} is required"
-                }), 400
+        # Validation
+        if not all([name, location, description, budget, category, file]):
+            return jsonify({
+                "status": "error",
+                "message": "All fields required"
+            }), 400
 
-        # Insert into DB
-        projects_collection.insert_one(data)
+        # Save file
+        filename = secure_filename(file.filename)
+        unique_name = str(int(time.time())) + "_" + filename
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
+        file.save(file_path)
+
+        # Generate URL
+        base_url = request.host_url.rstrip("/")
+        file_url = f"{base_url}/uploads/{unique_name}"
+
+        # Detect type
+        ext = filename.split(".")[-1].lower()
+        file_type = "image" if ext in ["jpg","jpeg","png","webp"] else "video"
+
+        # Save in DB
+        project_data = {
+            "name": name,
+            "location": location,
+            "description": description,
+            "budget": budget,
+            "category": category,
+            "img": file_url,
+            "type": file_type,
+            "createdAt": datetime.utcnow()
+        }
+
+        projects_collection.insert_one(project_data)
 
         return jsonify({
             "status": "success",
-            "message": "Project added successfully"
+            "message": "Project uploaded successfully",
+            "url": file_url
         }), 201
 
     except Exception as e:
@@ -1214,6 +1243,12 @@ def add_project():
             "status": "error",
             "message": str(e)
         }), 500
+        
+        
+
+@app.route("/add-project")
+def add_project_page():
+    return render_template("upload_project.html")
 
 
 if __name__ == "__main__":
