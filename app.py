@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-from video_to_audio import extract_audio_from_video
+#from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -983,26 +983,35 @@ def modify_document():
         collection = db[collection_name]
 
         # 2️⃣ Validate phone / number
-        raw_number = data.get("Phone Number") or data.get("Number")
+        raw_number = (
+        data.get("Phone Number") or 
+        data.get("Number") or 
+        data.get("Employee number")
+        )
 
         if not raw_number:
-            return jsonify({"error": "Phone Number or Number is required"}), 400
+         return jsonify({"error": "Phone Number / Number / Employee number is required"}), 400
 
-        # Normalize (uses your existing function)
         normalized_number = normalize_number(raw_number)
 
         if not normalized_number:
-            return jsonify({"error": "Invalid phone number"}), 400
+         return jsonify({"error": "Invalid phone number"}), 400
 
         # 3️⃣ Build filter dynamically
         if collection_name == "endData":
             filter_query = {"Number": normalized_number}
         else:
             filter_query = {
-                "Phone Number": {
-                    "$regex": normalized_number
-                }
-            }
+        "$or": [
+            {"Phone Number": normalized_number},
+            {"Employee number": normalized_number},
+            {"Number": normalized_number},
+
+            {"Phone Number": {"$regex": str(normalized_number)}},
+            {"Employee number": {"$regex": str(normalized_number)}},
+            {"Number": {"$regex": str(normalized_number)}},
+        ]
+    }
 
         # 4️⃣ Build update operations
         update_query = {}
@@ -1052,6 +1061,91 @@ def modify_document():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+    
+    
+@app.route('/add-task', methods=['POST'])
+def add_task():
+    data = request.json
+
+    emp = data.get("phone")
+    task_text = data.get("task")
+    status = data.get("status", "pending")
+
+    if not emp or not task_text:
+        return jsonify({"success": False, "message": "Missing data"})
+
+    normalized_number = normalize_number(emp)
+
+    task_id = f"{normalized_number}_{int(time.time()*1000)}"
+
+    task_obj = {
+        "id": task_id,
+        "text": task_text,
+        "status": status,
+        "created_at": int(time.time())
+    }
+
+    result = db.teamAssign.update_one(
+        {
+            "$or": [
+                {"Employee number": normalized_number},
+                {"Phone Number": normalized_number},
+                {"Employee number": {"$regex": str(normalized_number)}},
+                {"Phone Number": {"$regex": str(normalized_number)}},
+            ]
+        },
+        {
+            "$push": {"tasks": task_obj}
+        },
+        upsert=True
+    )
+
+    return jsonify({
+        "success": True,
+        "message": "Task added",
+        "task_id": task_id
+    })
+ 
+    
+@app.route('/update-task-status', methods=['POST'])
+def update_task_status():
+    data = request.json
+
+    emp = data.get("phone")
+    task_id = data.get("task_id")
+    status = data.get("status")
+
+    if not emp or not task_id or not status:
+        return jsonify({"success": False, "message": "Missing fields"})
+
+    result = db.teamassign.update_one(
+        {
+            "Phone Number": emp,
+            "tasks.id": task_id
+        },
+        {
+            "$set": {
+                "tasks.$.status": status
+            }
+        }
+    )
+
+    if result.modified_count:
+        return jsonify({"success": True, "message": "Status updated"})
+    else:
+        return jsonify({"success": False, "message": "Task not found"})
+    
+    
+@app.route('/get-tasks/<phone>', methods=['GET'])
+def get_tasks(phone):
+    user = db.teamassign.find_one({"Phone Number": phone})
+
+    if not user:
+        return jsonify([])
+
+    return jsonify(user.get("tasks", []))    
+    
+    
     
     
     

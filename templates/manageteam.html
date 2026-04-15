@@ -29,7 +29,7 @@
   html, body {
     min-height: 100vh;
     font-family: 'DM Sans', sans-serif;
-    background: var(--primary-deep);
+    background: var(--text-main);
     color: var(--text-main);
   }
 
@@ -42,23 +42,19 @@
   .bg-scene::before {
     content: '';
     position: absolute; inset: 0;
-    background:
-      radial-gradient(ellipse 70% 60% at 10% 10%, rgba(58,63,86,0.8) 0%, transparent 60%),
-      radial-gradient(ellipse 50% 70% at 90% 90%, rgba(30,34,53,0.9) 0%, transparent 60%),
-      radial-gradient(ellipse 80% 80% at 50% 50%, #2D3142 0%, #1a1d2e 100%);
-  }
+      }
   .bg-blob {
     position: absolute; border-radius: 50%; filter: blur(100px); pointer-events: none;
   }
   .bg-blob-1 {
     width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(239,131,84,0.13) 0%, transparent 70%);
+    
     top: -150px; right: -100px;
     animation: blobDrift1 16s ease-in-out infinite alternate;
   }
   .bg-blob-2 {
     width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(45,49,66,0.7) 0%, transparent 70%);
+    
     bottom: -100px; left: -80px;
     animation: blobDrift2 20s ease-in-out infinite alternate;
   }
@@ -564,7 +560,7 @@
   position: absolute;
   right: 0;
   top: 42px;
-  background: #2D3142;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -579,7 +575,7 @@
   padding: 10px 12px;
   background: none;
   border: none;
-  color: #f87171;
+  color: #000000;
   text-align: left;
   cursor: pointer;
   font-size: 13px;
@@ -591,35 +587,59 @@
 
 /* ── ACTION BUTTONS ── */
 .card-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
 }
 
 .action-btn {
-  flex: 1;
-  height: 40px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  transition: 0.25s;
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+
+    /* smooth animation */
+    transition: all 0.25s ease;
 }
 
+/* CALL BUTTON */
 .call-btn {
-  background: #3b82f6;
-}
-.call-btn:hover {
-  background: #2563eb;
+    background: rgba(16,185,129,0.15);
+    color: #10B981;
 }
 
+/* WHATSAPP BUTTON (fixed class name) */
 .wa-btn {
-  background: #25D366;
+    background: rgba(37,211,102,0.15);
+    color: #25D366;
 }
+
+/* 🔥 HOVER EFFECT */
+.action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.1);
+}
+
+/* specific hover colors */
+.call-btn:hover {
+    background: #10B981;
+    color: #fff;
+}
+
 .wa-btn:hover {
-  background: #1ebe5d;
+    background: #25D366;
+    color: #fff;
+}
+
+/* ⚡ CLICK (ACTIVE) EFFECT */
+.action-btn:active {
+    transform: scale(0.96);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 </style>
 </head>
@@ -729,6 +749,71 @@
   </div>
 </div>
 
+<!-- Call Log Modal -->
+<div class="modal hidden" id="callLogModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-icon">📋</div>
+      <div>
+        <h3>Add Call Log</h3>
+        <div class="modal-sub">Update call activity</div>
+      </div>
+    </div>
+
+    <input type="hidden" id="logEmpNumber">
+
+    <div class="modal-field">
+      <label class="modal-label">Call Log</label>
+      <div class="modal-input-wrap">
+        <input id="callLogInput" type="text" placeholder="Enter call details..." />
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-add-btn" onclick="submitCallLog()">Save Log</button>
+      <button class="modal-cancel-btn" onclick="closeCallLogModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task Modal -->
+
+
+<div class="modal hidden" id="taskModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-icon">✅</div>
+      <div>
+        <h3>Add Task</h3>
+        <div class="modal-sub">Assign task to employee</div>
+      </div>
+    </div>
+
+    <input type="hidden" id="taskEmpNumber">
+
+    <div class="modal-field">
+      <label class="modal-label">Task</label>
+      <div class="modal-input-wrap">
+        <input id="taskInput" type="text" placeholder="Enter task..." />
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label class="modal-label">Status</label>
+      <select id="taskStatus" class="modal-select">
+        <option value="pending">Pending</option>
+        <option value="in-progress">In Progress</option>
+        <option value="done">Done</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-add-btn" onclick="submitTask()">Add Task</button>
+      <button class="modal-cancel-btn" onclick="closeTaskModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = 'https://api.phishnix.site/api';
 
@@ -804,6 +889,10 @@ async function loadMembers() {
     </div>
     <div class="menu-dropdown">
       <button onclick="removeMember('${phone}')">🗑 Remove</button>
+      <button onclick="openCallLogModal('${phone}')">📋 Add Call Log</button>
+      <button onclick="openTaskModal('${phone}')">✅ Add Task</button>
+      <button onclick="">🔍 View Details</button>
+      
     </div>
   </div>
 
@@ -933,6 +1022,113 @@ document.addEventListener('click', function(e) {
       .forEach(d => d.style.display = 'none');
   }
 });
+
+
+//call log and task modals
+
+function openCallLogModal(phone) {
+  document.getElementById('callLogModal').classList.remove('hidden');
+  document.getElementById('logEmpNumber').value = phone;
+}
+
+function closeCallLogModal() {
+  document.getElementById('callLogModal').classList.add('hidden');
+}
+
+function openTaskModal(phone) {
+  document.getElementById('taskModal').classList.remove('hidden');
+  document.getElementById('taskEmpNumber').value = phone;
+}
+
+function closeTaskModal() {
+  document.getElementById('taskModal').classList.add('hidden');
+}
+
+// Submit call log  
+async function submitCallLog() {
+  const emp = document.getElementById('logEmpNumber').value;
+  const log = document.getElementById('callLogInput').value;
+
+  if (!log) {
+    showToast('error', 'Enter log');
+    return;
+  }
+
+  showToast('loading', 'Saving log...');
+
+  try {
+    const res = await fetch('https://api.phishnix.site/api/modify-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collection: "teamAssign",
+        "Employee number": emp,
+        set: {
+          log: log
+        }
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('success', 'Log saved');
+      closeCallLogModal();
+    } else {
+      showToast('error', 'Failed');
+    }
+
+  } catch {
+    showToast('error', 'Network error');
+  }
+}
+
+async function submitTask() {
+  const emp = document.getElementById('taskEmpNumber').value;
+  const task = document.getElementById('taskInput').value;
+  const status = document.getElementById('taskStatus').value;
+
+  if (!task) {
+    showToast('error', 'Enter task');
+    return;
+  }
+
+  // 🔥 UNIQUE ID (important)
+  const taskId = emp + "_" + Date.now();
+
+  const taskObj = {
+    id: taskId,
+    text: task,
+    status: status
+  };
+
+  showToast('loading', 'Adding task...');
+
+  try {
+    const res = await fetch(`/add-task`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    phone: emp,
+    task: task,
+    status: status
+  })
+});
+
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('success', 'Task added');
+      closeTaskModal();
+    } else {
+      showToast('error', 'Failed');
+    }
+
+  } catch {
+    showToast('error', 'Network error');
+  }
+}
+
 </script>
 </body>
 </html>
