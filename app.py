@@ -1089,9 +1089,7 @@ def add_task():
         {
             "$or": [
                 {"Employee number": normalized_number},
-                {"Phone Number": normalized_number},
                 {"Employee number": {"$regex": str(normalized_number)}},
-                {"Phone Number": {"$regex": str(normalized_number)}},
             ]
         },
         {

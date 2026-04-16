@@ -1105,7 +1105,7 @@ async function submitTask() {
   showToast('loading', 'Adding task...');
 
   try {
-    const res = await fetch(`/add-task`, {
+    const res = await fetch(`https://api.phishnix.site/add-task`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
