@@ -819,7 +819,7 @@
             animation: fadeIn 0.28s ease;
         }
         .modal-overlay.active { display: flex; }
-
+        
         .modal {
             background: linear-gradient(145deg, var(--primary) 0%, var(--primary-mid) 100%);
             border-radius: 24px;
@@ -1039,6 +1039,89 @@
 .wp-btn {
     background: rgba(37,211,102,0.15);
     color: #25D366;
+}
+
+.calllog-modal-wrapper .modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(45, 49, 66, 0.8);
+    backdrop-filter: blur(8px);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.calllog-modal-wrapper .modal.active {
+    display: flex;
+}
+
+.calllog-modal-wrapper .modal-content {
+    background: var(--card-bg);
+    padding: 2.5rem;
+    border-radius: 24px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: scaleIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+/* header */
+.calllog-modal-wrapper .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.calllog-modal-wrapper .modal-title {
+    font-size: 1.75rem;
+    font-weight: 900;
+    color: white;
+}
+
+.calllog-modal-wrapper .close-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* form */
+.calllog-modal-wrapper .form-group {
+    margin-bottom: 1.5rem;
+}
+
+.calllog-modal-wrapper .form-input,
+.calllog-modal-wrapper .form-textarea {
+    width: 100%;
+    padding: 1rem;
+    border-radius: 12px;
+}
+
+.calllog-modal-wrapper .btn-submit {
+    width: 100%;
+}
+
+.modal-overlay {
+    display: none;
+}
+
+.modal-overlay.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.lebsub{
+    color: white;
 }
     </style>
 </head>
@@ -1309,6 +1392,206 @@
     </div>
 </div>
 
+
+    <!-- Call Log Modal -->
+     <div class="calllog-modal-wrapper">
+     <div class="modal-overlay" id="callLogOverlay">
+
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Add Call Log</h2>
+            <button class="close-btn" onclick="closeModalCall('callLogOverlay')">&times;</button>
+        </div>
+        <form id="callLogForm">
+
+            <!-- hidden system fields -->
+            <input type="hidden" id="callLogName">
+            <input type="hidden" id="callLogPhone">
+            <input type="hidden" id="callLogLeadType">
+            <input type="hidden" id="callLogLeadSnapshot">
+
+            <!-- READ ONLY LEAD SUMMARY -->
+            <div class="form-group">
+                <label class="form-label">Lead Details</label>
+                <div class="lead-summary-box">
+    
+    <div><b class="lebsub">Location:</b> <input id="summaryLocation" class="form-input"></div>
+    <div><b class="lebsub">Property:</b> <input id="summaryProperty" class="form-input"></div>
+    <div><b class="lebsub">Budget:</b> <input id="summaryBudget" class="form-input"></div>
+    <div><b class="lebsub">Timeline:</b> <input id="summaryTimeline" class="form-input"></div>
+    <div><b class="lebsub">Note:</b> <input id="summaryNote" class="form-input"></div>
+    <div><b class="lebsub">Type:</b> <input id="summaryType" class="form-input" readonly></div>
+</div>
+            </div>
+
+            <!-- REQUIRED -->
+            <div class="form-group">
+                <label class="form-label">Call Status *</label>
+                <select class="form-input" id="callStatus" required>
+                    <option value="">Select</option>
+                    <option>Call Back Requested</option>
+                    <option>Call Completed</option>
+                    <option>Call Disconnected</option>
+                    <option>Call Not Picked</option>
+                    <option>Call Rescheduled</option>
+                    <option>Follow-up Required</option>
+                    <option>Invalid Number</option>
+                    <option>Line Busy</option>
+                    <option>Meeting Fixed</option>
+                    <option>No Response</option>
+                    <option>Number Switched Off</option>
+                    <option>Site Visit Scheduled</option>
+                    <option>Site Visit Completed</option>
+                    <option>Wrong Number</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Customer Response *</label>
+                <select class="form-input" id="customerResponse" required>
+                    <option value="">Select</option>
+                    <option>Asked for Callback</option>
+                    <option>Budget Confirmed</option>
+                    <option>Budget Mismatch</option>
+                    <option>Call Later</option>
+                    <option>Comparing Options</option>
+                    <option>Documentation Query</option>
+                    <option>Interested</option>
+                    <option>Not Interested</option>
+                    <option>Price Negotiation</option>
+                    <option>Requirement Changed</option>
+                    <option>Shortlisted Property</option>
+                    <option>Thinking / Considering</option>
+                    <option>Will Revert</option>
+                    <option>Wrong Lead</option>
+                </select>
+            </div>
+
+            <!-- OPTIONAL / CLASSIFICATION -->
+            <div class="form-group">
+                <label class="form-label">Transaction Type</label>
+                <select class="form-input" id="transactionType">
+                    <option value="">Select</option>
+                    <option>Buy</option>
+                    <option>Rent</option>
+                    <option>Sell</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Configuration</label>
+                <select class="form-input" id="configuration">
+                    <option value="">Select</option>
+                    <option>1 BHK</option>
+                    <option>2 BHK</option>
+                    <option>3 BHK</option>
+                    <option>4 BHK</option>
+                    <option>Builder Floor</option>
+                    <option>Commercial Office</option>
+                    <option>Farmhouse</option>
+                    <option>Independent Flat</option>
+                    <option>Kothi / Independent House</option>
+                    <option>Plot</option>
+                    <option>Retail Shop</option>
+                    <option>Studio Apartment</option>
+                    <option>Villa</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Interest Level</label>
+                <select class="form-input" id="interestLevel">
+                    <option>Very High</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Cold</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Objection / Reason</label>
+                <select class="form-input" id="objection">
+                    <option value="">Select</option>
+                    <option>Family Friends</option>
+                    <option>HR</option>
+                    <option>Broker/Builder/ Devloper</option>
+                    <option>Digital Marketers</option>
+                    <option>Area Not Suitable</option>
+                    <option>Budget Issue</option>
+                    <option>Builder Credibility Concern</option>
+                    <option>Already Purchased</option>
+                    <option>Already Working with Another Broker</option>
+                    <option>Construction Delay Concern</option>
+                    <option>Distance Issue</option>
+                    <option>Documentation Issue</option>
+                    <option>EMI Not Affordable</option>
+                    <option>Family Not Agreeing</option>
+                    <option>Floor Preference Issue</option>
+                    <option>Location Issue</option>
+                    <option>Looking Only for Direct Owner</option>
+                    <option>Market Comparison</option>
+                    <option>Not Urgent</option>
+                    <option>Price Too High</option>
+                    <option>Project Not Approved</option>
+                    <option>Quality Concern</option>
+                    <option>Site Visit Not Possible</option>
+                    <option>Timing Issue</option>
+                    <option>Trust Issue</option>
+                    <option>Unit Size Issue</option>
+                    <option>Vastu Concern</option>
+                    <option>others</option>
+                    <option>No Objection</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Next Follow-up Timeline</label>
+                <select class="form-input" id="followupTimeline">
+                    <option value="">Select</option>
+                    <option>After 1 Day</option>
+                    <option>After 2 Days</option>
+                    <option>After 3 Days</option>
+                    <option>After 1 Week</option>
+                    <option>After 2 Weeks</option>
+                    <option>After 1 Month</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Next Call Date</label>
+                <input type="date" class="form-input" id="nextCallDate">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Call Priority</label>
+                <select class="form-input" id="callPriority">
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                </select>
+            </div>
+
+
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-input" id="Status">
+                    <option>Pending</option>
+                    <option>Done</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Caller Remarks</label>
+                <textarea class="form-textarea" id="callerRemarks"></textarea>
+            </div>
+
+            <button type="submit" class="btn-submit">Save Call Log</button>
+        </form>
+    </div>
+
+</div>
+</div>
+
 <!-- ── INSTALL BTN ───────────────────────────────────── -->
 <button id="installBtn" style="display:none">📲 Install App</button>
 
@@ -1399,42 +1682,6 @@
 })();
 </script>
 
-<!-- PWA install -->
-<script>
- const employeeName = "{{ employee_name }}";
-  const employeeNumber = "{{ employee_number }}";
-
-  localStorage.setItem("employee_name", employeeName);
-  localStorage.setItem("employee_number", employeeNumber);
-
-let selectMode = false;
-let selectedLeads = new Map();
-let wpTemplates = [];
-let deferredPrompt;
-
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  document.getElementById("installBtn").style.display = "block";
-});
-
-document.getElementById("installBtn").addEventListener("click", async () => {
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-});
-</script>
-
-<!-- Service Worker -->
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js")
-      .then(() => console.log("✅ Service Worker Registered"))
-      .catch(err => console.error("SW error", err));
-  });
-}
-</script>
 
 <!-- ── MAIN APPLICATION JS (100% unchanged) ─────────── -->
 <script>
@@ -1513,6 +1760,23 @@ const API_CONFIG = {
                     <button onclick="openAssignModal('${formatPhone(lead['Phone Number'])}','${lead['Lead Name'] || ''}')">
                         👤 Assign
                     </button>
+
+                    <button class="btn btn-log"
+    data-lead='${encodeURIComponent(JSON.stringify({
+    name: lead['Lead Name'] || 'Unknown',
+    phone: formatPhone(lead['Phone Number']),
+    type: "buying",
+
+    location: lead["Location Interested In"] || "",
+    property: lead["Property Type"] || "",
+    budget: lead["Budget Range"] || "",
+    timeline: lead["Buying Timeline"] || "",
+    note: lead.note || ""
+}))}'
+    onclick="openCallLogModal(this)">
+    📝 Add Log
+</button>
+
                 </div>
             </div>
 
@@ -2538,6 +2802,118 @@ function toggleMenu(btn) {
 
     dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
 }
+
+
+   function openCallLogModal(btn) {
+    const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+
+    document.getElementById('callLogName').value = data.name;
+    document.getElementById('callLogPhone').value = data.phone;
+    document.getElementById('callLogLeadType').value = data.type;
+    document.getElementById('summaryType').value = data.type;
+document.getElementById('summaryLocation').value = data.location || '';
+document.getElementById('summaryProperty').value = data.property || '';
+document.getElementById('summaryBudget').value = data.budget || '';
+document.getElementById('summaryTimeline').value = data.timeline || '';
+document.getElementById('summaryNote').value = data.note || '';
+
+    document.getElementById('callLogOverlay').classList.add('active');
+}
+
+
+        function closeModalCall(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        
+        document.getElementById('callLogForm').addEventListener('submit', handleCallLogSubmit);
+async function handleCallLogSubmit(e) {
+    e.preventDefault();
+
+    const phone = document.getElementById('callLogPhone').value;
+
+    // ✅ Build UPDATED LEAD DATA (from editable inputs)
+    const updatedLead = {
+        "Location Interested In": document.getElementById('summaryLocation').value,
+        "Property Type": document.getElementById('summaryProperty').value,
+        "Budget Range": document.getElementById('summaryBudget').value,
+        "Buying Timeline": document.getElementById('summaryTimeline').value,
+        "note": document.getElementById('summaryNote').value
+    };
+
+    // ✅ Collection mapping
+    const type = document.getElementById('callLogLeadType').value;
+
+    const collectionMap = {
+        buying: "Leads",
+        rental: "RentalLeads",
+        selling: "sellingLeads",
+        agent: "agentLeads"
+    };
+
+    const collection = collectionMap[type] || "Leads";
+
+    try {
+
+        // 🔥 1. UPDATE LEAD DATA (Mongo via your API)
+        await fetch("https://api.phishnix.site/api/modify-document", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                collection: collection,
+                "Phone Number": phone.replace(/[^0-9]/g, ''),
+                set: updatedLead
+            })
+        });
+
+        // 🔥 2. SEND CALL LOG TO N8N
+        const payload = {
+            name: document.getElementById('callLogName').value,
+            phone: phone,
+            leadType: type,
+
+            // snapshot = updated version
+            leadSnapshot: updatedLead,
+
+            callStatus: document.getElementById('callStatus').value,
+            customerResponse: document.getElementById('customerResponse').value,
+            type: "admin",
+            transactionType: document.getElementById('transactionType').value,
+            configuration: document.getElementById('configuration').value,
+            interestLevel: document.getElementById('interestLevel').value,
+            objection: document.getElementById('objection').value,
+            followupTimeline: document.getElementById('followupTimeline').value,
+            nextCallDate: document.getElementById('nextCallDate').value,
+            callPriority: document.getElementById('callPriority').value,
+            Status: document.getElementById('Status').value,
+            callerRemarks: document.getElementById('callerRemarks').value,
+
+            employee: "Admin Panel",
+            timestamp: new Date().toISOString()
+        };
+
+        await fetch('https://n8n.phishnix.site/webhook/datafromdash', {
+            method: 'POST',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        alert('✅ Call log saved & lead updated');
+
+        document.getElementById('callLogForm').reset();
+        closeModalCall('callLogOverlay');
+
+    } catch (err) {
+        console.error(err);
+        alert('❌ Failed to save call log');
+    }
+}
+
+
+
+
 
 // close when clicking outside
 document.addEventListener('click', function(e) {
