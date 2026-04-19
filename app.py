@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-#from video_to_audio import extract_audio_from_video
+from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -1342,6 +1342,67 @@ def upload_project():
 def add_project_page():
     return render_template("upload_project.html")
 
+@app.route("/api/add-end-data", methods=["POST"])
+def add_end_data():
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({"error": "No JSON body provided"}), 400
+
+        collection_name = data.get("collection")
+
+        if collection_name != "endData":
+            return jsonify({"error": "Invalid collection"}), 400
+
+        collection = db["endData"]
+
+        raw_number = data.get("Number")
+
+        if not raw_number:
+            return jsonify({"error": "Number is required"}), 400
+
+        # ✅ Normalize number (same logic as rest of your app)
+        number = normalize_number(raw_number)
+
+        if not number:
+            return jsonify({"error": "Invalid number"}), 400
+
+        # 🔥 Remove unwanted keys
+        data.pop("collection", None)
+
+        # ✅ Always store clean number
+        data["Number"] = number
+
+        # 🔥 Add timestamp
+        data["lastUpdatedAt"] = datetime.utcnow()
+
+        # 🔥 Build update query
+        update_query = {
+            "$set": data,
+            "$inc": {"Call_attempt": int(data.get("Call_attempt", 1))}
+        }
+
+        # 🔥 Upsert (create if not exists)
+        result = collection.update_one(
+            {"Number": number},
+            update_query,
+            upsert=True
+        )
+
+        # ✅ Fetch updated doc
+        updated_doc = collection.find_one({"Number": number})
+
+        return jsonify({
+            "success": True,
+            "message": "Data inserted/updated successfully",
+            "data": serialize_doc(updated_doc)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

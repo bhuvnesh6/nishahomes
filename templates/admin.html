@@ -1123,6 +1123,19 @@
 .lebsub{
     color: white;
 }
+
+#editModal .modal {
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#editForm {
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 4px; /* prevents scrollbar from clipping inputs */
+}
     </style>
 </head>
 <body>
@@ -1306,6 +1319,7 @@
     </div>
 </div>
 
+<!--Edit model-->
 <div class="modal-overlay" id="editModal">
     <div class="modal">
 
@@ -1338,6 +1352,16 @@
             <div class="form-group">
                 <label class="form-label">Budget</label>
                 <input type="text" id="editBudget" class="form-input">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Profile</label>
+                <input type="text" id="editProfile" class="form-input">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Timeline</label>
+                <input type="text" id="editTimeline" class="form-input">
             </div>
 
             <button type="submit" class="submit-btn">
@@ -1748,7 +1772,8 @@ const API_CONFIG = {
     grid.innerHTML = leads.map((lead, index) => `
         <div class="lead-card" style="animation-delay: ${index * 0.1}s"
             data-name="${lead['Lead Name'] || lead.Name || ''}" 
-            data-phone="${formatPhone(lead['Phone Number'])}">
+            data-phone="${formatPhone(lead['Phone Number'])}" 
+            data-location="${formatPhone(lead['Location Interested In'])}">
 
             <!-- 3 DOT MENU -->
             <div class="card-menu">
@@ -2721,6 +2746,9 @@ function openEditModal(btn){
     document.getElementById('editLocation').value = card.dataset.location || "";
     document.getElementById('editProperty').value = card.dataset.property || "";
     document.getElementById('editBudget').value = card.dataset.budget || "";
+    document.getElementById('editProfile').value =  "NA";
+    document.getElementById('editTimeline').value = "NA";
+
 
     document.getElementById('editModal').classList.add('active');
 }
@@ -2747,7 +2775,8 @@ const phone = rawPhone.replace(/[^0-9]/g, '');
     const location = document.getElementById('editLocation').value;
     const property = document.getElementById('editProperty').value;
     const budget = document.getElementById('editBudget').value;
-
+    const profile = document.getElementById('editProfile').value;
+    const timeline = document.getElementById('editTimeline').value;
     const collectionMap = {
         buying: "Leads",
         rental: "RentalLeads",
@@ -2773,6 +2802,8 @@ const phone = rawPhone.replace(/[^0-9]/g, '');
                     "Location Interested In": location,
                     "Property Type": property,
                     "Budget Range": budget,
+                    "Buying Timeline" : timeline,
+                    "profile": profile,
                     "Date": new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
                 }
             })
