@@ -1802,6 +1802,14 @@ const API_CONFIG = {
     📝 Add Log
 </button>
 
+<button 
+    onclick="disableAI(this)"
+    data-name="${lead['Lead Name'] || lead.Name || ''}"
+    data-phone="${formatPhone(lead['Phone Number'])}"
+>
+    🤖 Disable AI
+</button>
+
                 </div>
             </div>
 
@@ -1833,6 +1841,18 @@ const API_CONFIG = {
                 <div class="info-row">
                     <span class="info-label">Budget</span>
                     <span class="info-value">${lead['Budget Range'] || 'N/A'}</span>
+                </div>
+            
+
+            <div class="info-row">
+                    <span class="info-label">Timeline</span>
+                    <span class="info-value">${lead['Buying Timeline'] || 'N/A'}</span>
+                </div>
+            
+
+            <div class="info-row">
+                    <span class="info-label">Profile</span>
+                    <span class="info-value">${lead['profile'] || 'N/A'}</span>
                 </div>
             </div>
 
@@ -2942,7 +2962,48 @@ async function handleCallLogSubmit(e) {
     }
 }
 
+//desable AI func
 
+async function disableAI(btn) {
+    const name = btn.dataset.name || "Unknown";
+    const phone = btn.dataset.phone;
+
+    if (!phone) {
+        alert("Phone number missing");
+        return;
+    }
+
+    try {
+        btn.innerText = "Processing...";
+        btn.disabled = true;
+
+        const res = await fetch("https://api.phishnix.site/add-lead", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                collection: "DAI",
+                "Lead Name": name,
+                "Phone Number": phone
+            })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            btn.innerText = "✅ AI Disabled";
+        } else {
+            throw new Error(data.message || "Failed");
+        }
+
+    } catch (err) {
+        console.error(err);
+        btn.innerText = "❌ Failed";
+        btn.disabled = false;
+        alert("Error disabling AI");
+    }
+}
 
 
 
