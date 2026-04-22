@@ -1755,7 +1755,7 @@ const API_CONFIG = {
 
         // Render buying leads
       
-        function renderBuyingLeads(leads) {
+      async  function renderBuyingLeads(leads) {
     const grid = document.getElementById('cardsGrid');
 
     if (!leads || leads.length === 0) {
@@ -1782,9 +1782,10 @@ const API_CONFIG = {
         })
     );
 
-    grid.innerHTML = leads.map((lead, index) =>{
+    grid.innerHTML = enrichedLeads.map((lead, index) => {
         const extra = lead.endData || {};
-     `
+
+        return `
     
         <div class="lead-card" style="animation-delay: ${index * 0.1}s"
             data-name="${lead['Lead Name'] || lead.Name || ''}" 
@@ -1874,6 +1875,22 @@ const API_CONFIG = {
                             <div class="info-row">
                     <span class="info-label">Call Status</span>
                     <span class="info-value">${extra['Call Status'] || 'N/A'}</span>
+                </div>
+
+
+                <div class="info-row">
+                    <span class="info-label">Caller Remarks</span>
+                    <span class="info-value">${extra['Caller Remarks'] || 'N/A'}</span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Next Follow-up Timeline</span>
+                    <span class="info-value">${extra['Next Follow-up Timeline'] || 'N/A'}</span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Next Call Date</span>
+                    <span class="info-value">${extra['Next Call Date'] || 'N/A'}</span>
                 </div>
             </div>
 
@@ -3031,12 +3048,17 @@ async function disableAI(btn) {
 
 async function getEndDataByNumber(number) {
     try {
+        const cleanNumber = cleanIndianNumber(number);
+
+        // ❌ skip invalid numbers
+        if (!cleanNumber) return null;
+
         const res = await fetch("https://api.phishnix.site/api/get-lead-by-number", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ number })
+            body: JSON.stringify({ number: cleanNumber })
         });
 
         const data = await res.json();
@@ -3044,6 +3066,7 @@ async function getEndDataByNumber(number) {
         if (data.success) {
             return data.data;
         }
+
         return null;
 
     } catch (err) {
@@ -3051,6 +3074,29 @@ async function getEndDataByNumber(number) {
         return null;
     }
 }
+
+
+function cleanIndianNumber(number) {
+    if (!number) return null;
+
+    let num = String(number)
+        .replace('@s.whatsapp.net', '')
+        .replace('@c.us', '')
+        .replace(/\D/g, ''); // keep only digits
+
+    // remove country code 91 if present
+    if (num.startsWith("91") && num.length > 10) {
+        num = num.slice(2);
+    }
+
+    // final validation → only 10 digit numbers allowed
+    if (num.length === 10) {
+        return num;
+    }
+
+    return null; // ignore invalid numbers
+}
+
 
 // close when clicking outside
 document.addEventListener('click', function(e) {
