@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-from video_to_audio import extract_audio_from_video
+#from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -329,6 +329,7 @@ def get_end_data():
     # 📦 If no number → return all leads
     leads = list(collection.find())
     return jsonify([serialize_doc(l) for l in leads])
+
 
 @app.route("/api/get-team-assign", methods=["GET"])
 def get_team_assign():
@@ -1404,5 +1405,39 @@ def add_end_data():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+
+
+@app.route("/api/get-lead-by-number", methods=["POST"])
+def get_lead_by_number():
+    collection = db["endData"]
+
+    data = request.get_json()
+
+    if not data or "number" not in data:
+        return jsonify({"error": "Number is required"}), 400
+
+    number = data["number"]
+
+    # Try both int + string match (robust handling)
+    lead = None
+    try:
+        lead = collection.find_one({"Number": int(number)})
+    except:
+        pass
+
+    if not lead:
+        lead = collection.find_one({"Number": str(number)})
+
+    if lead:
+        return jsonify({
+            "success": True,
+            "data": serialize_doc(lead)
+        })
+
+    return jsonify({
+        "success": False,
+        "error": "Lead not found"
+    }), 404
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

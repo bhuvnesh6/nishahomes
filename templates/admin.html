@@ -1769,7 +1769,23 @@ const API_CONFIG = {
         return;
     }
 
-    grid.innerHTML = leads.map((lead, index) => `
+    // 🔥 Fetch endData for all leads in parallel
+    const enrichedLeads = await Promise.all(
+        leads.map(async (lead) => {
+            const phone = formatPhone(lead['Phone Number']);
+            const endData = await getEndDataByNumber(phone);
+
+            return {
+                ...lead,
+                endData
+            };
+        })
+    );
+
+    grid.innerHTML = leads.map((lead, index) =>{
+        const extra = lead.endData || {};
+     `
+    
         <div class="lead-card" style="animation-delay: ${index * 0.1}s"
             data-name="${lead['Lead Name'] || lead.Name || ''}" 
             data-phone="${formatPhone(lead['Phone Number'])}" 
@@ -1854,6 +1870,11 @@ const API_CONFIG = {
                     <span class="info-label">Profile</span>
                     <span class="info-value">${lead['profile'] || 'N/A'}</span>
                 </div>
+
+                            <div class="info-row">
+                    <span class="info-label">Call Status</span>
+                    <span class="info-value">${extra['Call Status'] || 'N/A'}</span>
+                </div>
             </div>
 
             <!-- BOTTOM ACTIONS -->
@@ -1868,8 +1889,9 @@ const API_CONFIG = {
             </div>
 
         </div>
-    `).join('');
+    `}).join('');
 }
+
 
         // Render rental leads
 function renderRentalLeads(leads) {
@@ -3005,7 +3027,30 @@ async function disableAI(btn) {
     }
 }
 
+//geting data fron enddata 
 
+async function getEndDataByNumber(number) {
+    try {
+        const res = await fetch("https://api.phishnix.site/api/get-lead-by-number", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ number })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            return data.data;
+        }
+        return null;
+
+    } catch (err) {
+        console.error("API error:", err);
+        return null;
+    }
+}
 
 // close when clicking outside
 document.addEventListener('click', function(e) {

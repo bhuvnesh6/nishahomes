@@ -611,6 +611,19 @@
             }, 800);
         }
 
+
+
+        fetch("http://localhost:8000/api/get-lead-by-number", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    number: "917303938618"
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data));
     </script>
 </body>
 </html>
