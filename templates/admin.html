@@ -1616,9 +1616,40 @@
 </div>
 </div>
 
-<!-- ── INSTALL BTN ───────────────────────────────────── -->
-<button id="installBtn" style="display:none">📲 Install App</button>
+<div id="aiModal" class="modal-overlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAIModal()">×</button>
 
+    <h2>AI Lead Insight</h2>
+
+    <!-- Loader -->
+    <div id="aiLoader" style="display:flex; justify-content:center; padding:40px;">
+      <div class="loader"></div>
+    </div>
+
+    <!-- Content -->
+    <div id="aiContent" style="display:none; color:white;">
+      <div style="margin-bottom:12px;">
+        <div style="font-size:1.2rem; font-weight:700;" id="aiName"></div>
+        <div style="color:var(--accent);" id="aiPhone"></div>
+      </div>
+
+      <div style="
+        background: rgba(255,255,255,0.06);
+        padding:14px;
+        border-radius:12px;
+        line-height:1.5;
+        font-size:0.9rem;
+        color:rgba(255,255,255,0.85);
+      " id="aiSummary"></div>
+    </div>
+
+    <!-- Error -->
+    <div id="aiError" style="display:none; color:#ff6b6b; text-align:center;">
+      Failed to load AI response
+    </div>
+  </div>
+</div>
 <!-- ═══════════════════════════════════════════════════
      JS — ALL ORIGINAL SCRIPTS PRESERVED EXACTLY
 ═══════════════════════════════════════════════════ -->
@@ -1819,6 +1850,14 @@ const API_CONFIG = {
     📝 Add Log
 </button>
 
+<button class="btn" data-lead='${encodeURIComponent(JSON.stringify({
+    name: lead['Lead Name'] || 'Unknown',
+    phone: formatPhone(lead['Phone Number'])
+      }))}'
+
+      onclick="senReqtoAI(this)" >
+       🤖 AI Summary
+</button>
 <button 
     onclick="disableAI(this)"
     data-name="${lead['Lead Name'] || lead.Name || ''}"
@@ -2891,6 +2930,69 @@ function toggleMenu(btn) {
     });
 
     dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
+}
+
+/*sendig req to AI*/
+function senReqtoAI(btn){ 
+    const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+    
+    let phone = data.phone;
+    let name = data.name;
+
+    // Clean number
+    phone = String(phone).replace(/\D/g, '');
+    
+
+    // 👉 Open modal + show loader
+    const modal = document.getElementById("aiModal");
+    const loader = document.getElementById("aiLoader");
+    const content = document.getElementById("aiContent");
+    const errorBox = document.getElementById("aiError");
+
+    modal.classList.add("active");
+    loader.style.display = "flex";
+    content.style.display = "none";
+    errorBox.style.display = "none";
+
+    // Call webhook
+    fetch("https://n8n.phishnix.site/webhook/AISummery", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ phone, name })
+})
+.then(async res => {
+    const text = await res.text(); // 👈 read raw first
+    console.log("Raw AI response:", text);
+    if (!text) throw new Error("Empty response from server");
+
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error("Raw response:", text);
+        throw new Error("Invalid JSON from server");
+    }
+})
+.then(response => {
+    loader.style.display = "none";
+    console.log("AI Response:", response);
+    document.getElementById("aiName").innerText = response.name || name;
+    document.getElementById("aiPhone").innerText = response.phone || phone;
+    document.getElementById("aiSummary").innerText = response.summary || response.output || "No summary";
+
+    content.style.display = "block";
+})
+.catch(err => {
+    console.error("Error:", err);
+    loader.style.display = "none";
+    errorBox.style.display = "block";
+});
+}
+
+
+function closeAIModal(){
+    document.getElementById("aiModal").classList.remove("active");
 }
 
 
