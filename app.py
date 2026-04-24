@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-#from video_to_audio import extract_audio_from_video
+from video_to_audio import extract_audio_from_video
 import tempfile
 import cv2
 import os
@@ -1363,40 +1363,54 @@ def add_end_data():
         if not raw_number:
             return jsonify({"error": "Number is required"}), 400
 
-        # ✅ Normalize number (same logic as rest of your app)
+        # ✅ Normalize number
         number = normalize_number(raw_number)
 
         if not number:
             return jsonify({"error": "Invalid number"}), 400
 
-        # 🔥 Remove unwanted keys
-        data.pop("collection", None)
+        # ✅ Ensure Indian format (add 91 if missing)
+        if not number.startswith("91"):
+            number = "91" + number
 
-        # ✅ Always store clean number
+        # 🔥 Clean payload
+        data.pop("collection", None)
         data["Number"] = number
 
+        # 🔥 Remove empty / None values (IMPORTANT)
+        clean_data = {k: v for k, v in data.items() if v not in [None, "", []]}
+
         # 🔥 Add timestamp
-        data["lastUpdatedAt"] = datetime.utcnow()
+        clean_data["lastUpdatedAt"] = datetime.utcnow()
 
-        # 🔥 Build update query
-        update_query = {
-            "$set": data,
-            "$inc": {"Call_attempt": int(data.get("Call_attempt", 1))}
-        }
+        # 🔍 Check if record exists
+        existing_doc = collection.find_one({"Number": number})
 
-        # 🔥 Upsert (create if not exists)
-        result = collection.update_one(
-            {"Number": number},
-            update_query,
-            upsert=True
-        )
+        if existing_doc:
+            # ✅ Update ONLY provided fields
+            update_query = {
+                "$set": clean_data,
+                "$inc": {"Call_attempt": int(data.get("Call_attempt", 1))}
+            }
+
+            collection.update_one({"Number": number}, update_query)
+
+            message = "Data updated successfully"
+
+        else:
+            # ✅ Insert new document
+            clean_data["Call_attempt"] = int(data.get("Call_attempt", 1))
+
+            collection.insert_one(clean_data)
+
+            message = "Data inserted successfully"
 
         # ✅ Fetch updated doc
         updated_doc = collection.find_one({"Number": number})
 
         return jsonify({
             "success": True,
-            "message": "Data inserted/updated successfully",
+            "message": message,
             "data": serialize_doc(updated_doc)
         }), 200
 
@@ -1404,8 +1418,6 @@ def add_end_data():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-
 
 
 @app.route("/api/get-lead-by-number", methods=["POST"])
@@ -1439,5 +1451,7 @@ def get_lead_by_number():
         "success": False,
         "error": "Lead not found"
     }), 404
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

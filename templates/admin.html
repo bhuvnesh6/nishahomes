@@ -3091,7 +3091,7 @@ function cleanIndianNumber(number) {
 
     // final validation → only 10 digit numbers allowed
     if (num.length === 10) {
-        return num;
+        return "91" + num; // ✅ ALWAYS return with 91
     }
 
     return null; // ignore invalid numbers
