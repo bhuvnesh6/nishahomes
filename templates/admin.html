@@ -1451,7 +1451,7 @@
             <!-- REQUIRED -->
             <div class="form-group">
                 <label class="form-label">Call Status *</label>
-                <select class="form-input" id="callStatus" required>
+                <select class="form-input" id="callStatus">
                     <option value="">Select</option>
                     <option>Call Back Requested</option>
                     <option>Call Completed</option>
@@ -1472,7 +1472,7 @@
 
             <div class="form-group">
                 <label class="form-label">Customer Response *</label>
-                <select class="form-input" id="customerResponse" required>
+                <select class="form-input" id="customerResponse" >
                     <option value="">Select</option>
                     <option>Asked for Callback</option>
                     <option>Budget Confirmed</option>
@@ -1844,7 +1844,8 @@ const API_CONFIG = {
     property: lead["Property Type"] || "",
     budget: lead["Budget Range"] || "",
     timeline: lead["Buying Timeline"] || "",
-    note: lead.note || ""
+    note: lead.note || "",
+    endData: lead.endData || {}
 }))}'
     onclick="openCallLogModal(this)">
     📝 Add Log
@@ -2996,19 +2997,38 @@ function closeAIModal(){
 }
 
 
-   function openCallLogModal(btn) {
+function openCallLogModal(btn) {
     const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+    const extra = data.endData || {};
 
+    // Basic info
     document.getElementById('callLogName').value = data.name;
     document.getElementById('callLogPhone').value = data.phone;
     document.getElementById('callLogLeadType').value = data.type;
-    document.getElementById('summaryType').value = data.type;
-document.getElementById('summaryLocation').value = data.location || '';
-document.getElementById('summaryProperty').value = data.property || '';
-document.getElementById('summaryBudget').value = data.budget || '';
-document.getElementById('summaryTimeline').value = data.timeline || '';
-document.getElementById('summaryNote').value = data.note || '';
 
+    // Summary fields
+    document.getElementById('summaryType').value = data.type;
+    document.getElementById('summaryLocation').value = data.location || extra["Preferred Location"] || '';
+    document.getElementById('summaryProperty').value = data.property || extra["Property Type"] || '';
+    document.getElementById('summaryBudget').value = data.budget || extra["Budget Range"] || '';
+    document.getElementById('summaryTimeline').value = data.timeline || '';
+    document.getElementById('summaryNote').value = data.note || '';
+
+    // 🔥 AUTO-FILL FROM endData (MAIN PART)
+
+    document.getElementById('callStatus').value = extra["Call Status"] || '';
+    document.getElementById('customerResponse').value = extra["Customer Response"] || '';
+    document.getElementById('transactionType').value = extra["Transaction Type"] || '';
+    document.getElementById('configuration').value = extra["Configuration"] || '';
+    document.getElementById('interestLevel').value = extra["Interest Level"] || '';
+    document.getElementById('objection').value = extra["Objection / Reason"] || '';
+    document.getElementById('followupTimeline').value = extra["Next Follow-up Timeline"] || '';
+    document.getElementById('nextCallDate').value = extra["Next Call Date"] || '';
+    document.getElementById('callPriority').value = extra["Call Priority"] || '';
+    document.getElementById('Status').value = extra["done"] || '';
+    document.getElementById('callerRemarks').value = extra["Caller Remarks"] || '';
+
+    // Open modal
     document.getElementById('callLogOverlay').classList.add('active');
 }
 
@@ -3096,7 +3116,7 @@ async function handleCallLogSubmit(e) {
 
         document.getElementById('callLogForm').reset();
         closeModalCall('callLogOverlay');
-
+        window.load(); // refresh to show updated data
     } catch (err) {
         console.error(err);
         alert('❌ Failed to save call log');
