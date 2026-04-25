@@ -1453,20 +1453,20 @@
                 <label class="form-label">Call Status *</label>
                 <select class="form-input" id="callStatus">
                     <option value="">Select</option>
-                    <option>Call Back Requested</option>
-                    <option>Call Completed</option>
-                    <option>Call Disconnected</option>
-                    <option>Call Not Picked</option>
-                    <option>Call Rescheduled</option>
-                    <option>Follow-up Required</option>
-                    <option>Invalid Number</option>
-                    <option>Line Busy</option>
-                    <option>Meeting Fixed</option>
-                    <option>No Response</option>
-                    <option>Number Switched Off</option>
-                    <option>Site Visit Scheduled</option>
-                    <option>Site Visit Completed</option>
-                    <option>Wrong Number</option>
+                    <option value="Call Back Requested">Call Back Requested</option>
+                    <option value="Call Completed">Call Completed</option>
+                    <option value="Call Disconnected">Call Disconnected</option>
+                    <option value="Call Not Picked">Call Not Picked</option>
+                    <option value="Call Rescheduled">Call Rescheduled</option>
+                    <option value="Follow-up Required">Follow-up Required</option>
+                    <option value="Invalid Number">Invalid Number</option>
+                    <option value="Line Busy">Line Busy</option>
+                    <option value="Meeting Fixed">Meeting Fixed</option>
+                    <option value="No Response">No Response</option>
+                    <option value="Number Switched Off">Number Switched Off</option>
+                    <option value="Site Visit Scheduled">Site Visit Scheduled</option>
+                    <option value="Site Visit Completed">Site Visit Completed</option>
+                    <option value="Wrong Number">Wrong Number</option>
                 </select>
             </div>
 
@@ -1496,9 +1496,9 @@
                 <label class="form-label">Transaction Type</label>
                 <select class="form-input" id="transactionType">
                     <option value="">Select</option>
-                    <option>Buy</option>
-                    <option>Rent</option>
-                    <option>Sell</option>
+                    <option value="buy">Buy</option>
+                    <option value="rent">Rent</option>
+                    <option value="sell">Sell</option>
                 </select>
             </div>
 
@@ -3001,12 +3001,14 @@ function openCallLogModal(btn) {
     const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
     const extra = data.endData || {};
 
+    console.log("END DATA:", extra); // 🔥 debug
+
     // Basic info
     document.getElementById('callLogName').value = data.name;
     document.getElementById('callLogPhone').value = data.phone;
     document.getElementById('callLogLeadType').value = data.type;
 
-    // Summary fields
+    // Summary
     document.getElementById('summaryType').value = data.type;
     document.getElementById('summaryLocation').value = data.location || extra["Preferred Location"] || '';
     document.getElementById('summaryProperty').value = data.property || extra["Property Type"] || '';
@@ -3014,33 +3016,42 @@ function openCallLogModal(btn) {
     document.getElementById('summaryTimeline').value = data.timeline || '';
     document.getElementById('summaryNote').value = data.note || '';
 
-    // 🔥 AUTO-FILL FROM endData (MAIN PART)
-
+    // 🔥 FIXED NORMALIZATION
     document.getElementById('callStatus').value = extra["Call Status"] || '';
+
     document.getElementById('customerResponse').value = extra["Customer Response"] || '';
-    document.getElementById('transactionType').value = extra["Transaction Type"] || '';
+
+    const tx = (extra["Transaction Type"] || '').toLowerCase();
+    document.getElementById('transactionType').value =
+        tx === "buy" ? "Buy" :
+        tx === "rent" ? "Rent" :
+        tx === "sell" ? "Sell" : '';
+
     document.getElementById('configuration').value = extra["Configuration"] || '';
     document.getElementById('interestLevel').value = extra["Interest Level"] || '';
     document.getElementById('objection').value = extra["Objection / Reason"] || '';
     document.getElementById('followupTimeline').value = extra["Next Follow-up Timeline"] || '';
     document.getElementById('nextCallDate').value = extra["Next Call Date"] || '';
     document.getElementById('callPriority').value = extra["Call Priority"] || '';
+
     document.getElementById('Status').value = extra["done"] || '';
     document.getElementById('callerRemarks').value = extra["Caller Remarks"] || '';
 
-    // Open modal
     document.getElementById('callLogOverlay').classList.add('active');
 }
 
 
-        function closeModalCall(modalId) {
+
+function closeModalCall(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
 
         
-        document.getElementById('callLogForm').addEventListener('submit', handleCallLogSubmit);
+document.getElementById('callLogForm').addEventListener('submit', handleCallLogSubmit);
 async function handleCallLogSubmit(e) {
     e.preventDefault();
+
+    showLoader();
 
     const phone = document.getElementById('callLogPhone').value;
 
@@ -3053,6 +3064,9 @@ async function handleCallLogSubmit(e) {
         "note": document.getElementById('summaryNote').value
     };
 
+    let callstatusVar = document.getElementById('callStatus').value;
+    let transactionTypeVar = document.getElementById('transactionType').value
+
     // ✅ Collection mapping
     const type = document.getElementById('callLogLeadType').value;
 
@@ -3064,7 +3078,7 @@ async function handleCallLogSubmit(e) {
     };
 
     const collection = collectionMap[type] || "Leads";
-
+     
     try {
 
         // 🔥 1. UPDATE LEAD DATA (Mongo via your API)
@@ -3089,10 +3103,10 @@ async function handleCallLogSubmit(e) {
             // snapshot = updated version
             leadSnapshot: updatedLead,
 
-            callStatus: document.getElementById('callStatus').value,
+            callStatus: callstatusVar,
             customerResponse: document.getElementById('customerResponse').value,
             type: "admin",
-            transactionType: document.getElementById('transactionType').value,
+            transactionType: transactionTypeVar,
             configuration: document.getElementById('configuration').value,
             interestLevel: document.getElementById('interestLevel').value,
             objection: document.getElementById('objection').value,
@@ -3116,10 +3130,10 @@ async function handleCallLogSubmit(e) {
 
         document.getElementById('callLogForm').reset();
         closeModalCall('callLogOverlay');
-        window.load(); // refresh to show updated data
+        location.reload(); // refresh to show updated data
     } catch (err) {
         console.error(err);
-        alert('❌ Failed to save call log');
+        
     }
 }
 
