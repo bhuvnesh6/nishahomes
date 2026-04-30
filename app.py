@@ -294,6 +294,50 @@ def realtors():
     return jsonify(get_collection_data("Realtors"))
 
 
+@app.route("/api/update-realtor", methods=["POST"])
+def update_realtor():
+    try:
+        data = request.get_json()
+
+        phone = data.get("phone")
+        updates = data.get("updates")  # dict of fields to update
+
+        if not phone or not updates:
+            return jsonify({"error": "phone and updates are required"}), 400
+
+        # 🔧 Clean phone (remove +, spaces, etc.)
+        phone = str(phone)
+        phone = re.sub(r"\D", "", phone)
+
+        try:
+            phone = int(phone)
+        except:
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        collection = db["Realtors"]
+
+        # 🔥 Remove invalid fields
+        if "_id" in updates:
+            del updates["_id"]
+
+        # Clean NaN if coming from frontend
+        updates = clean_nan(updates)
+
+        result = collection.update_one(
+            {"Phone Number": phone},
+            {"$set": updates}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"message": "No realtor found"}), 404
+
+        return jsonify({
+            "message": "Realtor updated successfully",
+            "modified_count": result.modified_count
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/hofcorders")
 def hofcorders():
