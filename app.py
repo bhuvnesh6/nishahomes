@@ -290,7 +290,7 @@ def get_lead():
 
 #realtorsdata
 @app.route("/api/realtors")
-def leads():
+def realtors():
     return jsonify(get_collection_data("Realtors"))
 
 
