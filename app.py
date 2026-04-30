@@ -288,6 +288,13 @@ def get_lead():
         return jsonify({"error": str(e)}), 500
 
 
+#realtorsdata
+@app.route("/api/realtors")
+def leads():
+    return jsonify(get_collection_data("Realtors"))
+
+
+
 @app.route("/api/hofcorders")
 def hofcorders():
     return jsonify(get_collection_data("orderhouseofcakes"))
@@ -976,6 +983,7 @@ def modify_document():
             "teamAssign",
             "orderhouseofcakes", 
             "tasks",
+            "Realtors"
         ]
 
         if collection_name not in allowed_collections:
