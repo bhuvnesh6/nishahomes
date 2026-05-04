@@ -10,7 +10,8 @@ from werkzeug.utils import secure_filename
 import time
 from datetime import datetime
 from img_to_text import extract_text_from_image
-#from video_to_audio import extract_audio_from_video
+from video_to_audio import extract_audio_from_video
+from make_contact import create_contact
 import tempfile
 import cv2
 import os
@@ -992,6 +993,11 @@ def add_lead():
             {"$set": data},
             upsert=True
         )
+        
+        
+        name = data.get("Lead Name")
+        
+        create_contact( name, phone_number)
 
         return jsonify({
             "success": True,
