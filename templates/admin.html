@@ -1912,6 +1912,11 @@ const API_CONFIG = {
                     <span class="info-value">${lead['profile'] || 'N/A'}</span>
                 </div>
 
+                <div class="info-row">
+                    <span class="info-label">Site Visit</span>
+                    <span class="info-value">${lead['site_data'] || 'N/A'}</span>
+                </div>
+
                             <div class="info-row">
                     <span class="info-label">Call Status</span>
                     <span class="info-value">${extra['Call Status'] || 'N/A'}</span>
@@ -1933,6 +1938,8 @@ const API_CONFIG = {
                     <span class="info-value">${extra['Next Call Date'] || 'N/A'}</span>
                 </div>
             </div>
+
+
 
             <!-- BOTTOM ACTIONS -->
             <div class="card-actions">
