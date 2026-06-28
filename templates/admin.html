@@ -541,15 +541,19 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .icon-btn:hover{background:rgba(239,131,84,0.1);color:var(--accent)}
 .icon-btn.danger:hover{background:rgba(239,68,68,0.1);color:var(--hot)}
 
-/* Hide table on mobile, show cards */
+/* ═══════════════════════════
+   RESPONSIVE: Hide table on mobile, show cards
+   FIX: changed display:block to display:flex for mobile-cards-wrap
+═══════════════════════════ */
 @media(max-width:699px){
   .table-scroll{display:none}
-  .mobile-cards-wrap{display:block}
+  .mobile-cards-wrap{display:flex !important}
   .leads-table-section{display:none}
+  .mobile-pagination{display:flex !important}
 }
 @media(min-width:700px){
-  .mobile-cards-wrap{display:none}
-  .leads-table-section{display:block}
+  .mobile-cards-wrap{display:none !important}
+  .mobile-pagination{display:none !important}
 }
 
 /* ═══════════════════════════
@@ -759,8 +763,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 /* Mobile pagination */
 .mobile-pagination{
   margin-top:16px;
-  display:flex;align-items:center;justify-content:space-between;
-  gap:10px;flex-wrap:wrap;
+  display:none;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
 }
 .mobile-pagination .pagination-info{font-size:0.8rem;color:var(--text-soft)}
 
@@ -1166,7 +1173,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
       <!-- ── MOBILE CARDS ── -->
       <div class="mobile-cards-wrap anim anim-3" id="mobileCardsWrap"></div>
-      <div class="mobile-pagination" id="mobilePagination" style="display:none">
+      <div class="mobile-pagination" id="mobilePagination">
         <div class="pagination-info" id="mobilePaginationInfo"></div>
         <div class="pagination-btns" id="mobilePaginationBtns"></div>
       </div>
@@ -1374,7 +1381,7 @@ let wpTemplates = [];
 let currentPage = 1;
 const PAGE_SIZE = 25;
 
-// end-data cache: phone number (digits) → end-data record
+// end-data cache
 let endDataMap = {};
 let endDataLoaded = false;
 
@@ -1415,7 +1422,7 @@ function initials(name){
 }
 
 /* ═══════════════════════════════════
-   LOAD END-DATA (call status)
+   LOAD END-DATA
 ═══════════════════════════════════ */
 async function loadEndData(){
   try{
@@ -1424,26 +1431,22 @@ async function loadEndData(){
     endDataMap = {};
     if(Array.isArray(records)){
       records.forEach(r=>{
-        // normalize number: strip country code leading zeros, keep digits
         const num = digitsOnly(String(r.Number||''));
         if(num) endDataMap[num] = r;
-        // also store with shorter version (last 10 digits) as fallback
         if(num.length>10) endDataMap[num.slice(-10)] = r;
       });
     }
     endDataLoaded = true;
   }catch(e){
     console.warn('end-data load failed',e);
-    endDataLoaded = true; // mark as done even on failure
+    endDataLoaded = true;
   }
 }
 
 function getEndData(phoneRaw){
   const full = digitsOnly(phoneRaw);
   if(endDataMap[full]) return endDataMap[full];
-  // try last 10 digits
   if(full.length>10 && endDataMap[full.slice(-10)]) return endDataMap[full.slice(-10)];
-  // try with 91 prefix
   if(full.length===10 && endDataMap['91'+full]) return endDataMap['91'+full];
   return null;
 }
@@ -1490,7 +1493,6 @@ document.getElementById('topbarSearch').addEventListener('input',function(){
 async function loadAllLeads(){
   showLoader();
   try{
-    // Load end-data and leads in parallel
     const [,] = await Promise.all([
       loadEndData(),
       (async()=>{
@@ -1578,7 +1580,6 @@ function renderTable(){
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
 
-    // Get call status from end-data
     const ed = getEndData(phone);
     const callStatus = ed?.['Call Status']||'—';
     const nextFollowup = ed?.['Next Follow-up Timeline']||'—';
@@ -1666,6 +1667,10 @@ function renderMobileCards(){
   const mobilePag = document.getElementById('mobilePagination');
   const total = filteredLeads.length;
 
+  /* FIX: Always explicitly set display so cards show on mobile */
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+
   if(total===0){
     wrap.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><h3>No leads found</h3><p>Try adjusting your filters</p></div>`;
     mobilePag.style.display='none';
@@ -1687,7 +1692,6 @@ function renderMobileCards(){
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
 
-    // Call status from end-data
     const ed = getEndData(phone);
     const callStatus = ed?.['Call Status']||'';
     const nextFollowup = ed?.['Next Follow-up Timeline']||'';
@@ -1785,7 +1789,7 @@ function renderMobileCards(){
     </div>`;
   }).join('');
 
-  // Mobile pagination
+  /* FIX: Show mobile pagination */
   mobilePag.style.display='flex';
   document.getElementById('mobilePaginationInfo').textContent = `${start+1}–${end} of ${total}`;
   const mpb = document.getElementById('mobilePaginationBtns');
@@ -1799,7 +1803,7 @@ function renderMobileCards(){
   const mn=document.createElement('button');mn.className='pg-btn';mn.textContent='›';mn.disabled=currentPage>=totalPages;
   mn.onclick=()=>{currentPage++;renderTable();renderMobileCards();window.scrollTo(0,0)};mpb.appendChild(mn);
 
-  // Bind mobile card checkboxes
+  /* Bind mobile card checkboxes */
   wrap.querySelectorAll('.row-check').forEach(cb=>{
     cb.addEventListener('change',function(){
       const ph=this.dataset.phone, nm=this.dataset.name;
@@ -1949,7 +1953,6 @@ function buildDonut(){
 }
 
 function buildStatusBars(){
-  // Use end-data for dashboard status chart if loaded, else fallback
   const statusCounts={};
   if(endDataLoaded && Object.keys(endDataMap).length>0){
     Object.values(endDataMap).forEach(r=>{
@@ -2149,7 +2152,6 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
     alert('Call log saved');
     document.getElementById('callLogForm').reset();
     closeModalCall('callLogOverlay');
-    // Reload end-data too
     endDataMap={};await loadEndData();
     allLeads={};flatLeads=[];loadAllLeads();
   }catch(err){console.error(err);alert('Failed')}
