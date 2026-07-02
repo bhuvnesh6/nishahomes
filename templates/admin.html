@@ -632,7 +632,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .lc-field-value{
   font-size:0.82rem;color:var(--text);font-weight:500;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  white-space:normal;word-break:break-word;
 }
 .lc-field-value a{color:var(--accent);font-weight:600}
 
@@ -1380,6 +1380,8 @@ let selectedLeads = new Map();
 let wpTemplates = [];
 let currentPage = 1;
 const PAGE_SIZE = 25;
+// unsaved form drafts for call-log / edit popups, keyed by phone (edit uses 'edit_'+phone)
+let leadDrafts = {};
 
 // end-data cache
 let endDataMap = {};
@@ -1428,17 +1430,18 @@ async function loadEndData(){
   try{
     const res = await fetch(END_DATA_API);
     const records = await res.json();
-    endDataMap = {};
+    const newMap = {};
     if(Array.isArray(records)){
       records.forEach(r=>{
         const num = digitsOnly(String(r.Number||''));
-        if(num) endDataMap[num] = r;
-        if(num.length>10) endDataMap[num.slice(-10)] = r;
+        if(num) newMap[num] = r;
+        if(num.length>10) newMap[num.slice(-10)] = r;
       });
     }
+    endDataMap = newMap;
     endDataLoaded = true;
   }catch(e){
-    console.warn('end-data load failed',e);
+    console.warn('end-data load failed, keeping previous data',e);
     endDataLoaded = true;
   }
 }
@@ -1489,27 +1492,42 @@ document.getElementById('topbarSearch').addEventListener('input',function(){
 
 /* ═══════════════════════════════════
    LOAD ALL LEADS
+   keepPage=true -> preserve currentPage & don't wipe unrelated data on
+   a partial failure (used after edits/deletes/call-logs so users on
+   page 3+ don't get bounced back to page 1 or see leads disappear).
 ═══════════════════════════════════ */
-async function loadAllLeads(){
+async function loadAllLeads(keepPage){
   showLoader();
+  const savedPage = currentPage;
   try{
-    const [,] = await Promise.all([
+    await Promise.allSettled([
       loadEndData(),
       (async()=>{
         const types=['buying','rental','selling','agent'];
-        await Promise.all(types.map(async t=>{
+        const results = await Promise.allSettled(types.map(async t=>{
           const res = await fetch(API[t]);
           let data = await res.json();
           data = data.reverse();
           data = data.filter(l=>!String(l.AssignTo||'').trim());
+          let others = null;
           if(t==='buying'){
-            const others = data.filter(l=>String(l.LeadType||'').toLowerCase()==='other').map(l=>({...l,_leadType:'other'}));
-            allLeads['other'] = others;
+            others = data.filter(l=>String(l.LeadType||'').toLowerCase()==='other').map(l=>({...l,_leadType:'other'}));
             data = data.filter(l=>String(l.LeadType||'').toLowerCase()!=='other');
           }
           data = data.map(l=>({...l,_leadType:t}));
-          allLeads[t] = data;
+          return {t, data, others};
         }));
+        // Only overwrite the categories that fetched successfully - if one
+        // endpoint fails transiently, we keep whatever we already had for it
+        // instead of wiping the whole list (this is what caused "lost leads").
+        results.forEach(r=>{
+          if(r.status==='fulfilled'){
+            allLeads[r.value.t] = r.value.data;
+            if(r.value.others) allLeads['other'] = r.value.others;
+          }else{
+            console.warn('Failed to refresh leads', r.reason);
+          }
+        });
       })()
     ]);
 
@@ -1524,7 +1542,8 @@ async function loadAllLeads(){
     document.getElementById('sidebarLeadCount').textContent = flatLeads.length;
     updateDashStats();
     buildCharts();
-    applyFilter();
+    if(keepPage) currentPage = savedPage;
+    applyFilter(keepPage);
   }catch(e){
     console.error(e);
   }finally{
@@ -1534,8 +1553,9 @@ async function loadAllLeads(){
 
 /* ═══════════════════════════════════
    FILTER + RENDER
+   keepPage=true -> clamp to a valid page instead of resetting to page 1
 ═══════════════════════════════════ */
-function applyFilter(){
+function applyFilter(keepPage){
   const q = (document.getElementById('leadSearch').value||'').toLowerCase();
   filteredLeads = flatLeads.filter(l=>{
     const t = l._leadType;
@@ -1546,7 +1566,13 @@ function applyFilter(){
     const loc = (l['Location Interested In']||l['Property Location']||l['Operating City']||'').toLowerCase();
     return name.includes(q)||phone.includes(q)||loc.includes(q);
   });
-  currentPage = 1;
+  if(!keepPage){
+    currentPage = 1;
+  }else{
+    const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE));
+    if(currentPage > totalPages) currentPage = totalPages;
+    if(currentPage < 1) currentPage = 1;
+  }
   renderTable();
   renderMobileCards();
 }
@@ -1828,7 +1854,7 @@ document.querySelectorAll('.filter-chip').forEach(chip=>{
     applyFilter();
   });
 });
-document.getElementById('leadSearch').addEventListener('input',applyFilter);
+document.getElementById('leadSearch').addEventListener('input',()=>applyFilter());
 
 /* ═══════════════════════════════════
    SELECT MODE
@@ -2014,7 +2040,8 @@ document.getElementById('assignForm').addEventListener('submit',async e=>{
       const empNum=document.getElementById('assignTo').value;
       notifyN8N({assignToname,employeeNumber:empNum,leadNumber:singleNum,leadName});
     }
-    closeModal();allLeads={};flatLeads=[];loadAllLeads();
+    closeModal();
+    loadAllLeads(true);
   }catch(err){console.error(err);alert('Assignment failed')}
   finally{btn.disabled=false;btn.textContent='Assign Lead'}
 });
@@ -2038,24 +2065,45 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
 /* ═══════════════════════════════════
    EDIT MODAL
+   Drafts are kept in leadDrafts['edit_'+phone] so that closing the popup
+   without saving (X button, overlay click, or navigating away) does NOT
+   throw away whatever the user typed - reopening the same lead restores it.
 ═══════════════════════════════════ */
 function openEditModalFromData(btn){
   const data=JSON.parse(decodeURIComponent(btn.dataset.lead));
+  const draft = leadDrafts['edit_'+data.phone] || {};
   document.getElementById('editPhone').value=data.phone||'';
-  document.getElementById('editName').value=data.name||'';
-  document.getElementById('editLocation').value=data.location||'';
-  document.getElementById('editProperty').value=data.property||'';
-  document.getElementById('editBudget').value=data.budget||'';
-  document.getElementById('editProfile').value='NA';
-  document.getElementById('editTimeline').value=data.timeline||'NA';
+  document.getElementById('editName').value = draft.name!==undefined ? draft.name : (data.name||'');
+  document.getElementById('editLocation').value = draft.location!==undefined ? draft.location : (data.location||'');
+  document.getElementById('editProperty').value = draft.property!==undefined ? draft.property : (data.property||'');
+  document.getElementById('editBudget').value = draft.budget!==undefined ? draft.budget : (data.budget||'');
+  document.getElementById('editProfile').value = draft.profile!==undefined ? draft.profile : 'NA';
+  document.getElementById('editTimeline').value = draft.timeline!==undefined ? draft.timeline : (data.timeline||'NA');
   document.getElementById('editModal').classList.add('active');
 }
-function closeEditModal(){document.getElementById('editModal').classList.remove('active');document.getElementById('editForm').reset()}
+function captureEditDraft(){
+  const phone=document.getElementById('editPhone').value;
+  if(!phone) return;
+  leadDrafts['edit_'+phone] = {
+    name: document.getElementById('editName').value,
+    location: document.getElementById('editLocation').value,
+    property: document.getElementById('editProperty').value,
+    budget: document.getElementById('editBudget').value,
+    profile: document.getElementById('editProfile').value,
+    timeline: document.getElementById('editTimeline').value
+  };
+}
+function closeEditModal(){
+  captureEditDraft();
+  document.getElementById('editModal').classList.remove('active');
+}
 document.getElementById('editModal').addEventListener('click',e=>{if(e.target.id==='editModal')closeEditModal()});
+document.getElementById('editForm').addEventListener('input',captureEditDraft);
 
 document.getElementById('editForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const btn=e.target.querySelector('.submit-btn');btn.disabled=true;btn.textContent='Updating…';
+  const draftPhoneKey=document.getElementById('editPhone').value;
   try{
     let phone=document.getElementById('editPhone').value.replace(/\D/g,'');
     if(!phone.startsWith('91')) phone=phone.length===10?'91'+phone:phone;
@@ -2063,9 +2111,12 @@ document.getElementById('editForm').addEventListener('submit',async e=>{
     const collection=currentFilter==='buying'?'Leads':currentFilter==='rental'?'RentalLeads':currentFilter==='selling'?'sellingLeads':currentFilter==='agent'?'agentLeads':'Leads';
     const res=await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':phone,set:{'Lead Name':document.getElementById('editName').value,'Location Interested In':document.getElementById('editLocation').value,'Property Type':document.getElementById('editProperty').value,'Budget Range':document.getElementById('editBudget').value,'Buying Timeline':document.getElementById('editTimeline').value,'profile':document.getElementById('editProfile').value,'Date':new Date().toLocaleDateString('en-GB').replace(/\//g,'-')}})});
     const d=await res.json();
-    if(d.matched_count===0){alert('Lead not found');return}
+    if(d.matched_count===0){alert('Lead not found');btn.disabled=false;btn.textContent='Update Lead';return}
     alert(d.modified_count===0?'No changes made':'Lead updated');
-    closeEditModal();allLeads={};flatLeads=[];loadAllLeads();
+    delete leadDrafts['edit_'+draftPhoneKey];
+    document.getElementById('editModal').classList.remove('active');
+    document.getElementById('editForm').reset();
+    loadAllLeads(true);
   }catch(err){console.error(err);alert('Update failed')}
   finally{btn.disabled=false;btn.textContent='Update Lead'}
 });
@@ -2079,7 +2130,7 @@ async function deleteLead(id,leadType){
   try{
     const res=await fetch(`${BASE}/delete-lead`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,collection:colMap[leadType]||'Leads'})});
     const d=await res.json();
-    if(d.success){alert('Lead deleted');allLeads={};flatLeads=[];loadAllLeads()}
+    if(d.success){loadAllLeads(true)}
     else alert(d.error||'Delete failed');
   }catch(e){console.error(e);alert('Error')}
 }
@@ -2122,22 +2173,60 @@ document.getElementById('bulkAssignBtn').addEventListener('click',()=>{
 
 /* ═══════════════════════════════════
    CALL LOG MODAL
+   Same draft-preserving behavior as the Edit modal: closing without
+   saving keeps whatever was typed so reopening the same lead restores it.
 ═══════════════════════════════════ */
 function openCallLogModal(btn){
   const data=JSON.parse(decodeURIComponent(btn.dataset.lead));
+  const draft = leadDrafts[data.phone] || {};
   document.getElementById('callLogName').value=data.name;
   document.getElementById('callLogPhone').value=data.phone;
   document.getElementById('callLogLeadType').value=data.type;
   document.getElementById('summaryType').value=data.type;
-  document.getElementById('summaryLocation').value=data.location||'';
-  document.getElementById('summaryProperty').value=data.property||'';
-  document.getElementById('summaryBudget').value=data.budget||'';
-  document.getElementById('summaryTimeline').value=data.timeline||'';
-  document.getElementById('summaryNote').value=data.note||'';
+  document.getElementById('summaryLocation').value = draft.location!==undefined ? draft.location : (data.location||'');
+  document.getElementById('summaryProperty').value = draft.property!==undefined ? draft.property : (data.property||'');
+  document.getElementById('summaryBudget').value = draft.budget!==undefined ? draft.budget : (data.budget||'');
+  document.getElementById('summaryTimeline').value = draft.timeline!==undefined ? draft.timeline : (data.timeline||'');
+  document.getElementById('summaryNote').value = draft.note!==undefined ? draft.note : (data.note||'');
+  document.getElementById('callStatus').value = draft.callStatus||'';
+  document.getElementById('customerResponse').value = draft.customerResponse||'';
+  document.getElementById('interestLevel').value = draft.interestLevel||'Very High';
+  document.getElementById('configuration').value = draft.configuration||'';
+  document.getElementById('objection').value = draft.objection||'';
+  document.getElementById('followupTimeline').value = draft.followupTimeline||'';
+  document.getElementById('nextCallDate').value = draft.nextCallDate||'';
+  document.getElementById('callPriority').value = draft.callPriority||'High';
+  document.getElementById('Status').value = draft.status||'Pending';
+  document.getElementById('callerRemarks').value = draft.callerRemarks||'';
   document.getElementById('callLogOverlay').classList.add('active');
 }
-function closeModalCall(id){document.getElementById(id).classList.remove('active')}
+function captureCallLogDraft(){
+  const phone=document.getElementById('callLogPhone').value;
+  if(!phone) return;
+  leadDrafts[phone] = {
+    location: document.getElementById('summaryLocation').value,
+    property: document.getElementById('summaryProperty').value,
+    budget: document.getElementById('summaryBudget').value,
+    timeline: document.getElementById('summaryTimeline').value,
+    note: document.getElementById('summaryNote').value,
+    callStatus: document.getElementById('callStatus').value,
+    customerResponse: document.getElementById('customerResponse').value,
+    interestLevel: document.getElementById('interestLevel').value,
+    configuration: document.getElementById('configuration').value,
+    objection: document.getElementById('objection').value,
+    followupTimeline: document.getElementById('followupTimeline').value,
+    nextCallDate: document.getElementById('nextCallDate').value,
+    callPriority: document.getElementById('callPriority').value,
+    status: document.getElementById('Status').value,
+    callerRemarks: document.getElementById('callerRemarks').value
+  };
+}
+function closeModalCall(id){
+  if(id==='callLogOverlay'){ captureCallLogDraft(); }
+  document.getElementById(id).classList.remove('active');
+}
 document.getElementById('callLogOverlay').addEventListener('click',e=>{if(e.target.id==='callLogOverlay')closeModalCall('callLogOverlay')});
+document.getElementById('callLogForm').addEventListener('input',captureCallLogDraft);
 
 document.getElementById('callLogForm').addEventListener('submit',async e=>{
   e.preventDefault();showLoader();
@@ -2150,10 +2239,11 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
     await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':phone.replace(/[^0-9]/g,''),set:updatedLead})});
     await fetch('https://n8n.phishnix.site/webhook/datafromdash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('callLogName').value,phone,leadType:type,leadSnapshot:updatedLead,callStatus:document.getElementById('callStatus').value,customerResponse:document.getElementById('customerResponse').value,type:'admin',configuration:document.getElementById('configuration').value,interestLevel:document.getElementById('interestLevel').value,objection:document.getElementById('objection').value,followupTimeline:document.getElementById('followupTimeline').value,nextCallDate:document.getElementById('nextCallDate').value,callPriority:document.getElementById('callPriority').value,Status:document.getElementById('Status').value,callerRemarks:document.getElementById('callerRemarks').value,employee:'Admin Panel',timestamp:new Date().toISOString()})});
     alert('Call log saved');
+    delete leadDrafts[phone];
     document.getElementById('callLogForm').reset();
-    closeModalCall('callLogOverlay');
-    endDataMap={};await loadEndData();
-    allLeads={};flatLeads=[];loadAllLeads();
+    document.getElementById('callLogOverlay').classList.remove('active');
+    endDataMap={}; await loadEndData();
+    loadAllLeads(true);
   }catch(err){console.error(err);alert('Failed')}
   finally{hideLoader()}
 });
