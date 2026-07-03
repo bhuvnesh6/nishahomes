@@ -63,6 +63,13 @@ def get_collection_data(collection_name):
     return [serialize_doc(doc) for doc in data]
 
 
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
+    return response
+
 
 @app.route("/")
 def loginpage():
@@ -773,6 +780,189 @@ def call_attempt():
             "Number": number,
             "Call_attempt": updated_doc.get("Call_attempt", 1)
         })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+#adding call logs 
+
+call_logs_collection = db["callLogs"]
+
+# ============================================================
+# CALL LOG — replaces the n8n webhook, writes straight to Mongo
+# ============================================================
+
+@app.route("/api/call-log", methods=["POST"])
+def add_call_log():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No JSON body provided"}), 400
+
+        phone = data.get("phone")
+        if not phone:
+            return jsonify({"error": "Phone is required"}), 400
+
+        number = normalize_number(phone)
+        if not number:
+            return jsonify({"error": "Invalid phone number"}), 400
+
+        if not number.startswith("91"):
+            number = "91" + number
+
+        # Trust the logged-in session for who made the call, fall back to payload
+        employee_name = session.get("employee_name") or data.get("employee") or "Unknown"
+
+        now = datetime.utcnow()
+        today_str = now.strftime("%Y-%m-%d")
+
+        log_entry = {
+            "Number": number,
+            "Name": data.get("name", ""),
+            "LeadType": data.get("leadType", ""),
+            "CallStatus": data.get("callStatus", ""),
+            "CustomerResponse": data.get("customerResponse", ""),
+            "InterestLevel": data.get("interestLevel", ""),
+            "Configuration": data.get("configuration", ""),
+            "Objection": data.get("objection", ""),
+            "FollowupTimeline": data.get("followupTimeline", ""),
+            "NextCallDate": data.get("nextCallDate", ""),
+            "CallPriority": data.get("callPriority", ""),
+            "Status": data.get("status", "Pending"),
+            "CallerRemarks": data.get("callerRemarks", ""),
+            "LeadSnapshot": {
+                "Location": data.get("location", ""),
+                "Property": data.get("property", ""),
+                "Budget": data.get("budget", ""),
+                "Timeline": data.get("timeline", ""),
+                "Note": data.get("note", "")
+            },
+            "CalledBy": employee_name,
+            "CreatedAt": now,
+            "DateOnly": today_str
+        }
+
+        call_logs_collection.insert_one(log_entry)
+
+        end_collection = db["endData"]
+
+        update_fields = {
+            "Call Status": data.get("callStatus", ""),
+            "Customer Response": data.get("customerResponse", ""),
+            "Interest Level": data.get("interestLevel", ""),
+            "Configuration": data.get("configuration", ""),
+            "Objection / Reason": data.get("objection", ""),
+            "Next Follow-up Timeline": data.get("followupTimeline", ""),
+            "Next Call Date": data.get("nextCallDate", ""),
+            "Call Priority": data.get("callPriority", ""),
+            "Status": data.get("status", "Pending"),
+            "Caller Remarks": data.get("callerRemarks", ""),
+            "Location Interested In": data.get("location", ""),
+            "Property Type": data.get("property", ""),
+            "Budget Range": data.get("budget", ""),
+            "Customer Name": data.get("name", ""),
+            "lastCallBy": employee_name,
+            "lastCallAt": now,
+            "lastUpdatedAt": now
+        }
+        update_fields = {k: v for k, v in update_fields.items() if v not in [None, ""]}
+
+        end_collection.update_one(
+            {"Number": number},
+            {
+                "$set": update_fields,
+                "$inc": {"Call_attempt": 1},
+                "$push": {
+                    "RecentLogs": {
+                        "$each": [{
+                            "CallStatus": data.get("callStatus", ""),
+                            "CustomerResponse": data.get("customerResponse", ""),
+                            "CalledBy": employee_name,
+                            "At": now,
+                            "Remarks": data.get("callerRemarks", "")
+                        }],
+                        "$slice": -10
+                    }
+                }
+            },
+            upsert=True
+        )
+
+        updated_doc = end_collection.find_one({"Number": number})
+
+        return jsonify({
+            "success": True,
+            "message": "Call log saved",
+            "data": serialize_doc(updated_doc) if updated_doc else None
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/call-logs/<phone>", methods=["GET"])
+def get_call_logs(phone):
+    try:
+        number = normalize_number(phone)
+        if not number.startswith("91"):
+            number = "91" + number
+
+        logs = list(call_logs_collection.find({"Number": number}).sort("CreatedAt", -1))
+        for l in logs:
+            l["_id"] = str(l["_id"])
+            if isinstance(l.get("CreatedAt"), datetime):
+                l["CreatedAt"] = l["CreatedAt"].isoformat()
+
+        return jsonify({"success": True, "count": len(logs), "logs": logs}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard-stats", methods=["GET"])
+def dashboard_stats():
+    try:
+        end_collection = db["endData"]
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+        all_docs = list(end_collection.find({}, {
+            "Number": 1, "Status": 1, "Next Follow-up Timeline": 1
+        }))
+
+        followup_count = 0
+        pending_count = 0
+        done_count = 0
+
+        for d in all_docs:
+            status = (d.get("Status") or "").strip().lower()
+            followup = (d.get("Next Follow-up Timeline") or "").strip()
+            if followup:
+                followup_count += 1
+            if status == "done":
+                done_count += 1
+            else:
+                pending_count += 1
+
+        today_logs = list(call_logs_collection.find({"DateOnly": today_str}, {"CalledBy": 1}))
+        calls_today_total = len(today_logs)
+
+        by_employee = {}
+        for l in today_logs:
+            name = l.get("CalledBy", "Unknown")
+            by_employee[name] = by_employee.get(name, 0) + 1
+
+        return jsonify({
+            "success": True,
+            "followup_count": followup_count,
+            "pending_count": pending_count,
+            "done_count": done_count,
+            "calls_today_total": calls_today_total,
+            "calls_today_by_employee": by_employee
+        }), 200
 
     except Exception as e:
         import traceback

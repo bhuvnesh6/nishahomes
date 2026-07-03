@@ -1060,6 +1060,38 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         </div>
       </div>
 
+      <div class="stats-row anim anim-2" style="margin-bottom:22px;">
+        <div class="stat-card blue">
+          <div class="stat-label">Follow-ups Due</div>
+          <div class="stat-value" id="dashFollowup">—</div>
+          <div class="stat-change">Leads with pending follow-up</div>
+          <div class="stat-icon">📅</div>
+        </div>
+        <div class="stat-card warm">
+          <div class="stat-label">Pending</div>
+          <div class="stat-value" id="dashPending">—</div>
+          <div class="stat-change">Not marked done</div>
+          <div class="stat-icon">⏳</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Done</div>
+          <div class="stat-value" id="dashDone">—</div>
+          <div class="stat-change">Completed</div>
+          <div class="stat-icon">✅</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Calls Today</div>
+          <div class="stat-value" id="dashCallsToday">—</div>
+          <div class="stat-change">All team members</div>
+          <div class="stat-icon">📞</div>
+        </div>
+      </div>
+
+      <div class="chart-card anim anim-2" style="margin-bottom:22px;">
+        <div class="chart-card-title">Calls Today — By Team Member</div>
+        <div id="dashCallsByEmployee" class="donut-wrap"></div>
+      </div>
+
       <div class="charts-row anim anim-2">
         <div class="chart-card">
           <div class="chart-card-title">
@@ -1353,6 +1385,15 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   </div>
 </div>
 
+<!-- History Modal -->
+<div class="modal-overlay" id="historyModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+    <h2>Call History</h2>
+    <div id="historyList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <button id="installBtn" style="display:none">📲 Install App</button>
 
 <script>
@@ -1634,7 +1675,7 @@ function renderTable(){
       <td>${loc}</td>
       <td>${budget}</td>
       <td>
-        ${callStatus!=='—'?`<span class="status-badge ${statusClass(callStatus)}"><span class="status-badge-dot"></span>${escHtml(callStatus)}</span>`:callStatus}
+        ${callStatus!=='—'?`<span class="status-badge ${statusClass(callStatus)}" title="${escHtml(ed?.['Caller Remarks']||'')}${ed?.lastCallBy?' · by '+escHtml(ed.lastCallBy):''}"><span class="status-badge-dot"></span>${escHtml(callStatus)}</span>`:callStatus}
       </td>
       <td style="font-size:0.8rem;color:var(--text-soft)">${escHtml(nextFollowup)}</td>
       <td class="td-actions">
@@ -1655,6 +1696,9 @@ function renderTable(){
         </button>
         <button class="icon-btn" title="AI Summary" data-lead="${rowData}" onclick="senReqtoAI(this)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </button>
+        <button class="icon-btn" title="History" onclick="openHistoryModal('${escHtml(phone)}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
         <button class="icon-btn danger" title="Delete" onclick="deleteLead('${escHtml(l._id)}','${l._leadType}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -1770,6 +1814,12 @@ function renderMobileCards(){
         </div>
       </div>
 
+      ${(ed&&ed['Caller Remarks'])?`
+      <div style="padding:6px 14px 0 18px">
+        <div class="lc-field-label">Last Remarks</div>
+        <div class="lc-field-value">${escHtml(ed['Caller Remarks'])}</div>
+      </div>`:''}
+
       ${callStatus?`
       <div class="lc-status-row">
         <span class="lc-status-badge ${statusClass(callStatus)}">
@@ -1782,6 +1832,12 @@ function renderMobileCards(){
       <div class="lc-followup-strip">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Follow-up: ${escHtml(nextFollowup)}${ed?.['Next Call Date']?' · '+escHtml(ed['Next Call Date']):''}
+      </div>`:''}
+
+      ${ed&&ed.lastCallBy?`
+      <div class="lc-followup-strip" style="background:rgba(59,130,246,0.06);border-top-color:rgba(59,130,246,0.15);color:#2563eb">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0113 0"/></svg>
+        Last called by ${escHtml(ed.lastCallBy)}
       </div>`:''}
 
       <div class="lc-actions">
@@ -1807,6 +1863,9 @@ function renderMobileCards(){
         </button>
         <button class="lc-action-btn" data-lead="${rowData}" onclick="senReqtoAI(this)" title="AI">
           ✨ AI
+        </button>
+        <button class="lc-action-btn" onclick="openHistoryModal('${escHtml(phone)}')" title="History">
+          🕘 History
         </button>
         <button class="lc-action-btn danger" onclick="deleteLead('${escHtml(l._id)}','${l._leadType}')" title="Delete">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
@@ -2007,6 +2066,26 @@ function buildTopLocations(){
 }
 
 document.getElementById('chartPeriod').addEventListener('change',buildLineChart);
+
+/* ═══════════════════════════════════
+   ADMIN OVERVIEW STATS (follow-up / pending / done / calls today)
+═══════════════════════════════════ */
+async function loadDashboardStats(){
+  try{
+    const res = await fetch(`${BASE}/dashboard-stats`);
+    const d = await res.json();
+    if(!d.success) return;
+    document.getElementById('dashFollowup').textContent = d.followup_count;
+    document.getElementById('dashPending').textContent = d.pending_count;
+    document.getElementById('dashDone').textContent = d.done_count;
+    document.getElementById('dashCallsToday').textContent = d.calls_today_total;
+
+    const list = Object.entries(d.calls_today_by_employee||{}).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('dashCallsByEmployee').innerHTML = list.length
+      ? list.map(([name,c])=>`<div class="donut-row"><span style="color:rgba(255,255,255,.72);font-size:.85rem">${escHtml(name)}</span><span class="donut-pct">${c}</span></div>`).join('')
+      : '<div style="color:rgba(255,255,255,0.4);font-size:0.8rem">No calls yet today</div>';
+  }catch(e){console.warn('stats load failed',e)}
+}
 
 /* ═══════════════════════════════════
    ASSIGN MODAL
@@ -2234,16 +2313,41 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
   const type=document.getElementById('callLogLeadType').value;
   const colMap={buying:'Leads',rental:'RentalLeads',selling:'sellingLeads',agent:'agentLeads'};
   const collection=colMap[type]||'Leads';
-  const updatedLead={'Location Interested In':document.getElementById('summaryLocation').value,'Property Type':document.getElementById('summaryProperty').value,'Budget Range':document.getElementById('summaryBudget').value,'Buying Timeline':document.getElementById('summaryTimeline').value,'note':document.getElementById('summaryNote').value};
+
+  const location=document.getElementById('summaryLocation').value;
+  const property=document.getElementById('summaryProperty').value;
+  const budget=document.getElementById('summaryBudget').value;
+  const timeline=document.getElementById('summaryTimeline').value;
+  const note=document.getElementById('summaryNote').value;
+
+  const updatedLead={'Location Interested In':location,'Property Type':property,'Budget Range':budget,'Buying Timeline':timeline,'note':note};
+
+  const callLogPayload={
+    phone, leadType:type,
+    name:document.getElementById('callLogName').value,
+    location, property, budget, timeline, note,
+    callStatus:document.getElementById('callStatus').value,
+    customerResponse:document.getElementById('customerResponse').value,
+    interestLevel:document.getElementById('interestLevel').value,
+    configuration:document.getElementById('configuration').value,
+    objection:document.getElementById('objection').value,
+    followupTimeline:document.getElementById('followupTimeline').value,
+    nextCallDate:document.getElementById('nextCallDate').value,
+    callPriority:document.getElementById('callPriority').value,
+    status:document.getElementById('Status').value,
+    callerRemarks:document.getElementById('callerRemarks').value
+  };
+
   try{
     await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':phone.replace(/[^0-9]/g,''),set:updatedLead})});
-    await fetch('https://n8n.phishnix.site/webhook/datafromdash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('callLogName').value,phone,leadType:type,leadSnapshot:updatedLead,callStatus:document.getElementById('callStatus').value,customerResponse:document.getElementById('customerResponse').value,type:'admin',configuration:document.getElementById('configuration').value,interestLevel:document.getElementById('interestLevel').value,objection:document.getElementById('objection').value,followupTimeline:document.getElementById('followupTimeline').value,nextCallDate:document.getElementById('nextCallDate').value,callPriority:document.getElementById('callPriority').value,Status:document.getElementById('Status').value,callerRemarks:document.getElementById('callerRemarks').value,employee:'Admin Panel',timestamp:new Date().toISOString()})});
+    await fetch(`${BASE}/call-log`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(callLogPayload)});
     alert('Call log saved');
     delete leadDrafts[phone];
     document.getElementById('callLogForm').reset();
     document.getElementById('callLogOverlay').classList.remove('active');
     endDataMap={}; await loadEndData();
     loadAllLeads(true);
+    loadDashboardStats();
   }catch(err){console.error(err);alert('Failed')}
   finally{hideLoader()}
 });
@@ -2273,10 +2377,39 @@ function senReqtoAI(btn){
 function closeAIModal(){document.getElementById('aiModal').classList.remove('active')}
 
 /* ═══════════════════════════════════
+   CALL HISTORY MODAL
+═══════════════════════════════════ */
+function openHistoryModal(phoneRaw){
+  const phone = fmtPhone(phoneRaw).replace('+','');
+  document.getElementById('historyModal').classList.add('active');
+  document.getElementById('historyList').innerHTML = '<div class="loader" style="margin:20px auto"></div>';
+  fetch(`${BASE}/call-logs/${phone}`)
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d.success || !d.logs.length){
+        document.getElementById('historyList').innerHTML = '<p style="color:rgba(255,255,255,0.5)">No call history yet</p>';
+        return;
+      }
+      document.getElementById('historyList').innerHTML = d.logs.map(l=>`
+        <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
+          <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:6px">
+            <span>${escHtml(l.CalledBy||'Unknown')}</span>
+            <span>${new Date(l.CreatedAt).toLocaleString()}</span>
+          </div>
+          <div style="color:#fff;font-weight:600;font-size:0.88rem">${escHtml(l.CallStatus||'—')} · ${escHtml(l.CustomerResponse||'—')}</div>
+          ${l.CallerRemarks?`<div style="color:rgba(255,255,255,0.7);font-size:0.82rem;margin-top:4px">${escHtml(l.CallerRemarks)}</div>`:''}
+        </div>`).join('');
+    })
+    .catch(()=>{document.getElementById('historyList').innerHTML='<p style="color:#ff6b6b">Failed to load history</p>'});
+}
+function closeHistoryModal(){document.getElementById('historyModal').classList.remove('active')}
+document.getElementById('historyModal').addEventListener('click', e=>{if(e.target.id==='historyModal') closeHistoryModal()});
+
+/* ═══════════════════════════════════
    INIT
 ═══════════════════════════════════ */
 window.addEventListener('load',()=>{
-  setTimeout(()=>{hideLoader();loadAllLeads()},600);
+  setTimeout(()=>{hideLoader();loadAllLeads();loadDashboardStats()},600);
 });
 </script>
 </body>
