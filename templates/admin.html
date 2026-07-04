@@ -454,7 +454,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 
 .filter-actions{
-  margin-left:auto;display:flex;gap:8px;flex-shrink:0;
+  margin-left:auto;display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;
 }
 @media(max-width:599px){.filter-actions{margin-left:0;width:100%}}
 
@@ -474,6 +474,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   box-shadow:0 4px 12px var(--accent-glow);
 }
 .action-btn-sm.primary:hover{background:var(--accent-light);border-color:var(--accent-light);transform:translateY(-1px)}
+.action-btn-sm:disabled{opacity:0.55;cursor:not-allowed;transform:none}
 
 /* Bulk bar */
 .bulk-bar{
@@ -1159,6 +1160,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="9 12 11 14 15 10"/></svg>
             Select
           </button>
+          <button class="action-btn-sm primary" id="exportExcelBtn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            Export Page
+          </button>
         </div>
       </div>
 
@@ -1424,6 +1429,11 @@ const PAGE_SIZE = 25;
 // unsaved form drafts for call-log / edit popups, keyed by phone (edit uses 'edit_'+phone)
 let leadDrafts = {};
 
+// 🔥 NEW: tracks exactly which leads are on the currently rendered table
+// page, so the "Export Page" button exports precisely what the admin sees
+// (25 leads per page), not the whole filtered set.
+let currentPageLeadsForExport = [];
+
 // end-data cache
 let endDataMap = {};
 let endDataLoaded = false;
@@ -1630,6 +1640,7 @@ function renderTable(){
     tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">📭</div><h3>No leads found</h3><p>Try adjusting your filters</p></div></td></tr>`;
     document.getElementById('paginationInfo').textContent='';
     document.getElementById('paginationBtns').innerHTML='';
+    currentPageLeadsForExport = [];
     return;
   }
 
@@ -1637,6 +1648,9 @@ function renderTable(){
   const end=Math.min(start+PAGE_SIZE,total);
   const page=filteredLeads.slice(start,end);
   const totalPages=Math.ceil(total/PAGE_SIZE);
+
+  // 🔥 NEW: keep a reference to exactly what's on this page for export
+  currentPageLeadsForExport = page;
 
   tbody.innerHTML = page.map(l=>{
     const phone = fmtPhone(l['Phone Number']);
@@ -1837,7 +1851,7 @@ function renderMobileCards(){
       ${ed&&ed.lastCallBy?`
       <div class="lc-followup-strip" style="background:rgba(59,130,246,0.06);border-top-color:rgba(59,130,246,0.15);color:#2563eb">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0113 0"/></svg>
-        Last called by ${escHtml(ed.lastCallBy)}
+        Last called by ${escHtml(ed.lastCallBy)}${ed.lastCallAtFormatted?' · '+escHtml(ed.lastCallAtFormatted):''}
       </div>`:''}
 
       <div class="lc-actions">
@@ -2251,6 +2265,59 @@ document.getElementById('bulkAssignBtn').addEventListener('click',()=>{
 });
 
 /* ═══════════════════════════════════
+   🔥 NEW: EXPORT CURRENT PAGE TO EXCEL
+   Sends the exact leads visible on the current table page (25 max) to
+   the backend, which builds a professional .xlsx workbook including
+   full lead details + a per-call-attempt breakdown (1st call, 2nd call,
+   etc. with date/time, status, response, remarks) pulled from callLogs.
+═══════════════════════════════════ */
+document.getElementById('exportExcelBtn').addEventListener('click', exportCurrentPage);
+
+async function exportCurrentPage(){
+  if(currentPageLeadsForExport.length === 0){
+    alert('No leads to export on this page');
+    return;
+  }
+  const btn = document.getElementById('exportExcelBtn');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Exporting…';
+  btn.disabled = true;
+
+  const payload = {
+    leads: currentPageLeadsForExport.map(l => ({
+      id: l._id,
+      phone: fmtPhone(l['Phone Number']).replace('+',''),
+      type: l._leadType,
+      name: l['Lead Name'] || l.Name || ''
+    }))
+  };
+
+  try{
+    const res = await fetch(`${BASE}/export-leads`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Leads_Page${currentPage}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }catch(err){
+    console.error(err);
+    alert('Export failed. Please try again.');
+  }finally{
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
+
+/* ═══════════════════════════════════
    CALL LOG MODAL
    Same draft-preserving behavior as the Edit modal: closing without
    saving keeps whatever was typed so reopening the same lead restores it.
@@ -2340,8 +2407,10 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
 
   try{
     await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':phone.replace(/[^0-9]/g,''),set:updatedLead})});
-    await fetch(`${BASE}/call-log`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(callLogPayload)});
-    alert('Call log saved');
+    const logRes = await fetch(`${BASE}/call-log`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(callLogPayload)});
+    const logData = await logRes.json();
+    const attemptMsg = logData.attempt_number ? ` (Call #${logData.attempt_number} at ${logData.call_datetime})` : '';
+    alert('Call log saved' + attemptMsg);
     delete leadDrafts[phone];
     document.getElementById('callLogForm').reset();
     document.getElementById('callLogOverlay').classList.remove('active');
@@ -2393,8 +2462,8 @@ function openHistoryModal(phoneRaw){
       document.getElementById('historyList').innerHTML = d.logs.map(l=>`
         <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
           <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:6px">
-            <span>${escHtml(l.CalledBy||'Unknown')}</span>
-            <span>${new Date(l.CreatedAt).toLocaleString()}</span>
+            <span>${escHtml(l.CalledBy||'Unknown')}${l.CallAttemptNumber?' · Call #'+l.CallAttemptNumber:''}</span>
+            <span>${escHtml(l.CallDateTimeFormatted) || new Date(l.CreatedAt).toLocaleString()}</span>
           </div>
           <div style="color:#fff;font-weight:600;font-size:0.88rem">${escHtml(l.CallStatus||'—')} · ${escHtml(l.CustomerResponse||'—')}</div>
           ${l.CallerRemarks?`<div style="color:rgba(255,255,255,0.7);font-size:0.82rem;margin-top:4px">${escHtml(l.CallerRemarks)}</div>`:''}

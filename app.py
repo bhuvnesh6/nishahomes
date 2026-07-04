@@ -20,7 +20,10 @@ from flask import session
 import random
 import requests
 from datetime import timedelta
-
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+import io
 
 # Load env
 load_dotenv()
@@ -56,6 +59,12 @@ def serialize_doc(doc):
     
     return doc
 
+def format_ist(dt):
+    """Formats a UTC datetime into IST 'hh:mm AM/PM · dd/mm/yyyy'"""
+    if not isinstance(dt, datetime):
+        return "—"
+    ist = dt + timedelta(hours=5, minutes=30)
+    return ist.strftime("%I:%M %p · %d/%m/%Y")
 
 def get_collection_data(collection_name):
     collection = db[collection_name]
@@ -813,16 +822,25 @@ def add_call_log():
         if not number.startswith("91"):
             number = "91" + number
 
-        # Trust the logged-in session for who made the call, fall back to payload
         employee_name = session.get("employee_name") or data.get("employee") or "Unknown"
 
         now = datetime.utcnow()
         today_str = now.strftime("%Y-%m-%d")
+        formatted_dt = format_ist(now)
+
+        end_collection = db["endData"]
+
+        # 🔥 Figure out which call attempt number this is, BEFORE incrementing
+        existing_end_doc = end_collection.find_one({"Number": number})
+        current_attempt = (existing_end_doc or {}).get("Call_attempt", 0)
+        attempt_number = current_attempt + 1
 
         log_entry = {
             "Number": number,
             "Name": data.get("name", ""),
             "LeadType": data.get("leadType", ""),
+            "CallAttemptNumber": attempt_number,
+            "CallDateTimeFormatted": formatted_dt,
             "CallStatus": data.get("callStatus", ""),
             "CustomerResponse": data.get("customerResponse", ""),
             "InterestLevel": data.get("interestLevel", ""),
@@ -847,8 +865,6 @@ def add_call_log():
 
         call_logs_collection.insert_one(log_entry)
 
-        end_collection = db["endData"]
-
         update_fields = {
             "Call Status": data.get("callStatus", ""),
             "Customer Response": data.get("customerResponse", ""),
@@ -866,6 +882,7 @@ def add_call_log():
             "Customer Name": data.get("name", ""),
             "lastCallBy": employee_name,
             "lastCallAt": now,
+            "lastCallAtFormatted": formatted_dt,
             "lastUpdatedAt": now
         }
         update_fields = {k: v for k, v in update_fields.items() if v not in [None, ""]}
@@ -878,6 +895,8 @@ def add_call_log():
                 "$push": {
                     "RecentLogs": {
                         "$each": [{
+                            "CallAttemptNumber": attempt_number,
+                            "CallDateTimeFormatted": formatted_dt,
                             "CallStatus": data.get("callStatus", ""),
                             "CustomerResponse": data.get("customerResponse", ""),
                             "CalledBy": employee_name,
@@ -896,6 +915,8 @@ def add_call_log():
         return jsonify({
             "success": True,
             "message": "Call log saved",
+            "attempt_number": attempt_number,
+            "call_datetime": formatted_dt,
             "data": serialize_doc(updated_doc) if updated_doc else None
         }), 200
 
@@ -903,7 +924,6 @@ def add_call_log():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/api/call-logs/<phone>", methods=["GET"])
 def get_call_logs(phone):
@@ -1003,6 +1023,147 @@ def delete_lead():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+#excel
+
+COLLECTION_MAP = {
+    "buying": "Leads",
+    "rental": "RentalLeads",
+    "selling": "sellingLeads",
+    "agent": "agentLeads",
+    "other": "Leads"
+}
+
+@app.route("/api/export-leads", methods=["POST"])
+def export_leads():
+    try:
+        data = request.json
+        leads_input = data.get("leads", []) if data else []
+        if not leads_input:
+            return jsonify({"error": "No leads provided"}), 400
+
+        end_collection = db["endData"]
+        rows = []
+        max_calls = 0
+
+        for item in leads_input:
+            lead_id = item.get("id")
+            lead_type = item.get("type", "buying")
+
+            phone = normalize_number(item.get("phone", ""))
+            if not phone.startswith("91"):
+                phone = "91" + phone
+
+            collection_name = COLLECTION_MAP.get(lead_type, "Leads")
+
+            lead_doc = None
+            if lead_id:
+                try:
+                    lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
+                except Exception:
+                    lead_doc = None
+            if not lead_doc:
+                lead_doc = db[collection_name].find_one({"Phone Number": {"$regex": phone}}) or {}
+
+            end_doc = end_collection.find_one({"Number": phone}) or {}
+            call_logs = list(call_logs_collection.find({"Number": phone}).sort("CreatedAt", 1))
+            max_calls = max(max_calls, len(call_logs))
+
+            rows.append({
+                "name": lead_doc.get("Lead Name") or lead_doc.get("Name") or item.get("name", "Unknown"),
+                "phone": "+" + phone,
+                "type": lead_type.capitalize(),
+                "location": lead_doc.get("Location Interested In") or lead_doc.get("Property Location") or "—",
+                "property": lead_doc.get("Property Type", "—"),
+                "budget": lead_doc.get("Budget Range") or lead_doc.get("Expected Price") or "—",
+                "assigned_to": lead_doc.get("AssignTo", "—"),
+                "call_status": end_doc.get("Call Status", "—"),
+                "interest_level": end_doc.get("Interest Level", "—"),
+                "next_followup": end_doc.get("Next Follow-up Timeline", "—"),
+                "next_call_date": end_doc.get("Next Call Date", "—"),
+                "total_calls": len(call_logs),
+                "calls": call_logs
+            })
+
+        # ── Build workbook ──
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Leads Export"
+
+        base_headers = [
+            "Lead Name", "Phone", "Type", "Location", "Property", "Budget",
+            "Assigned To", "Current Status", "Interest Level",
+            "Next Follow-up", "Next Call Date", "Total Calls"
+        ]
+        call_headers = []
+        for i in range(1, max_calls + 1):
+            call_headers += [
+                f"Call {i} - Date & Time", f"Call {i} - Status",
+                f"Call {i} - Response", f"Call {i} - Remarks"
+            ]
+        headers = base_headers + call_headers
+        ws.append(headers)
+
+        header_fill = PatternFill(start_color="2D3142", end_color="2D3142", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True, size=11)
+        thin = Side(style="thin", color="D1D5DB")
+        thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = thin_border
+        ws.row_dimensions[1].height = 28
+
+        accent_fill = PatternFill(start_color="FDF1EB", end_color="FDF1EB", fill_type="solid")
+        for r_idx, row in enumerate(rows, start=2):
+            base_values = [
+                row["name"], row["phone"], row["type"], row["location"], row["property"],
+                row["budget"], row["assigned_to"], row["call_status"], row["interest_level"],
+                row["next_followup"], row["next_call_date"], row["total_calls"]
+            ]
+            call_values = []
+            for c in row["calls"]:
+                call_values += [
+                    format_ist(c.get("CreatedAt")),
+                    c.get("CallStatus", "—"),
+                    c.get("CustomerResponse", "—"),
+                    c.get("CallerRemarks", "—")
+                ]
+            call_values += ["—"] * (len(call_headers) - len(call_values))
+
+            full_row = base_values + call_values
+            for col_idx, val in enumerate(full_row, start=1):
+                cell = ws.cell(row=r_idx, column=col_idx, value=val)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical="center", wrap_text=True)
+                if r_idx % 2 == 0:
+                    cell.fill = accent_fill
+
+        widths = [22, 16, 10, 18, 16, 14, 16, 20, 14, 18, 14, 10] + [20, 16, 18, 22] * max_calls
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        filename = f"Leads_Export_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.xlsx"
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 #wp templetes 
 

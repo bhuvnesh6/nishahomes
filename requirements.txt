@@ -9,3 +9,4 @@ moviepy==1.0.3
 opencv-python-headless==4.10.0.84
 setuptools
 requests
+openpyxl
