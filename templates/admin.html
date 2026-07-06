@@ -1162,7 +1162,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           </button>
           <button class="action-btn-sm primary" id="exportExcelBtn">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
-            Export Page
+            Export
           </button>
         </div>
       </div>
@@ -1268,6 +1268,31 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     <div class="tpl-modal-actions">
       <button class="tpl-cancel" id="closeTemplateModal">Cancel</button>
       <button class="tpl-send" id="confirmSendBtn">Send →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Range Modal -->
+<div class="tpl-modal" id="exportRangeModal">
+  <div class="tpl-modal-inner">
+    <h3>Export Leads</h3>
+    <select class="tpl-select" id="exportPeriodSelect">
+      <option value="page">Current Page Only</option>
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month + This Month</option>
+      <option value="last_3_months">Last 3 Months (incl. current)</option>
+      <option value="all">All Leads</option>
+    </select>
+    <select class="tpl-select" id="exportTypeSelect">
+      <option value="all">All Types</option>
+      <option value="buying">Buying</option>
+      <option value="rental">Rental</option>
+      <option value="selling">Selling</option>
+      <option value="agent">Agent</option>
+    </select>
+    <div class="tpl-modal-actions">
+      <button class="tpl-cancel" id="closeExportRangeModal">Cancel</button>
+      <button class="tpl-send" id="confirmExportBtn">Export →</button>
     </div>
   </div>
 </div>
@@ -1429,7 +1454,7 @@ const PAGE_SIZE = 25;
 // unsaved form drafts for call-log / edit popups, keyed by phone (edit uses 'edit_'+phone)
 let leadDrafts = {};
 
-// 🔥 NEW: tracks exactly which leads are on the currently rendered table
+// 🔥 tracks exactly which leads are on the currently rendered table
 // page, so the "Export Page" button exports precisely what the admin sees
 // (25 leads per page), not the whole filtered set.
 let currentPageLeadsForExport = [];
@@ -1476,6 +1501,9 @@ function initials(name){
 
 /* ═══════════════════════════════════
    LOAD END-DATA
+   🔥 UPDATED: also index every record by its LeadId (Mongo _id of the
+   Lead document) so lookups can match on LeadId first, falling back
+   to phone number if not present yet.
 ═══════════════════════════════════ */
 async function loadEndData(){
   try{
@@ -1487,6 +1515,7 @@ async function loadEndData(){
         const num = digitsOnly(String(r.Number||''));
         if(num) newMap[num] = r;
         if(num.length>10) newMap[num.slice(-10)] = r;
+        if(r.LeadId) newMap['id_'+r.LeadId] = r; // 🔥 NEW: index by LeadId
       });
     }
     endDataMap = newMap;
@@ -1497,7 +1526,10 @@ async function loadEndData(){
   }
 }
 
-function getEndData(phoneRaw){
+// 🔥 UPDATED: match by LeadId first (the Lead document's Mongo _id),
+// fall back to phone number if LeadId isn't found (e.g. no call logged yet)
+function getEndData(phoneRaw, leadId){
+  if(leadId && endDataMap['id_'+leadId]) return endDataMap['id_'+leadId];
   const full = digitsOnly(phoneRaw);
   if(endDataMap[full]) return endDataMap[full];
   if(full.length>10 && endDataMap[full.slice(-10)]) return endDataMap[full.slice(-10)];
@@ -1649,7 +1681,7 @@ function renderTable(){
   const page=filteredLeads.slice(start,end);
   const totalPages=Math.ceil(total/PAGE_SIZE);
 
-  // 🔥 NEW: keep a reference to exactly what's on this page for export
+  // keep a reference to exactly what's on this page for export
   currentPageLeadsForExport = page;
 
   tbody.innerHTML = page.map(l=>{
@@ -1661,7 +1693,7 @@ function renderTable(){
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
 
-    const ed = getEndData(phone);
+    const ed = getEndData(phone, l._id);
     const callStatus = ed?.['Call Status']||'—';
     const nextFollowup = ed?.['Next Follow-up Timeline']||'—';
 
@@ -1776,7 +1808,7 @@ function renderMobileCards(){
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
 
-    const ed = getEndData(phone);
+    const ed = getEndData(phone, l._id);
     const callStatus = ed?.['Call Status']||'';
     const nextFollowup = ed?.['Next Follow-up Timeline']||'';
     const callAttempts = ed?.['Call_attempt']||0;
@@ -2265,13 +2297,29 @@ document.getElementById('bulkAssignBtn').addEventListener('click',()=>{
 });
 
 /* ═══════════════════════════════════
-   🔥 NEW: EXPORT CURRENT PAGE TO EXCEL
-   Sends the exact leads visible on the current table page (25 max) to
-   the backend, which builds a professional .xlsx workbook including
-   full lead details + a per-call-attempt breakdown (1st call, 2nd call,
-   etc. with date/time, status, response, remarks) pulled from callLogs.
+   🔥 EXPORT — DATE RANGE MODAL + EXECUTION
+   Two paths:
+   1) "Current Page Only" -> exportCurrentPage() sends the exact leads
+      visible on the current table page (up to 25).
+   2) Any date-range option -> exportByDateRange() asks the backend to
+      scan the requested period + lead type across all leads server-side.
 ═══════════════════════════════════ */
-document.getElementById('exportExcelBtn').addEventListener('click', exportCurrentPage);
+document.getElementById('exportExcelBtn').addEventListener('click', ()=>{
+  document.getElementById('exportRangeModal').style.display='flex';
+});
+document.getElementById('closeExportRangeModal').addEventListener('click', ()=>{
+  document.getElementById('exportRangeModal').style.display='none';
+});
+document.getElementById('confirmExportBtn').addEventListener('click', ()=>{
+  const period = document.getElementById('exportPeriodSelect').value;
+  const type = document.getElementById('exportTypeSelect').value;
+  document.getElementById('exportRangeModal').style.display='none';
+  if(period === 'page'){
+    exportCurrentPage();
+  } else {
+    exportByDateRange(period, type);
+  }
+});
 
 async function exportCurrentPage(){
   if(currentPageLeadsForExport.length === 0){
@@ -2304,6 +2352,36 @@ async function exportCurrentPage(){
     const a = document.createElement('a');
     a.href = url;
     a.download = `Leads_Page${currentPage}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }catch(err){
+    console.error(err);
+    alert('Export failed. Please try again.');
+  }finally{
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function exportByDateRange(period, type){
+  const btn = document.getElementById('exportExcelBtn');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Exporting…';
+  btn.disabled = true;
+  try{
+    const res = await fetch(`${BASE}/export-leads`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ period, type })
+    });
+    if(!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Leads_${period}_${type}_${new Date().toISOString().slice(0,10)}.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();

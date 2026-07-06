@@ -24,6 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import io
+import calendar
 
 # Load env
 load_dotenv()
@@ -78,6 +79,48 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
     return response
+
+
+def parse_lead_date(date_str):
+    """Leads store Date as DD-MM-YYYY. Defensive about other formats too."""
+    if not date_str:
+        return None
+    date_str = str(date_str).strip()
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def get_date_range(period):
+    """Returns (start_date, end_date) for the given export period, or (None, None) for 'all'."""
+    now = datetime.utcnow()
+
+    if period == "this_month":
+        start = datetime(now.year, now.month, 1)
+        return start, now
+
+    if period == "last_month":
+        # last month + current month combined
+        first_of_this_month = datetime(now.year, now.month, 1)
+        last_month_end = first_of_this_month - timedelta(days=1)
+        start = datetime(last_month_end.year, last_month_end.month, 1)
+        return start, now
+
+    if period == "last_3_months":
+        # current month + previous 2 months (3 months total, inclusive)
+        month = now.month - 2
+        year = now.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        start = datetime(year, month, 1)
+        return start, now
+
+    return None, None  # "all"
+
 
 
 @app.route("/")
@@ -865,6 +908,24 @@ def add_call_log():
 
         call_logs_collection.insert_one(log_entry)
 
+        # 🔥 NEW: find the lead doc by phone (it already has a Mongo _id by
+        # default), copy that _id onto endData as LeadId, and stamp who
+        # made this call directly onto the Lead document (callBy field).
+        lead_type = data.get("leadType")
+        collection_name = COLLECTION_MAP.get(lead_type)
+        if collection_name:
+            lead_doc = db[collection_name].find_one({"Phone Number": {"$regex": number}})
+            if lead_doc:
+                db["endData"].update_one(
+                    {"Number": number},
+                    {"$set": {"LeadId": str(lead_doc["_id"])}},
+                    upsert=True
+                )
+                db[collection_name].update_one(
+                    {"_id": lead_doc["_id"]},
+                    {"$set": {"callBy": session.get("user_id")}}
+                )
+
         update_fields = {
             "Call Status": data.get("callStatus", ""),
             "Customer Response": data.get("customerResponse", ""),
@@ -924,6 +985,7 @@ def add_call_log():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/call-logs/<phone>", methods=["GET"])
 def get_call_logs(phone):
@@ -1036,10 +1098,33 @@ COLLECTION_MAP = {
 @app.route("/api/export-leads", methods=["POST"])
 def export_leads():
     try:
-        data = request.json
-        leads_input = data.get("leads", []) if data else []
+        data = request.json or {}
+        leads_input = data.get("leads", [])
+        period = data.get("period")                 # "this_month" | "last_month" | "last_3_months" | "all" | None
+        lead_type_filter = data.get("type", "all")   # "all" | "buying" | "rental" | "selling" | "agent"
+
+        # 🔥 NEW: date-range based export (used when no explicit page-selection is sent)
+        if not leads_input and period:
+            start_date, end_date = get_date_range(period)
+            types_to_scan = [lead_type_filter] if lead_type_filter != "all" else ["buying", "rental", "selling", "agent"]
+
+            leads_input = []
+            for t in types_to_scan:
+                collection_name = COLLECTION_MAP.get(t, "Leads")
+                for d in db[collection_name].find():
+                    if start_date:
+                        lead_date = parse_lead_date(d.get("Date"))
+                        if not lead_date or lead_date < start_date or lead_date > end_date:
+                            continue
+                    leads_input.append({
+                        "id": str(d["_id"]),
+                        "phone": d.get("Phone Number", ""),
+                        "type": t,
+                        "name": d.get("Lead Name") or d.get("Name") or ""
+                    })
+
         if not leads_input:
-            return jsonify({"error": "No leads provided"}), 400
+            return jsonify({"error": "No leads found for the selected filters"}), 400
 
         end_collection = db["endData"]
         rows = []
@@ -1164,6 +1249,7 @@ def export_leads():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 #wp templetes 
 
@@ -1835,20 +1921,36 @@ def get_lead_by_number():
 
     data = request.get_json()
 
-    if not data or "number" not in data:
-        return jsonify({"error": "Number is required"}), 400
+    if not data or ("number" not in data and "leadId" not in data):
+        return jsonify({"error": "number or leadId is required"}), 400
 
-    number = data["number"]
+    lead_id = data.get("leadId")
+    number = data.get("number")
 
-    # Try both int + string match (robust handling)
     lead = None
-    try:
-        lead = collection.find_one({"Number": int(number)})
-    except:
-        pass
 
-    if not lead:
-        lead = collection.find_one({"Number": str(number)})
+    # 🔥 Try matching by LeadId (the Mongo _id of the Lead doc) first
+    if lead_id:
+        lead = collection.find_one({"LeadId": str(lead_id)})
+
+    # Fallback: match through number (91number), same as before
+    if not lead and number:
+        normalized = normalize_number(number)
+        if normalized and not normalized.startswith("91"):
+            normalized = "91" + normalized
+
+        try:
+            lead = collection.find_one({"Number": int(normalized)})
+        except:
+            lead = collection.find_one({"Number": normalized})
+
+        if not lead:
+            try:
+                lead = collection.find_one({"Number": int(number)})
+            except:
+                pass
+        if not lead:
+            lead = collection.find_one({"Number": str(number)})
 
     if lead:
         return jsonify({
@@ -1860,7 +1962,6 @@ def get_lead_by_number():
         "success": False,
         "error": "Lead not found"
     }), 404
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
