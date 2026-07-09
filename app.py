@@ -25,6 +25,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import io
 import calendar
+import re
 
 # Load env
 load_dotenv()
@@ -548,7 +549,6 @@ def remove_team_member(number):
 
 #post apis 
 
-from flask import request
 
 @app.route("/api/assign-lead", methods=["POST"])
 def assign_lead():
@@ -697,7 +697,6 @@ def normalize_number(number):
 
 #reassign function
 
-import re
 
 @app.route("/api/reassign-lead", methods=["POST"])
 def reassign_lead():
@@ -1097,31 +1096,53 @@ COLLECTION_MAP = {
 
 @app.route("/api/export-leads", methods=["POST"])
 def export_leads():
+    """
+    Builds an Excel export of leads.
+
+    Hardened so a single bad record (missing/garbage phone, bad ObjectId,
+    a transient Mongo hiccup on one collection, etc.) can never abort the
+    whole export — it's skipped and logged, and the export still returns
+    whatever rows it could successfully build.
+    """
     try:
         data = request.json or {}
         leads_input = data.get("leads", [])
         period = data.get("period")                 # "this_month" | "last_month" | "last_3_months" | "all" | None
         lead_type_filter = data.get("type", "all")   # "all" | "buying" | "rental" | "selling" | "agent"
 
-        # 🔥 NEW: date-range based export (used when no explicit page-selection is sent)
+        # 🔥 Date-range based export (used when no explicit page-selection is sent)
         if not leads_input and period:
             start_date, end_date = get_date_range(period)
-            types_to_scan = [lead_type_filter] if lead_type_filter != "all" else ["buying", "rental", "selling", "agent"]
+            types_to_scan = (
+                [lead_type_filter] if lead_type_filter != "all"
+                else ["buying", "rental", "selling", "agent"]
+            )
 
             leads_input = []
             for t in types_to_scan:
                 collection_name = COLLECTION_MAP.get(t, "Leads")
-                for d in db[collection_name].find():
-                    if start_date:
-                        lead_date = parse_lead_date(d.get("Date"))
-                        if not lead_date or lead_date < start_date or lead_date > end_date:
-                            continue
-                    leads_input.append({
-                        "id": str(d["_id"]),
-                        "phone": d.get("Phone Number", ""),
-                        "type": t,
-                        "name": d.get("Lead Name") or d.get("Name") or ""
-                    })
+
+                try:
+                    cursor = db[collection_name].find()
+                except Exception as scan_err:
+                    print(f"[export] Failed scanning collection '{collection_name}': {scan_err}")
+                    continue
+
+                for d in cursor:
+                    try:
+                        if start_date:
+                            lead_date = parse_lead_date(d.get("Date"))
+                            if not lead_date or lead_date < start_date or lead_date > end_date:
+                                continue
+                        leads_input.append({
+                            "id": str(d["_id"]),
+                            "phone": d.get("Phone Number", ""),
+                            "type": t,
+                            "name": d.get("Lead Name") or d.get("Name") or ""
+                        })
+                    except Exception as row_err:
+                        print(f"[export] Skipping malformed doc in '{collection_name}': {row_err}")
+                        continue
 
         if not leads_input:
             return jsonify({"error": "No leads found for the selected filters"}), 400
@@ -1129,45 +1150,86 @@ def export_leads():
         end_collection = db["endData"]
         rows = []
         max_calls = 0
+        skipped = 0
 
         for item in leads_input:
-            lead_id = item.get("id")
-            lead_type = item.get("type", "buying")
+            try:
+                lead_id = item.get("id")
+                lead_type = item.get("type", "buying")
+                collection_name = COLLECTION_MAP.get(lead_type, "Leads")
 
-            phone = normalize_number(item.get("phone", ""))
-            if not phone.startswith("91"):
-                phone = "91" + phone
+                raw_phone = item.get("phone", "")
+                phone = normalize_number(raw_phone)
 
-            collection_name = COLLECTION_MAP.get(lead_type, "Leads")
+                # 🔒 Guard: an empty/too-short phone must never be used as a
+                # regex filter — that would match arbitrary documents and
+                # pull the wrong lead's data into this row.
+                valid_phone = bool(phone) and len(phone) >= 8
+                if valid_phone and not phone.startswith("91"):
+                    phone = "91" + phone
 
-            lead_doc = None
-            if lead_id:
-                try:
-                    lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
-                except Exception:
-                    lead_doc = None
-            if not lead_doc:
-                lead_doc = db[collection_name].find_one({"Phone Number": {"$regex": phone}}) or {}
+                lead_doc = None
 
-            end_doc = end_collection.find_one({"Number": phone}) or {}
-            call_logs = list(call_logs_collection.find({"Number": phone}).sort("CreatedAt", 1))
-            max_calls = max(max_calls, len(call_logs))
+                # 1) Try by _id first — most reliable, no regex needed
+                if lead_id:
+                    try:
+                        lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
+                    except Exception:
+                        lead_doc = None
 
-            rows.append({
-                "name": lead_doc.get("Lead Name") or lead_doc.get("Name") or item.get("name", "Unknown"),
-                "phone": "+" + phone,
-                "type": lead_type.capitalize(),
-                "location": lead_doc.get("Location Interested In") or lead_doc.get("Property Location") or "—",
-                "property": lead_doc.get("Property Type", "—"),
-                "budget": lead_doc.get("Budget Range") or lead_doc.get("Expected Price") or "—",
-                "assigned_to": lead_doc.get("AssignTo", "—"),
-                "call_status": end_doc.get("Call Status", "—"),
-                "interest_level": end_doc.get("Interest Level", "—"),
-                "next_followup": end_doc.get("Next Follow-up Timeline", "—"),
-                "next_call_date": end_doc.get("Next Call Date", "—"),
-                "total_calls": len(call_logs),
-                "calls": call_logs
-            })
+                # 2) Fall back to a safely-escaped phone regex match
+                if not lead_doc and valid_phone:
+                    try:
+                        safe_phone = re.escape(phone)
+                        lead_doc = db[collection_name].find_one(
+                            {"Phone Number": {"$regex": safe_phone}}
+                        )
+                    except Exception:
+                        lead_doc = None
+
+                lead_doc = lead_doc or {}
+
+                # end-data / call-logs lookups, also guarded individually
+                end_doc = {}
+                call_logs = []
+                if valid_phone:
+                    try:
+                        end_doc = end_collection.find_one({"Number": phone}) or {}
+                    except Exception as end_err:
+                        print(f"[export] end-data lookup failed for {phone}: {end_err}")
+                    try:
+                        call_logs = list(
+                            call_logs_collection.find({"Number": phone}).sort("CreatedAt", 1)
+                        )
+                    except Exception as log_err:
+                        print(f"[export] call-log lookup failed for {phone}: {log_err}")
+
+                max_calls = max(max_calls, len(call_logs))
+
+                rows.append({
+                    "name": lead_doc.get("Lead Name") or lead_doc.get("Name") or item.get("name") or "Unknown",
+                    "phone": ("+" + phone) if valid_phone else (str(raw_phone) or "—"),
+                    "type": str(lead_type).capitalize(),
+                    "location": lead_doc.get("Location Interested In") or lead_doc.get("Property Location") or "—",
+                    "property": lead_doc.get("Property Type", "—"),
+                    "budget": lead_doc.get("Budget Range") or lead_doc.get("Expected Price") or "—",
+                    "assigned_to": lead_doc.get("AssignTo", "—"),
+                    "call_status": end_doc.get("Call Status", "—"),
+                    "interest_level": end_doc.get("Interest Level", "—"),
+                    "next_followup": end_doc.get("Next Follow-up Timeline", "—"),
+                    "next_call_date": end_doc.get("Next Call Date", "—"),
+                    "total_calls": len(call_logs),
+                    "calls": call_logs
+                })
+
+            except Exception as item_err:
+                # 🔒 Never let one bad lead take down the whole export
+                skipped += 1
+                print(f"[export] Skipping row due to error: {item_err}")
+                continue
+
+        if not rows:
+            return jsonify({"error": "No leads could be exported (all rows failed)"}), 400
 
         # ── Build workbook ──
         wb = Workbook()
@@ -1232,6 +1294,9 @@ def export_leads():
 
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+
+        if skipped:
+            print(f"[export] Completed with {skipped} row(s) skipped out of {len(leads_input)} requested")
 
         buffer = io.BytesIO()
         wb.save(buffer)
@@ -1337,8 +1402,22 @@ def delete_wp_template(id):
         return jsonify({"error": str(e)}), 500
 
 
-db = client["NishaHomesData"]
-collection = db["endData"]
+# ─────────────────────────────────────────────────────────────
+# 🔒 FIX: this used to be `db = client["NishaHomesData"]`, which
+# silently REASSIGNED the global `db` used by every other route in
+# this file (including /api/export-leads). That meant every route
+# below this point — and, more importantly, every route ABOVE it that
+# ran after this module finished loading — was querying whatever
+# database "NishaHomesData" is, instead of the one configured via
+# DB_NAME in your .env. This is almost certainly why exports (and
+# other reads) sometimes silently returned nothing.
+#
+# We now use dedicated variable names so /update-lead keeps working
+# exactly as before, without touching the shared `db` / `collection`
+# names used everywhere else.
+# ─────────────────────────────────────────────────────────────
+update_lead_db = client["NishaHomesData"]
+update_lead_collection = update_lead_db["endData"]
 
 
 @app.route("/update-lead", methods=["POST"])
@@ -1381,7 +1460,7 @@ def update_lead():
         # Remove None values (clean update)
         update_fields = {k: v for k, v in update_fields.items() if v is not None}
 
-        result = collection.update_one(
+        result = update_lead_collection.update_one(
             {"Number": number},   # 🔎 Find by Number
             {
                 "$set": update_fields,
