@@ -48,7 +48,7 @@ DB_NAME = os.getenv("DB_NAME")
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
-
+dai_collection = db["DAI"]
 projects_collection = db["project"]
 
 # 🔥 Helper function (YOU WERE MISSING THIS)
@@ -2041,6 +2041,71 @@ def get_lead_by_number():
         "success": False,
         "error": "Lead not found"
     }), 404
+
+
+# =============================
+# DAI (Disable-AI) collection
+# =============================
+
+@app.route("/api/toggle-ai", methods=["POST"])
+def toggle_ai():
+    """
+    Toggles whether AI is disabled for a lead.
+    - If the lead is NOT in the DAI collection -> insert it (AI disabled).
+    - If the lead IS in the DAI collection -> remove it (AI re-enabled).
+    Keyed primarily by leadId (Mongo _id of the lead doc, as a string),
+    with Phone Number / Lead Name stored alongside for reference/debugging.
+    """
+    try:
+        data = request.json or {}
+        lead_id = data.get("leadId")
+        phone = data.get("phone")
+        name = data.get("name")
+
+        if not lead_id:
+            return jsonify({"success": False, "message": "leadId is required"}), 400
+
+        lead_id = str(lead_id)
+        existing = dai_collection.find_one({"leadId": lead_id})
+
+        if existing:
+            # Currently disabled -> remove -> AI re-enabled
+            dai_collection.delete_one({"leadId": lead_id})
+            return jsonify({
+                "success": True,
+                "disabled": False,
+                "message": "AI re-enabled for this lead"
+            })
+        else:
+            # Currently enabled -> insert -> AI disabled
+            doc = {
+                "leadId": lead_id,
+                "Phone Number": str(phone or ""),
+                "Lead Name": name or "",
+                "createdAt": datetime.utcnow()
+            }
+            dai_collection.insert_one(doc)
+            return jsonify({
+                "success": True,
+                "disabled": True,
+                "message": "AI disabled for this lead"
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/dai-list", methods=["GET"])
+def get_dai_list():
+    """Returns every lead currently DAI-flagged (AI disabled)."""
+    try:
+        docs = list(dai_collection.find())
+        return jsonify([serialize_doc(d) for d in docs])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

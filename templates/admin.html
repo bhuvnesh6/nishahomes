@@ -542,6 +542,25 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .icon-btn:hover{background:rgba(239,131,84,0.1);color:var(--accent)}
 .icon-btn.danger:hover{background:rgba(239,68,68,0.1);color:var(--hot)}
 
+/* 🔥 AI disable/enable styling */
+.leads-table tbody tr.ai-disabled{
+  background: rgba(239,68,68,0.05);
+}
+.leads-table tbody tr.ai-disabled:hover{
+  background: rgba(239,68,68,0.09);
+}
+.lead-card.ai-disabled{
+  background: rgba(239,68,68,0.04);
+  border-color: rgba(239,68,68,0.35);
+}
+.icon-btn.ai-off{ color: var(--hot); }
+.icon-btn.ai-off:hover{ background: rgba(239,68,68,0.12); }
+.lc-action-btn.ai-off{
+  background: rgba(239,68,68,0.08);
+  border-color: var(--hot);
+  color: var(--hot);
+}
+
 /* ═══════════════════════════
    RESPONSIVE: Hide table on mobile, show cards
    FIX: changed display:block to display:flex for mobile-cards-wrap
@@ -1463,6 +1482,10 @@ let currentPageLeadsForExport = [];
 let endDataMap = {};
 let endDataLoaded = false;
 
+// 🔥 DAI (Disable-AI) cache — leadIds (Mongo _id, as string) that
+// currently have AI disabled for that lead.
+let daiSet = new Set();
+
 /* ═══════════════════════════════════
    HELPERS
 ═══════════════════════════════════ */
@@ -1538,6 +1561,54 @@ function getEndData(phoneRaw, leadId){
 }
 
 /* ═══════════════════════════════════
+   LOAD DAI (Disable-AI) LIST
+   Populates daiSet with every leadId currently AI-disabled, so rows/
+   cards can be colored and buttons can show the correct state.
+═══════════════════════════════════ */
+async function loadDaiList(){
+  try{
+    const res = await fetch(`${BASE}/dai-list`);
+    const docs = await res.json();
+    daiSet = new Set((docs||[]).map(d => String(d.leadId)));
+  }catch(e){
+    console.warn('DAI list load failed, keeping previous data', e);
+  }
+}
+
+/* ═══════════════════════════════════
+   TOGGLE AI FOR A LEAD
+   Flips membership in the DAI collection via /api/toggle-ai, then
+   updates local state and re-renders (no full reload needed).
+═══════════════════════════════════ */
+async function toggleAI(btn){
+  const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+  const leadId = data.id;
+  if(!leadId){ alert('Missing lead id — cannot toggle AI'); return; }
+
+  btn.disabled = true;
+  try{
+    const res = await fetch(`${BASE}/toggle-ai`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ leadId, phone: data.phone, name: data.name })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Failed to update AI status'); return; }
+
+    if(d.disabled) daiSet.add(String(leadId));
+    else daiSet.delete(String(leadId));
+
+    renderTable();
+    renderMobileCards();
+  }catch(e){
+    console.error(e);
+    alert('Failed to update AI status');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+/* ═══════════════════════════════════
    SIDEBAR NAV
 ═══════════════════════════════════ */
 const sidebarLinks = document.querySelectorAll('.sidebar-link[data-page]');
@@ -1585,6 +1656,7 @@ async function loadAllLeads(keepPage){
   try{
     await Promise.allSettled([
       loadEndData(),
+      loadDaiList(),
       (async()=>{
         const types=['buying','rental','selling','agent'];
         const results = await Promise.allSettled(types.map(async t=>{
@@ -1692,6 +1764,7 @@ function renderTable(){
     const budget = escHtml(l['Budget Range']||l['Expected Price']||'—');
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
+    const isAiDisabled = daiSet.has(String(l._id));
 
     const ed = getEndData(phone, l._id);
     const callStatus = ed?.['Call Status']||'—';
@@ -1710,7 +1783,7 @@ function renderTable(){
     }));
 
     return `
-    <tr class="${isSelected?'selected':''}" data-phone="${escHtml(phone)}">
+    <tr class="${isSelected?'selected':''} ${isAiDisabled?'ai-disabled':''}" data-phone="${escHtml(phone)}">
       <td><input type="checkbox" class="row-check" ${isSelected?'checked':''} data-phone="${escHtml(phone)}" data-name="${name}"></td>
       <td>
         <div class="td-name">${name}</div>
@@ -1743,6 +1816,11 @@ function renderTable(){
         <button class="icon-btn" title="AI Summary" data-lead="${rowData}" onclick="senReqtoAI(this)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
         </button>
+        <button class="icon-btn ${isAiDisabled?'ai-off':''}" title="${isAiDisabled?'Enable AI':'Disable AI'}" data-lead="${rowData}" onclick="toggleAI(this)">
+  ${isAiDisabled
+    ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`
+    : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`}
+</button>
         <button class="icon-btn" title="History" onclick="openHistoryModal('${escHtml(phone)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
@@ -1807,6 +1885,7 @@ function renderMobileCards(){
     const budget = l['Budget Range']||l['Expected Price']||'—';
     const t = l._leadType;
     const isSelected = selectedLeads.has(phone);
+    const isAiDisabled = daiSet.has(String(l._id));
 
     const ed = getEndData(phone, l._id);
     const callStatus = ed?.['Call Status']||'';
@@ -1826,7 +1905,7 @@ function renderMobileCards(){
     const typeColorMap={buying:'',rental:'type-rental',selling:'type-selling',agent:'type-agent',other:'type-other'};
 
     return `
-    <div class="lead-card ${typeColorMap[t]||''} ${isSelected?'selected':''}" data-phone="${escHtml(phone)}">
+    <div class="lead-card ${typeColorMap[t]||''} ${isSelected?'selected':''} ${isAiDisabled?'ai-disabled':''}" data-phone="${escHtml(phone)}">
       <div class="lc-header">
         ${selectMode?`<div class="lc-check-wrap"><input type="checkbox" class="lc-check row-check" ${isSelected?'checked':''} data-phone="${escHtml(phone)}" data-name="${escHtml(name)}"></div>`:''}
         <div class="lc-avatar">${initials(name)}</div>
@@ -1837,6 +1916,7 @@ function renderMobileCards(){
             <span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span>
             ${callAttempts>0?`<span class="badge" style="background:rgba(59,130,246,.1);color:#3b82f6">📞 ${callAttempts}×</span>`:''}
             ${interest?`<span class="badge" style="background:rgba(16,185,129,.08);color:#059669">${escHtml(interest)}</span>`:''}
+            ${isAiDisabled?`<span class="badge" style="background:rgba(239,68,68,.1);color:#dc2626">🔕 AI Off</span>`:''}
           </div>
         </div>
       </div>
@@ -1910,6 +1990,9 @@ function renderMobileCards(){
         <button class="lc-action-btn" data-lead="${rowData}" onclick="senReqtoAI(this)" title="AI">
           ✨ AI
         </button>
+        <button class="lc-action-btn ${isAiDisabled?'ai-off':''}" data-lead="${rowData}" onclick="toggleAI(this)" title="${isAiDisabled?'Enable AI':'Disable AI'}">
+  ${isAiDisabled ? '🤖 Enable AI' : '🤖 Disable AI'}
+</button>
         <button class="lc-action-btn" onclick="openHistoryModal('${escHtml(phone)}')" title="History">
           🕘 History
         </button>
