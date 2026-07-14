@@ -27,12 +27,25 @@ import io
 import calendar
 import re
 
+# 🔥 NEW: Cloudinary (used for Inventory / project image & video uploads)
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
 # Load env
 load_dotenv()
 
+# 🔥 NEW: Cloudinary config — reads from .env
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
+
 app = Flask(__name__)
-app.permanent_session_lifetime = timedelta(days=60) 
-app.secret_key = "supersecretkey"
+app.permanent_session_lifetime = timedelta(days=60)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 
 CORS(app)
 
@@ -49,7 +62,8 @@ DB_NAME = os.getenv("DB_NAME")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 dai_collection = db["DAI"]
-projects_collection = db["project"]
+# 🔥 CHANGED: was db["project"] — now uses "projects" per the Inventory feature
+projects_collection = db["projects"]
 
 # 🔥 Helper function (YOU WERE MISSING THIS)
 def serialize_doc(doc):
@@ -80,6 +94,30 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
     return response
+
+
+# ─────────────────────────────────────────────────────────────
+# 🔒 NEW: PARTNER ACCESS LOCK
+# Partners (roll == "partner" in teamAssign) may ONLY reach the
+# inventory dashboard, the projects API, uploaded media, and logout.
+# Everything else (leads, team, exports, admin/emp dashboards, etc.)
+# redirects them straight back to /inventory.
+# ─────────────────────────────────────────────────────────────
+PARTNER_ALLOWED_PATHS = {"/inventory", "/logout"}
+PARTNER_ALLOWED_PREFIXES = ("/api/projects", "/uploads", "/static")
+
+@app.before_request
+def restrict_partner_access():
+    if request.method == "OPTIONS":
+        return  # let CORS preflight through untouched
+
+    if session.get("role") == "partner":
+        path = request.path
+        if path in PARTNER_ALLOWED_PATHS:
+            return
+        if path.startswith(PARTNER_ALLOWED_PREFIXES):
+            return
+        return redirect("/inventory")
 
 
 def parse_lead_date(date_str):
@@ -134,6 +172,8 @@ def loginpage():
             return redirect("/admin")
         elif role == "emp":
             return redirect("/emp")
+        elif role == "partner":
+            return redirect("/inventory")
         else:
             # fallback (invalid role)
             session.clear()
@@ -186,6 +226,8 @@ def login():
             return redirect("/admin")
         elif user.get("roll") == "emp":
             return redirect("/emp")
+        elif user.get("roll") == "partner":
+            return redirect("/inventory")
         else:
             flash("Invalid role")
             return redirect("/")
@@ -259,6 +301,29 @@ def addlead():
 @app.route("/leadjourney")
 def lead_journey():
     return render_template("leadjourney.html")
+
+
+# 🔥 NEW: Inventory Dashboard page
+# Accessible to admin, emp, and partner. Partners are locked to ONLY this
+# route (see restrict_partner_access above); admin/emp can also reach it
+# from their normal dashboards.
+@app.route("/inventory")
+def inventory():
+    if not session.get("user_id"):
+        return redirect("/")
+
+    role = session.get("role")
+    if role not in ("admin", "emp", "partner"):
+        session.clear()
+        return redirect("/")
+
+    return render_template(
+        "inventory_dash.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=role
+    )
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -459,6 +524,12 @@ def add_team_member():
         name = data.get("name")
         number = data.get("number")
         role = data.get("role", "emp")  # default emp
+
+        # 🔥 NEW: validate role — now includes "partner"
+        # Admin onboards partners from the same "Manage Team" flow; they
+        # log in through the same /login form and get routed to /inventory.
+        if role not in ("admin", "emp", "partner"):
+            return jsonify({"success": False, "message": "Invalid role"}), 400
 
         if not name or not number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
@@ -1835,14 +1906,25 @@ def video_to_frames():
 
 #project 
 
+# 🔥 REPLACED: now supports partner-scoped visibility.
+# - admin / emp -> sees every project (all partners + their own uploads)
+# - partner     -> sees ONLY their own projects (matched on employee_number)
+# - no session  -> public read (e.g. marketing site), sees everything
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
-        projects = list(projects_collection.find({}, {"_id": 0}))
+        role = session.get("role")
+        query = {}
+
+        if role == "partner":
+            query = {"ownerNumber": session.get("employee_number")}
+
+        projects = list(projects_collection.find(query).sort("createdAt", -1))
+
         return jsonify({
             "status": "success",
             "count": len(projects),
-            "data": projects
+            "data": [serialize_doc(p) for p in projects]
         }), 200
     except Exception as e:
         return jsonify({
@@ -1852,11 +1934,18 @@ def get_projects():
 
 
 
-# POST: Add new project
+# -------------------------------
+# 🔥 REPLACED: POST /api/projects/upload
+# Now uploads image/video straight to Cloudinary instead of local disk,
+# and tags the resulting document with who uploaded it so partners only
+# ever see/manage their own inventory.
 # -------------------------------
 @app.route("/api/projects/upload", methods=["POST"])
 def upload_project():
     try:
+        if not session.get("user_id"):
+            return jsonify({"status": "error", "message": "Login required"}), 401
+
         name = request.form.get("name")
         location = request.form.get("location")
         description = request.form.get("description")
@@ -1871,19 +1960,20 @@ def upload_project():
                 "message": "All fields required"
             }), 400
 
-        # Save file
-        filename = secure_filename(file.filename)
-        unique_name = str(int(time.time())) + "_" + filename
-        file_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
-        file.save(file_path)
+        # Detect image vs video from extension
+        ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        video_exts = {"mp4", "mov", "avi", "webm", "mkv"}
+        resource_type = "video" if ext in video_exts else "image"
 
-        # Generate URL
-        base_url = request.host_url.rstrip("/")
-        file_url = f"{base_url}/uploads/{unique_name}"
+        # 🔥 Upload straight to Cloudinary (no local disk write)
+        upload_result = cloudinary.uploader.upload(
+            file,
+            resource_type=resource_type,
+            folder="nishahomes/projects"
+        )
 
-        # Detect type
-        ext = filename.split(".")[-1].lower()
-        file_type = "image" if ext in ["jpg","jpeg","png","webp"] else "video"
+        file_url = upload_result.get("secure_url")
+        public_id = upload_result.get("public_id")
 
         # Save in DB
         project_data = {
@@ -1892,26 +1982,128 @@ def upload_project():
             "description": description,
             "budget": budget,
             "category": category,
-            "img": file_url,
-            "type": file_type,
+            "img": file_url,           # kept for backward compatibility with older frontend code
+            "mediaUrl": file_url,
+            "mediaPublicId": public_id,
+            "type": resource_type,      # "image" | "video"
+            "ownerNumber": session.get("employee_number"),
+            "ownerName": session.get("employee_name"),
+            "ownerRole": session.get("role"),
             "createdAt": datetime.utcnow()
         }
 
-        projects_collection.insert_one(project_data)
+        result = projects_collection.insert_one(project_data)
 
         return jsonify({
             "status": "success",
             "message": "Project uploaded successfully",
+            "id": str(result.inserted_id),
             "url": file_url
         }), 201
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "status": "error",
             "message": str(e)
         }), 500
-        
-        
+
+
+# 🔥 NEW: PUT/POST-style update — allows editing fields and/or replacing media
+@app.route("/api/projects/update/<project_id>", methods=["POST"])
+def update_project(project_id):
+    try:
+        if not session.get("user_id"):
+            return jsonify({"status": "error", "message": "Login required"}), 401
+
+        query = {"_id": ObjectId(project_id)}
+        # 🔒 Partners can only edit their own listings
+        if session.get("role") == "partner":
+            query["ownerNumber"] = session.get("employee_number")
+
+        project = projects_collection.find_one(query)
+        if not project:
+            return jsonify({"status": "error", "message": "Project not found or not yours"}), 404
+
+        update_fields = {}
+        for field in ["name", "location", "description", "budget", "category"]:
+            val = request.form.get(field)
+            if val:
+                update_fields[field] = val
+
+        file = request.files.get("media")
+        if file and file.filename:
+            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+            video_exts = {"mp4", "mov", "avi", "webm", "mkv"}
+            resource_type = "video" if ext in video_exts else "image"
+
+            # Remove old asset from Cloudinary before uploading the new one
+            old_public_id = project.get("mediaPublicId")
+            if old_public_id:
+                try:
+                    cloudinary.uploader.destroy(
+                        old_public_id,
+                        resource_type=project.get("type", "image")
+                    )
+                except Exception as cerr:
+                    print("Cloudinary delete failed:", cerr)
+
+            upload_result = cloudinary.uploader.upload(
+                file, resource_type=resource_type, folder="nishahomes/projects"
+            )
+            update_fields["img"] = upload_result.get("secure_url")
+            update_fields["mediaUrl"] = upload_result.get("secure_url")
+            update_fields["mediaPublicId"] = upload_result.get("public_id")
+            update_fields["type"] = resource_type
+
+        if not update_fields:
+            return jsonify({"status": "error", "message": "No fields to update"}), 400
+
+        update_fields["lastUpdatedAt"] = datetime.utcnow()
+        projects_collection.update_one({"_id": ObjectId(project_id)}, {"$set": update_fields})
+
+        updated = projects_collection.find_one({"_id": ObjectId(project_id)})
+        return jsonify({"status": "success", "data": serialize_doc(updated)}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# 🔥 NEW: delete a project (and its Cloudinary asset)
+@app.route("/api/projects/delete/<project_id>", methods=["DELETE"])
+def delete_project(project_id):
+    try:
+        if not session.get("user_id"):
+            return jsonify({"status": "error", "message": "Login required"}), 401
+
+        query = {"_id": ObjectId(project_id)}
+        # 🔒 Partners can only delete their own listings
+        if session.get("role") == "partner":
+            query["ownerNumber"] = session.get("employee_number")
+
+        project = projects_collection.find_one(query)
+        if not project:
+            return jsonify({"status": "error", "message": "Project not found or not yours"}), 404
+
+        public_id = project.get("mediaPublicId")
+        if public_id:
+            try:
+                cloudinary.uploader.destroy(
+                    public_id,
+                    resource_type=project.get("type", "image")
+                )
+            except Exception as cerr:
+                print("Cloudinary delete failed:", cerr)
+
+        projects_collection.delete_one({"_id": ObjectId(project_id)})
+        return jsonify({"status": "success", "message": "Project deleted"}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/add-project")
 def add_project_page():

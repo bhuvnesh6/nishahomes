@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory — NishaHomes CRM</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:       #2D3142;
+  --primary-deep:  #1e2235;
+  --primary-mid:   #3a3f56;
+  --accent:        #EF8354;
+  --accent-light:  #FFA07A;
+  --accent-glow:   rgba(239,131,84,0.22);
+  --bg:            #FAF9F6;
+  --text:          #2D3142;
+  --text-soft:     #6B7280;
+  --border:        #E5E7EB;
+  --border-dark:   rgba(255,255,255,0.10);
+  --success:       #10B981;
+  --hot:           #EF4444;
+  --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
+  --sh:            0 6px 24px rgba(45,49,66,0.10);
+  --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
+  --radius:        14px;
+  --radius-sm:     8px;
+  --radius-pill:   100px;
+  --transition:    all 0.28s cubic-bezier(0.22,1,0.36,1);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{text-decoration:none;color:inherit}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+
+.loader-overlay{position:fixed;inset:0;background:rgba(250,249,246,0.97);display:flex;align-items:center;justify-content:center;z-index:10000;transition:opacity .4s ease,visibility .4s ease}
+.loader-overlay.hidden{opacity:0;pointer-events:none;visibility:hidden}
+.loader{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* TOPBAR */
+.topbar{
+  position:sticky;top:0;z-index:900;height:60px;
+  background:var(--primary-deep);box-shadow:0 2px 16px rgba(0,0,0,.2);
+  display:flex;align-items:center;padding:0 20px;gap:14px;
+}
+.topbar-title{font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:900;color:#fff}
+.topbar-title span{color:var(--accent)}
+.topbar-role-badge{
+  padding:3px 10px;border-radius:var(--radius-pill);font-size:0.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.5px;background:rgba(239,131,84,.15);color:var(--accent);
+}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.topbar-btn{
+  display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--accent);
+  color:#fff;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;
+  box-shadow:0 4px 12px var(--accent-glow);transition:var(--transition);white-space:nowrap;
+}
+.topbar-btn:hover{background:var(--accent-light);transform:translateY(-1px)}
+.topbar-logout{
+  padding:8px 14px;border-radius:var(--radius-sm);font-size:0.8rem;font-weight:600;
+  color:rgba(255,255,255,.6);border:1.5px solid rgba(255,255,255,.14);transition:var(--transition);
+}
+.topbar-logout:hover{color:#fff;border-color:var(--accent)}
+
+.content{padding:24px 20px 60px;max-width:1500px;width:100%;margin:0 auto}
+
+.page-header{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:20px;
+}
+.page-title{font-family:'Playfair Display',serif;font-size:1.7rem;font-weight:900;color:var(--text);letter-spacing:-.5px}
+.page-subtitle{font-size:0.85rem;color:var(--text-soft);margin-top:3px}
+
+/* FILTERS */
+.filter-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+.filter-search-wrap{position:relative;flex:1;min-width:200px;max-width:340px}
+.filter-search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-soft)}
+.filter-search{
+  width:100%;padding:10px 14px 10px 36px;border:2px solid var(--border);border-radius:var(--radius-sm);
+  background:#fff;font-family:'DM Sans',sans-serif;font-size:0.875rem;color:var(--text);box-shadow:var(--sh-sm);
+}
+.filter-search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
+.filter-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.filter-chip{
+  padding:8px 15px;border-radius:var(--radius-pill);border:1.5px solid var(--border);background:#fff;
+  font-size:0.8rem;font-weight:600;color:var(--text-soft);transition:var(--transition);white-space:nowrap;
+}
+.filter-chip:hover{border-color:var(--accent);color:var(--accent)}
+.filter-chip.active{border-color:var(--accent);background:var(--accent);color:#fff;box-shadow:0 4px 12px var(--accent-glow)}
+
+/* GRID */
+.projects-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;
+}
+.project-card{
+  background:#fff;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);
+  box-shadow:var(--sh-sm);transition:var(--transition);display:flex;flex-direction:column;
+}
+.project-card:hover{transform:translateY(-3px);box-shadow:var(--sh-lg)}
+.pc-media{width:100%;height:170px;background:var(--primary-mid);position:relative;overflow:hidden}
+.pc-media img,.pc-media video{width:100%;height:100%;object-fit:cover;display:block}
+.pc-cat-badge{
+  position:absolute;top:10px;left:10px;padding:4px 11px;border-radius:var(--radius-pill);
+  font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  background:rgba(45,49,66,0.75);color:#fff;backdrop-filter:blur(4px);
+}
+.pc-type-badge{
+  position:absolute;top:10px;right:10px;padding:4px 9px;border-radius:var(--radius-pill);
+  font-size:0.68rem;font-weight:700;background:rgba(239,131,84,0.9);color:#fff;
+}
+.pc-body{padding:14px 16px;display:flex;flex-direction:column;gap:6px;flex:1}
+.pc-name{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700;color:var(--primary)}
+.pc-location{font-size:0.8rem;color:var(--text-soft);display:flex;align-items:center;gap:5px}
+.pc-desc{font-size:0.8rem;color:var(--text-soft);line-height:1.4;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pc-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.pc-budget{font-weight:700;color:var(--accent);font-size:0.92rem}
+.pc-owner{
+  font-size:0.68rem;color:var(--text-soft);background:var(--bg);padding:3px 9px;
+  border-radius:var(--radius-pill);border:1px solid var(--border);
+}
+.pc-actions{display:flex;gap:6px;padding:10px 16px 14px;border-top:1px solid var(--border)}
+.pc-action-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;
+  border-radius:var(--radius-sm);border:1.5px solid var(--border);font-size:0.78rem;font-weight:600;
+  color:var(--text-soft);transition:var(--transition);background:#fff;
+}
+.pc-action-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(239,131,84,.05)}
+.pc-action-btn.danger:hover{border-color:var(--hot);color:var(--hot);background:rgba(239,68,68,.05)}
+
+.empty-state{padding:80px 20px;text-align:center;grid-column:1/-1}
+.empty-state-icon{font-size:3rem;margin-bottom:12px;opacity:.6}
+.empty-state h3{font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--primary);margin-bottom:5px}
+.empty-state p{color:var(--text-soft);font-size:.9rem}
+
+/* MODAL */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(30,34,53,.82);backdrop-filter:blur(8px);
+  display:none;align-items:center;justify-content:center;z-index:5000;padding:20px;
+}
+.modal-overlay.active{display:flex}
+.modal{
+  background:linear-gradient(145deg,var(--primary) 0%,var(--primary-mid) 100%);
+  border-radius:22px;padding:32px 26px;max-width:480px;width:100%;
+  box-shadow:0 24px 70px rgba(0,0,0,.35);position:relative;max-height:90vh;overflow-y:auto;
+  animation:modalIn .35s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes modalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-close{
+  position:absolute;top:16px;right:16px;width:32px;height:32px;background:rgba(255,255,255,.1);
+  border-radius:50%;color:rgba(255,255,255,.7);font-size:1.15rem;display:flex;align-items:center;
+  justify-content:center;transition:var(--transition);
+}
+.modal-close:hover{background:var(--accent);color:#fff;transform:rotate(90deg)}
+.modal h2{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:900;color:#fff;margin-bottom:22px}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:0.73rem;font-weight:600;color:rgba(255,255,255,.5);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px}
+.form-input,.form-select,.form-textarea{
+  width:100%;padding:11px 13px;border:2px solid rgba(255,255,255,.12);border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif;font-size:0.88rem;color:var(--text);background:var(--bg);
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.form-textarea{resize:vertical;min-height:70px}
+.file-drop{
+  border:2px dashed rgba(255,255,255,.2);border-radius:var(--radius-sm);padding:18px;text-align:center;
+  color:rgba(255,255,255,.55);font-size:0.82rem;cursor:pointer;transition:var(--transition);
+}
+.file-drop:hover{border-color:var(--accent);color:var(--accent)}
+.file-drop.has-file{border-color:var(--success);color:#6ee7b7}
+.submit-btn{
+  width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:#fff;border-radius:var(--radius-sm);font-size:0.92rem;font-weight:700;margin-top:6px;
+  box-shadow:0 4px 16px var(--accent-glow);transition:var(--transition);
+}
+.submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,131,84,.38)}
+.submit-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+.stats-row{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px}
+@media(min-width:600px){.stats-row{grid-template-columns:repeat(4,1fr)}}
+.stat-card{
+  background:var(--primary-deep);border-radius:var(--radius);padding:16px;border:1px solid var(--border-dark);
+  position:relative;overflow:hidden;
+}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,var(--accent),var(--accent-light))}
+.stat-label{font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.7px;
+  color:rgba(255,255,255,.45);margin-bottom:6px}
+.stat-value{font-family:'Playfair Display',serif;font-size:1.7rem;font-weight:900;color:#fff}
+</style>
+</head>
+<body>
+
+<div class="loader-overlay" id="loader"><div class="loader"></div></div>
+
+<header class="topbar">
+  <div class="topbar-title">Nisha<span>Homes</span> <span style="color:rgba(255,255,255,.3);font-size:.8rem;font-family:'DM Sans',sans-serif;font-weight:400">Inventory</span></div>
+  <span class="topbar-role-badge" id="roleBadge">{{ role|upper }}</span>
+  <div class="topbar-right">
+    <button class="topbar-btn" id="openAddModalBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <span>Add Listing</span>
+    </button>
+    {% if role in ('admin','emp') %}
+    <a href="/{{ 'admin' if role=='admin' else 'emp' }}" class="topbar-logout">← Dashboard</a>
+    {% endif %}
+    <a href="/logout" class="topbar-logout">Logout</a>
+  </div>
+</header>
+
+<div class="content">
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Listings</div>
+      <div class="stat-value" id="statTotal">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Images</div>
+      <div class="stat-value" id="statImages">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Videos</div>
+      <div class="stat-value" id="statVideos">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Categories</div>
+      <div class="stat-value" id="statCategories">—</div>
+    </div>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">{{ 'All Partner Inventory' if role in ('admin','emp') else 'My Inventory' }}</div>
+      <div class="page-subtitle" id="pageSubtitle">Loading listings…</div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <div class="filter-search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" class="filter-search" id="searchInput" placeholder="Search name, location…" autocomplete="off">
+    </div>
+    <div class="filter-chips" id="categoryChips">
+      <button class="filter-chip active" data-cat="all">All</button>
+    </div>
+  </div>
+
+  <div class="projects-grid" id="projectsGrid">
+    <div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>
+  </div>
+
+</div>
+
+<!-- ADD / EDIT MODAL -->
+<div class="modal-overlay" id="projectModal">
+  <div class="modal">
+    <button class="modal-close" id="closeProjectModal">✕</button>
+    <h2 id="projectModalTitle">Add Listing</h2>
+    <form id="projectForm">
+      <input type="hidden" id="editingId" value="">
+      <div class="form-group">
+        <label class="form-label">Project Name</label>
+        <input type="text" class="form-input" id="pName" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input type="text" class="form-input" id="pLocation" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-select" id="pCategory" required>
+          <option value="">Select category</option>
+          <option>Residential</option>
+          <option>Commercial</option>
+          <option>Plot</option>
+          <option>Villa</option>
+          <option>Farmhouse</option>
+          <option>Rental</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Budget</label>
+        <input type="text" class="form-input" id="pBudget" placeholder="e.g. ₹85L - ₹1.2Cr" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="pDescription" required></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Media (Image or Video)</label>
+        <div class="file-drop" id="fileDropZone">Click to choose an image or video</div>
+        <input type="file" id="pMedia" accept="image/*,video/*" style="display:none">
+      </div>
+      <button type="submit" class="submit-btn" id="projectSubmitBtn">Save Listing</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const BASE = 'https://api.phishnix.site/api';
+const ROLE = "{{ role }}";
+const IS_STAFF = (ROLE === 'admin' || ROLE === 'emp');
+
+let allProjects = [];
+let currentCategory = 'all';
+
+function showLoader(){document.getElementById('loader').classList.remove('hidden')}
+function hideLoader(){document.getElementById('loader').classList.add('hidden')}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+async function loadProjects(){
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/projects`, { credentials: 'include' });
+    const d = await res.json();
+    allProjects = (d.data || []).sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+    buildStats();
+    buildCategoryChips();
+    render();
+  }catch(e){
+    console.error(e);
+    document.getElementById('projectsGrid').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><h3>Failed to load</h3><p>Please refresh the page</p></div>`;
+  }finally{
+    hideLoader();
+  }
+}
+
+function buildStats(){
+  document.getElementById('statTotal').textContent = allProjects.length;
+  document.getElementById('statImages').textContent = allProjects.filter(p=>p.type==='image').length;
+  document.getElementById('statVideos').textContent = allProjects.filter(p=>p.type==='video').length;
+  document.getElementById('statCategories').textContent = new Set(allProjects.map(p=>p.category).filter(Boolean)).size;
+}
+
+function buildCategoryChips(){
+  const cats = Array.from(new Set(allProjects.map(p=>p.category).filter(Boolean)));
+  const wrap = document.getElementById('categoryChips');
+  wrap.innerHTML = `<button class="filter-chip ${currentCategory==='all'?'active':''}" data-cat="all">All</button>` +
+    cats.map(c=>`<button class="filter-chip ${currentCategory===c?'active':''}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`).join('');
+  wrap.querySelectorAll('.filter-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      currentCategory = chip.dataset.cat;
+      wrap.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+      chip.classList.add('active');
+      render();
+    });
+  });
+}
+
+function render(){
+  const q = (document.getElementById('searchInput').value||'').toLowerCase();
+  const filtered = allProjects.filter(p=>{
+    if(currentCategory!=='all' && p.category!==currentCategory) return false;
+    if(!q) return true;
+    return (p.name||'').toLowerCase().includes(q) || (p.location||'').toLowerCase().includes(q);
+  });
+
+  document.getElementById('pageSubtitle').textContent = `${filtered.length} listing${filtered.length!==1?'s':''}`;
+
+  const grid = document.getElementById('projectsGrid');
+  if(filtered.length===0){
+    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏗️</div><h3>No listings yet</h3><p>Click "Add Listing" to create your first one</p></div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p=>{
+    const media = p.mediaUrl || p.img || '';
+    const isVideo = p.type === 'video';
+    const mediaTag = isVideo
+      ? `<video src="${escHtml(media)}" muted></video>`
+      : `<img src="${escHtml(media)}" alt="${escHtml(p.name)}" loading="lazy">`;
+
+    const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === "{{ employee_number }}");
+
+    return `
+    <div class="project-card">
+      <div class="pc-media">
+        ${mediaTag}
+        <span class="pc-cat-badge">${escHtml(p.category||'—')}</span>
+        <span class="pc-type-badge">${isVideo?'🎥 Video':'🖼 Image'}</span>
+      </div>
+      <div class="pc-body">
+        <div class="pc-name">${escHtml(p.name)}</div>
+        <div class="pc-location">📍 ${escHtml(p.location)}</div>
+        <div class="pc-desc">${escHtml(p.description)}</div>
+        <div class="pc-footer">
+          <div class="pc-budget">${escHtml(p.budget)}</div>
+          ${IS_STAFF ? `<div class="pc-owner">${escHtml(p.ownerName || 'Unassigned')}</div>` : ''}
+        </div>
+      </div>
+      ${canManage ? `
+      <div class="pc-actions">
+        <button class="pc-action-btn" onclick='openEditModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️ Edit</button>
+        <button class="pc-action-btn danger" onclick="deleteProject('${p._id}')">🗑 Delete</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('searchInput').addEventListener('input', render);
+
+/* ── ADD/EDIT MODAL ── */
+const projectModal = document.getElementById('projectModal');
+const fileDropZone = document.getElementById('fileDropZone');
+const fileInput = document.getElementById('pMedia');
+
+document.getElementById('openAddModalBtn').addEventListener('click', ()=>{
+  document.getElementById('editingId').value = '';
+  document.getElementById('projectModalTitle').textContent = 'Add Listing';
+  document.getElementById('projectForm').reset();
+  fileDropZone.textContent = 'Click to choose an image or video';
+  fileDropZone.classList.remove('has-file');
+  fileInput.required = true;
+  projectModal.classList.add('active');
+});
+document.getElementById('closeProjectModal').addEventListener('click', ()=> projectModal.classList.remove('active'));
+projectModal.addEventListener('click', e=>{ if(e.target.id==='projectModal') projectModal.classList.remove('active') });
+
+fileDropZone.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', ()=>{
+  if(fileInput.files[0]){
+    fileDropZone.textContent = '✓ ' + fileInput.files[0].name;
+    fileDropZone.classList.add('has-file');
+  }
+});
+
+function openEditModal(p){
+  document.getElementById('editingId').value = p._id;
+  document.getElementById('projectModalTitle').textContent = 'Edit Listing';
+  document.getElementById('pName').value = p.name || '';
+  document.getElementById('pLocation').value = p.location || '';
+  document.getElementById('pCategory').value = p.category || '';
+  document.getElementById('pBudget').value = p.budget || '';
+  document.getElementById('pDescription').value = p.description || '';
+  fileDropZone.textContent = 'Click to replace media (optional)';
+  fileDropZone.classList.remove('has-file');
+  fileInput.required = false;
+  fileInput.value = '';
+  projectModal.classList.add('active');
+}
+
+document.getElementById('projectForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('projectSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const editingId = document.getElementById('editingId').value;
+  const fd = new FormData();
+  fd.append('name', document.getElementById('pName').value);
+  fd.append('location', document.getElementById('pLocation').value);
+  fd.append('category', document.getElementById('pCategory').value);
+  fd.append('budget', document.getElementById('pBudget').value);
+  fd.append('description', document.getElementById('pDescription').value);
+  if(fileInput.files[0]) fd.append('media', fileInput.files[0]);
+
+  try{
+    const url = editingId ? `${BASE}/projects/update/${editingId}` : `${BASE}/projects/upload`;
+    const res = await fetch(url, { method: 'POST', body: fd, credentials: 'include' });
+    const d = await res.json();
+    if(d.status !== 'success'){ alert(d.message || 'Save failed'); return; }
+    projectModal.classList.remove('active');
+    loadProjects();
+  }catch(err){
+    console.error(err);
+    alert('Save failed. Please try again.');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save Listing';
+  }
+});
+
+async function deleteProject(id){
+  if(!confirm('Delete this listing? This cannot be undone.')) return;
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/projects/delete/${id}`, { method: 'DELETE', credentials: 'include' });
+    const d = await res.json();
+    if(d.status !== 'success'){ alert(d.message || 'Delete failed'); return; }
+    loadProjects();
+  }catch(e){
+    console.error(e);
+    alert('Delete failed. Please try again.');
+  }finally{
+    hideLoader();
+  }
+}
+
+loadProjects();
+</script>
+</body>
+</html>
