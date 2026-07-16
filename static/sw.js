@@ -1,4 +1,4 @@
-const CACHE_NAME = "nisha-crm-v1234";
+const CACHE_NAME = "nisha-crm-v12345";
 
 const urlsToCache = [
   "/",
