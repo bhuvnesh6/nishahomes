@@ -1838,32 +1838,6 @@ def image_to_text():
 # at the top of the file. It is a syntax-valid function, but will raise a
 # NameError at request time unless that import is restored. Left as-is
 # structurally since re-enabling it is a behavior change, not a syntax fix.
-@app.route('/video-to-audio', methods=['POST'])
-def video_to_audio():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    file = request.files['file']
-
-    # TEMP VIDEO (not permanent)
-    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    temp_video.close()
-    file.save(temp_video.name)
-
-    # FINAL AUDIO (saved in uploads)
-    audio_filename = f"{int(time.time())}.mp3"
-    audio_path = os.path.join(app.config["UPLOAD_FOLDER"], audio_filename)
-
-    # Extract audio
-    extract_audio_from_video(temp_video.name, audio_path)
-
-    # Delete temp video
-    os.remove(temp_video.name)
-
-    # Return usable URL
-    return jsonify({
-        "audio_url": f"/uploads/{audio_filename}"
-    })
 
 
 @app.route('/get-audio')
@@ -1874,61 +1848,6 @@ def get_audio():
 # NOTE: this route uses cv2, which comes from a commented-out import
 # ("#import cv2") at the top of the file. It is syntax-valid but will raise
 # a NameError at request time unless that import is restored.
-@app.route('/video-to-frames', methods=['POST'])
-def video_to_frames():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    file = request.files['file']
-
-    # temp video
-    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    temp_video.close()
-    file.save(temp_video.name)
-
-    # output folder
-    folder_name = str(int(time.time()))
-    frames_folder = os.path.join(app.config["UPLOAD_FOLDER"], folder_name)
-    os.makedirs(frames_folder, exist_ok=True)
-
-    # extract frames
-    cap = cv2.VideoCapture(temp_video.name)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-
-    if fps == 0:
-        fps = 25  # fallback
-
-    interval = int(fps)
-
-    count = 0
-    frame_number = 0
-
-    while True:
-        success, frame = cap.read()
-        if not success:
-            break
-
-        if frame_number % interval == 0:
-            frame_path = os.path.join(frames_folder, f"frame_{count}.jpg")
-            cv2.imwrite(frame_path, frame)
-            count += 1
-
-        frame_number += 1
-
-    cap.release()
-    os.remove(temp_video.name)
-
-    base_url = request.host_url.rstrip('/')
-
-    frame_urls = [
-        f"{base_url}/uploads/{folder_name}/frame_{i}.jpg"
-        for i in range(count)
-    ]
-
-    return jsonify({
-        "frames": frame_urls,
-        "total_frames": count
-    })
 
 
 #project
