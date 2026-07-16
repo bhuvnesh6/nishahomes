@@ -186,18 +186,37 @@ def loginpage():
 #login system
 @app.route("/login", methods=["POST"])
 def login():
-    number = request.form.get("number")
+    raw_number = request.form.get("number", "")
+    raw_password = request.form.get("password", "")
 
-    # clean + convert
-    number = number.replace("+", "").strip()
+    # FIX: previously this used its own ad-hoc cleanup
+    # (number.replace("+", "").strip()), which only strips a leading "+"
+    # and outer whitespace. Any other stray character (space, dash,
+    # invisible autofill artifact, etc.) made int(number) either raise or
+    # produce a value that didn't match what's stored in Mongo, so the
+    # find_one() below silently returned None -> "Invalid number or
+    # password" -> redirect("/"). That's exactly the 302 -> GET "/"
+    # pattern you saw for the admin login while the partner login (whose
+    # number happened to be "clean") succeeded.
+    #
+    # Now reuses the same normalize_number() helper used everywhere else
+    # in the app, so admin and partner numbers are cleaned identically.
+    number = normalize_number(raw_number)
 
-    try:
-        number = int(number)
-    except:
+    if not number:
         flash("Invalid phone number format")
         return redirect("/")
 
-    password = request.form.get("password")
+    try:
+        number = int(number)
+    except ValueError:
+        flash("Invalid phone number format")
+        return redirect("/")
+
+    # FIX: also strip the password, in case of trailing/leading spaces
+    # from autofill/copy-paste, which would otherwise cause a silent
+    # match failure the same way.
+    password = raw_password.strip()
 
     remember = request.form.get("remember")
 
@@ -208,30 +227,31 @@ def login():
         "password": password
     })
 
-    if user:
-        # Store session
-        session["user_id"] = str(user["_id"])
-        session["role"] = user.get("roll")
-        session["employee_name"] = user.get("Employee name")
-        session["employee_number"] = user.get("Employee number")
-
-        if remember:
-            session.permanent = True
-        else:
-            session.permanent = False
-
-        # Redirect based on role
-        if user.get("roll") == "admin":
-            return redirect("/admin")
-        elif user.get("roll") == "emp":
-            return redirect("/emp")
-        elif user.get("roll") == "partner":
-            return redirect("/inventory")
-        else:
-            flash("Invalid role")
-            return redirect("/")
-    else:
+    if not user:
         flash("Invalid number or password")
+        return redirect("/")
+
+    # FIX: normalize the stored role too (strip + lowercase) so stray
+    # whitespace or case differences in the DB don't silently fall
+    # through to the "Invalid role" branch.
+    role = (user.get("roll") or "").strip().lower()
+
+    # Store session
+    session["user_id"] = str(user["_id"])
+    session["role"] = role
+    session["employee_name"] = user.get("Employee name")
+    session["employee_number"] = user.get("Employee number")
+    session.permanent = bool(remember)
+
+    # Redirect based on role
+    if role == "admin":
+        return redirect("/admin")
+    elif role == "emp":
+        return redirect("/emp")
+    elif role == "partner":
+        return redirect("/inventory")
+    else:
+        flash("Invalid role")
         return redirect("/")
 
 
