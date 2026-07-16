@@ -108,6 +108,18 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   position:absolute;top:10px;right:10px;padding:4px 9px;border-radius:var(--radius-pill);
   font-size:0.68rem;font-weight:700;background:rgba(239,131,84,0.9);color:#fff;
 }
+
+/* 🔥 NEW */
+.pc-status-badge{
+  position:absolute;bottom:10px;left:10px;padding:4px 11px;border-radius:var(--radius-pill);
+  font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  backdrop-filter:blur(4px);
+}
+.pc-status-badge.pending{background:rgba(245,158,11,0.92);color:#fff}
+.pc-status-badge.approved{background:rgba(16,185,129,0.92);color:#fff}
+.pc-action-btn.approve-btn{border-color:var(--success);color:var(--success)}
+.pc-action-btn.approve-btn:hover{background:rgba(16,185,129,.08)}
+
 .pc-body{padding:14px 16px;display:flex;flex-direction:column;gap:6px;flex:1}
 .pc-name{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700;color:var(--primary)}
 .pc-location{font-size:0.8rem;color:var(--text-soft);display:flex;align-items:center;gap:5px}
@@ -372,6 +384,9 @@ function render(){
       : `<img src="${escHtml(media)}" alt="${escHtml(p.name)}" loading="lazy">`;
 
     const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === "{{ employee_number }}");
+    // 🔥 NEW: default "approved" for older records without a status field
+    const status = p.status || 'approved';
+    const isPending = status === 'pending';
 
     return `
     <div class="project-card">
@@ -379,6 +394,7 @@ function render(){
         ${mediaTag}
         <span class="pc-cat-badge">${escHtml(p.category||'—')}</span>
         <span class="pc-type-badge">${isVideo?'🎥 Video':'🖼 Image'}</span>
+        <span class="pc-status-badge ${isPending?'pending':'approved'}">${isPending?'⏳ Pending Review':'✅ Approved'}</span>
       </div>
       <div class="pc-body">
         <div class="pc-name">${escHtml(p.name)}</div>
@@ -389,10 +405,12 @@ function render(){
           ${IS_STAFF ? `<div class="pc-owner">${escHtml(p.ownerName || 'Unassigned')}</div>` : ''}
         </div>
       </div>
-      ${canManage ? `
+      ${canManage || (ROLE==='admin' && isPending) ? `
       <div class="pc-actions">
-        <button class="pc-action-btn" onclick='openEditModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️ Edit</button>
-        <button class="pc-action-btn danger" onclick="deleteProject('${p._id}')">🗑 Delete</button>
+        ${ROLE==='admin' && isPending ? `<button class="pc-action-btn approve-btn" onclick="approveProject('${p._id}')">✅ Approve</button>` : ''}
+        ${ROLE==='admin' && !isPending ? `<button class="pc-action-btn" onclick="unapproveProject('${p._id}')">↩️ Unapprove</button>` : ''}
+        ${canManage ? `<button class="pc-action-btn" onclick='openEditModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️ Edit</button>` : ''}
+        ${canManage ? `<button class="pc-action-btn danger" onclick="deleteProject('${p._id}')">🗑 Delete</button>` : ''}
       </div>` : ''}
     </div>`;
   }).join('');
@@ -483,6 +501,38 @@ async function deleteProject(id){
   }finally{
     hideLoader();
   }
+}
+
+
+
+// 🔥 NEW
+async function approveProject(id){
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/projects/approve/${id}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+      body: JSON.stringify({ action:'approve' })
+    });
+    const d = await res.json();
+    if(d.status !== 'success'){ alert(d.message || 'Approve failed'); return; }
+    loadProjects();
+  }catch(e){ console.error(e); alert('Approve failed.'); }
+  finally{ hideLoader(); }
+}
+
+async function unapproveProject(id){
+  if(!confirm('Move this listing back to Pending?')) return;
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/projects/approve/${id}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+      body: JSON.stringify({ action:'reject' })
+    });
+    const d = await res.json();
+    if(d.status !== 'success'){ alert(d.message || 'Update failed'); return; }
+    loadProjects();
+  }catch(e){ console.error(e); alert('Update failed.'); }
+  finally{ hideLoader(); }
 }
 
 loadProjects();

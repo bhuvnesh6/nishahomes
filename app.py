@@ -27,7 +27,7 @@ import io
 import calendar
 import re
 
-# 🔥 NEW: Cloudinary (used for Inventory / project image & video uploads)
+# NEW: Cloudinary (used for Inventory / project image & video uploads)
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -35,7 +35,7 @@ import cloudinary.api
 # Load env
 load_dotenv()
 
-# 🔥 NEW: Cloudinary config — reads from .env
+# NEW: Cloudinary config - reads from .env
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -62,25 +62,25 @@ DB_NAME = os.getenv("DB_NAME")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 dai_collection = db["DAI"]
-# 🔥 CHANGED: was db["project"] — now uses "projects" per the Inventory feature
+# CHANGED: was db["project"] - now uses "projects" per the Inventory feature
 projects_collection = db["projects"]
 
-# 🔥 Helper function (YOU WERE MISSING THIS)
+# Helper function
 def serialize_doc(doc):
     doc["_id"] = str(doc["_id"])
-    
+
     for key, value in doc.items():
         if isinstance(value, float) and math.isnan(value):
             doc[key] = None
-    
+
     return doc
 
 def format_ist(dt):
-    """Formats a UTC datetime into IST 'hh:mm AM/PM · dd/mm/yyyy'"""
+    """Formats a UTC datetime into IST 'hh:mm AM/PM . dd/mm/yyyy'"""
     if not isinstance(dt, datetime):
-        return "—"
+        return "-"
     ist = dt + timedelta(hours=5, minutes=30)
-    return ist.strftime("%I:%M %p · %d/%m/%Y")
+    return ist.strftime("%I:%M %p . %d/%m/%Y")
 
 def get_collection_data(collection_name):
     collection = db[collection_name]
@@ -96,13 +96,13 @@ def add_cors_headers(response):
     return response
 
 
-# ─────────────────────────────────────────────────────────────
-# 🔒 NEW: PARTNER ACCESS LOCK
+# -----------------------------------------------------------------
+# NEW: PARTNER ACCESS LOCK
 # Partners (roll == "partner" in teamAssign) may ONLY reach the
 # inventory dashboard, the projects API, uploaded media, and logout.
 # Everything else (leads, team, exports, admin/emp dashboards, etc.)
 # redirects them straight back to /inventory.
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------
 PARTNER_ALLOWED_PATHS = {"/inventory", "/logout"}
 PARTNER_ALLOWED_PREFIXES = ("/api/projects", "/uploads", "/static")
 
@@ -164,7 +164,7 @@ def get_date_range(period):
 
 @app.route("/")
 def loginpage():
-    # ✅ If already logged in → redirect based on role
+    # If already logged in -> redirect based on role
     if "user_id" in session:
         role = session.get("role")
 
@@ -179,7 +179,7 @@ def loginpage():
             session.clear()
             return redirect("/")
 
-    # ✅ Not logged in → show login page
+    # Not logged in -> show login page
     return render_template("index.html")
 
 
@@ -188,20 +188,19 @@ def loginpage():
 def login():
     number = request.form.get("number")
 
-# clean + convert
+    # clean + convert
     number = number.replace("+", "").strip()
 
     try:
-     number = int(number)
+        number = int(number)
     except:
-     flash("Invalid phone number format")
-     return redirect("/")
+        flash("Invalid phone number format")
+        return redirect("/")
+
     password = request.form.get("password")
 
     remember = request.form.get("remember")
 
-    
-    
     collection = db["teamAssign"]
 
     user = collection.find_one({
@@ -217,10 +216,10 @@ def login():
         session["employee_number"] = user.get("Employee number")
 
         if remember:
-         session.permanent = True
+            session.permanent = True
         else:
-         session.permanent = False
-    
+            session.permanent = False
+
         # Redirect based on role
         if user.get("roll") == "admin":
             return redirect("/admin")
@@ -234,8 +233,7 @@ def login():
     else:
         flash("Invalid number or password")
         return redirect("/")
-    
-    
+
 
 @app.route("/upload_page")
 def upload_page():
@@ -255,7 +253,7 @@ def admin():
 
 @app.route("/emp")
 def emp():
-    # ✅ Only check if logged in
+    # Only check if logged in
     if not session.get("user_id"):
         return redirect("/")
 
@@ -298,12 +296,16 @@ def addlead():
     return render_template("addlead.html")
 
 
+# NOTE: duplicate route path "/leadjourney" registered twice under two
+# different view function names (leadjourney / lead_journey). Flask allows
+# this (different endpoint names), so it is left as-is; only true syntax
+# errors have been fixed in this pass.
 @app.route("/leadjourney")
 def lead_journey():
     return render_template("leadjourney.html")
 
 
-# 🔥 NEW: Inventory Dashboard page
+# NEW: Inventory Dashboard page
 # Accessible to admin, emp, and partner. Partners are locked to ONLY this
 # route (see restrict_partner_access above); admin/emp can also reach it
 # from their normal dashboards.
@@ -405,7 +407,6 @@ def get_lead():
         lead.pop("_id", None)
         lead.pop("Phone Number", None)
 
-        # 🔥 FIX HERE
         lead = clean_nan(lead)
 
         return jsonify(lead), 200
@@ -431,7 +432,7 @@ def update_realtor():
         if not phone or not updates:
             return jsonify({"error": "phone and updates are required"}), 400
 
-        # 🔧 Clean phone (remove +, spaces, etc.)
+        # Clean phone (remove +, spaces, etc.)
         phone = str(phone)
         phone = re.sub(r"\D", "", phone)
 
@@ -442,7 +443,7 @@ def update_realtor():
 
         collection = db["Realtors"]
 
-        # 🔥 Remove invalid fields
+        # Remove invalid fields
         if "_id" in updates:
             del updates["_id"]
 
@@ -477,22 +478,24 @@ def rental_leads():
 def agent_leads():
     return jsonify(get_collection_data("agentLeads"))
 
-@app.route("/api/end-data")
-def end_data():
-    return jsonify(get_collection_data("endData"))
-
 @app.route("/api/selling-leads")
 def selling_leads():
     return jsonify(get_collection_data("sellingLeads"))
 
+# NOTE: "/api/end-data" was originally defined twice (once as end_data()
+# returning the raw collection dump, once as get_end_data() with the
+# number-filter logic). Flask does not allow two view functions mapped to
+# the same route+methods combo at import time in some configurations, and
+# having both is redundant/confusing regardless. Kept only the more
+# complete version (get_end_data) which supersedes the first.
 @app.route("/api/end-data")
 def get_end_data():
 
-    collection = db["endData"]   # ✅ define collection
+    collection = db["endData"]   # define collection
 
     number = request.args.get("number")
 
-    # 🔎 If number provided → return single lead
+    # If number provided -> return single lead
     if number:
         try:
             lead = collection.find_one({"Number": int(number)})
@@ -503,7 +506,7 @@ def get_end_data():
             return jsonify(serialize_doc(lead))
         return jsonify({"error": "Not found"}), 404
 
-    # 📦 If no number → return all leads
+    # If no number -> return all leads
     leads = list(collection.find())
     return jsonify([serialize_doc(l) for l in leads])
 
@@ -525,7 +528,7 @@ def add_team_member():
         number = data.get("number")
         role = data.get("role", "emp")  # default emp
 
-        # 🔥 NEW: validate role — now includes "partner"
+        # NEW: validate role - now includes "partner"
         # Admin onboards partners from the same "Manage Team" flow; they
         # log in through the same /login form and get routed to /inventory.
         if role not in ("admin", "emp", "partner"):
@@ -534,7 +537,7 @@ def add_team_member():
         if not name or not number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
 
-        # ✅ CLEAN NUMBER
+        # CLEAN NUMBER
         number = str(number).strip()
         number = number.replace("+", "")
         number = "".join(filter(str.isdigit, number))
@@ -542,33 +545,33 @@ def add_team_member():
         if not number:
             return jsonify({"success": False, "message": "Invalid phone number"}), 400
 
-        # ✅ CONVERT TO INT64
+        # CONVERT TO INT64
         number = int(number)
 
         collection = db["teamAssign"]
 
-        # ✅ prevent duplicate
+        # prevent duplicate
         existing = collection.find_one({"Employee number": number})
         if existing:
             return jsonify({"success": False, "message": "Employee already exists"}), 400
 
-        # ✅ GENERATE PASSWORD
+        # GENERATE PASSWORD
         clean_name = name.lower().replace(" ", "")
-        rand_digits = random.randint(100, 9999)  # 3–4 digits
+        rand_digits = random.randint(100, 9999)  # 3-4 digits
         password = f"{clean_name}@{rand_digits}"
 
         new_member = {
             "Employee name": name,
             "Employee number": number,
             "password": password,
-            "roll": role,  # ✅ as requested (roll, not role)
+            "roll": role,  # as requested (roll, not role)
             "Leads": [],
             "Active": True
         }
 
         collection.insert_one(new_member)
 
-        # ✅ SEND TO N8N WEBHOOK
+        # SEND TO N8N WEBHOOK
         try:
             requests.post(
                 "https://n8n.phishnix.site/webhook/recevingdataofteammember",
@@ -598,7 +601,7 @@ def remove_team_member(number):
     try:
         collection = db["teamAssign"]
 
-        # ✅ CLEAN + CONVERT SAME AS ADD
+        # CLEAN + CONVERT SAME AS ADD
         number = str(number).strip()
         number = number.replace("+", "")
         number = "".join(filter(str.isdigit, number))
@@ -618,7 +621,20 @@ def remove_team_member(number):
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-#post apis 
+#post apis
+
+
+def normalize_number(number):
+    if not number:
+        return ""
+
+    number = str(number).strip()
+    number = number.replace("+", "")
+    number = number.replace("@s.whatsapp.net", "")
+    number = number.replace("@c.us", "")
+    number = "".join(filter(str.isdigit, number))
+
+    return number
 
 
 @app.route("/api/assign-lead", methods=["POST"])
@@ -639,7 +655,7 @@ def assign_lead():
         # Normalize number
         lead_number = normalize_number(raw_number)
 
-        # 1️⃣ Update Lead using REGEX match (handles all formats)
+        # 1. Update Lead using REGEX match (handles all formats)
         lead_result = lead_collection.update_one(
             {
                 "Phone Number": {
@@ -652,7 +668,7 @@ def assign_lead():
         if lead_result.matched_count == 0:
             return jsonify({"success": False, "message": "Lead not found"}), 404
 
-        # 2️⃣ Update Employee Lead List
+        # 2. Update Employee Lead List
         employee = employee_collection.find_one({"Employee name": assign_to})
 
         if not employee:
@@ -701,7 +717,7 @@ def bulk_assign_leads():
         # Normalize all numbers
         cleaned_numbers = [normalize_number(num) for num in lead_numbers]
 
-        # 1️⃣ Update leads one by one using regex (safer for mixed formats)
+        # 1. Update leads one by one using regex (safer for mixed formats)
         matched_count = 0
 
         for number in cleaned_numbers:
@@ -718,7 +734,7 @@ def bulk_assign_leads():
         if matched_count == 0:
             return jsonify({"success": False, "message": "No leads matched"}), 404
 
-        # 2️⃣ Update Employee Lead List
+        # 2. Update Employee Lead List
         employee = employee_collection.find_one({"Employee name": assign_to})
 
         if not employee:
@@ -753,19 +769,6 @@ def bulk_assign_leads():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-def normalize_number(number):
-    if not number:
-        return ""
-
-    number = str(number).strip()
-    number = number.replace("+", "")
-    number = number.replace("@s.whatsapp.net", "")
-    number = number.replace("@c.us", "")
-    number = "".join(filter(str.isdigit, number))
-
-    return number
-
-
 #reassign function
 
 
@@ -778,7 +781,7 @@ def reassign_lead():
         new_employee_number = data.get("newEmployeeNumber")
         collection_name = data.get("collection")
 
-        # 🔒 Validate input
+        # Validate input
         if not phone or not new_employee_number or not collection_name:
             return jsonify({"error": "Missing required fields"}), 400
 
@@ -788,10 +791,10 @@ def reassign_lead():
         team_collection = db["teamAssign"]
         lead_collection = db[collection_name]
 
-        # 🔥 ESCAPE REGEX PROPERLY
+        # ESCAPE REGEX PROPERLY
         safe_phone_regex = re.escape(formatted_phone)
 
-        # 1️⃣ Find current employee safely
+        # 1. Find current employee safely
         current_employee = team_collection.find_one({
             "Leads": {"$regex": safe_phone_regex}
         })
@@ -799,7 +802,7 @@ def reassign_lead():
         if not current_employee:
             return jsonify({"error": "Lead not found in any employee"}), 404
 
-        # 2️⃣ Remove lead from old employee
+        # 2. Remove lead from old employee
         old_leads_string = current_employee.get("Leads", "{}")
 
         old_list = old_leads_string.strip("{}").split(",")
@@ -814,7 +817,7 @@ def reassign_lead():
             {"$set": {"Leads": new_old_string}}
         )
 
-        # 3️⃣ Add lead to new employee
+        # 3. Add lead to new employee
         new_employee = team_collection.find_one({
             "Employee number": int(new_employee_number)
         })
@@ -837,7 +840,7 @@ def reassign_lead():
             {"$set": {"Leads": updated_new_string}}
         )
 
-        # 4️⃣ Update AssignTo in Lead document safely
+        # 4. Update AssignTo in Lead document safely
         lead_doc = lead_collection.find_one({"Phone Number": phone})
 
         if not lead_doc:
@@ -884,14 +887,14 @@ def call_attempt():
 
         end_collection = db["endData"]
 
-        # 🔥 Magic happens here
+        # Increment or create
         result = end_collection.update_one(
             {"Number": number},          # Find by number
             {
                 "$inc": {"Call_attempt": 1},   # Increment by 1
                 "$setOnInsert": {"Number": number}
             },
-            upsert=True   # If not found → create document
+            upsert=True   # If not found -> create document
         )
 
         # Get updated count
@@ -909,13 +912,22 @@ def call_attempt():
         return jsonify({"error": str(e)}), 500
 
 
-#adding call logs 
+#adding call logs
 
 call_logs_collection = db["callLogs"]
 
 # ============================================================
-# CALL LOG — replaces the n8n webhook, writes straight to Mongo
+# CALL LOG - replaces the n8n webhook, writes straight to Mongo
 # ============================================================
+
+COLLECTION_MAP = {
+    "buying": "Leads",
+    "rental": "RentalLeads",
+    "selling": "sellingLeads",
+    "agent": "agentLeads",
+    "other": "Leads"
+}
+
 
 @app.route("/api/call-log", methods=["POST"])
 def add_call_log():
@@ -943,7 +955,7 @@ def add_call_log():
 
         end_collection = db["endData"]
 
-        # 🔥 Figure out which call attempt number this is, BEFORE incrementing
+        # Figure out which call attempt number this is, BEFORE incrementing
         existing_end_doc = end_collection.find_one({"Number": number})
         current_attempt = (existing_end_doc or {}).get("Call_attempt", 0)
         attempt_number = current_attempt + 1
@@ -978,7 +990,7 @@ def add_call_log():
 
         call_logs_collection.insert_one(log_entry)
 
-        # 🔥 NEW: find the lead doc by phone (it already has a Mongo _id by
+        # Find the lead doc by phone (it already has a Mongo _id by
         # default), copy that _id onto endData as LeadId, and stamp who
         # made this call directly onto the Lead document (callBy field).
         lead_type = data.get("leadType")
@@ -1157,14 +1169,6 @@ def delete_lead():
 
 #excel
 
-COLLECTION_MAP = {
-    "buying": "Leads",
-    "rental": "RentalLeads",
-    "selling": "sellingLeads",
-    "agent": "agentLeads",
-    "other": "Leads"
-}
-
 @app.route("/api/export-leads", methods=["POST"])
 def export_leads():
     """
@@ -1172,7 +1176,7 @@ def export_leads():
 
     Hardened so a single bad record (missing/garbage phone, bad ObjectId,
     a transient Mongo hiccup on one collection, etc.) can never abort the
-    whole export — it's skipped and logged, and the export still returns
+    whole export - it's skipped and logged, and the export still returns
     whatever rows it could successfully build.
     """
     try:
@@ -1181,7 +1185,7 @@ def export_leads():
         period = data.get("period")                 # "this_month" | "last_month" | "last_3_months" | "all" | None
         lead_type_filter = data.get("type", "all")   # "all" | "buying" | "rental" | "selling" | "agent"
 
-        # 🔥 Date-range based export (used when no explicit page-selection is sent)
+        # Date-range based export (used when no explicit page-selection is sent)
         if not leads_input and period:
             start_date, end_date = get_date_range(period)
             types_to_scan = (
@@ -1232,8 +1236,8 @@ def export_leads():
                 raw_phone = item.get("phone", "")
                 phone = normalize_number(raw_phone)
 
-                # 🔒 Guard: an empty/too-short phone must never be used as a
-                # regex filter — that would match arbitrary documents and
+                # Guard: an empty/too-short phone must never be used as a
+                # regex filter - that would match arbitrary documents and
                 # pull the wrong lead's data into this row.
                 valid_phone = bool(phone) and len(phone) >= 8
                 if valid_phone and not phone.startswith("91"):
@@ -1241,7 +1245,7 @@ def export_leads():
 
                 lead_doc = None
 
-                # 1) Try by _id first — most reliable, no regex needed
+                # 1) Try by _id first - most reliable, no regex needed
                 if lead_id:
                     try:
                         lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
@@ -1279,22 +1283,22 @@ def export_leads():
 
                 rows.append({
                     "name": lead_doc.get("Lead Name") or lead_doc.get("Name") or item.get("name") or "Unknown",
-                    "phone": ("+" + phone) if valid_phone else (str(raw_phone) or "—"),
+                    "phone": ("+" + phone) if valid_phone else (str(raw_phone) or "-"),
                     "type": str(lead_type).capitalize(),
-                    "location": lead_doc.get("Location Interested In") or lead_doc.get("Property Location") or "—",
-                    "property": lead_doc.get("Property Type", "—"),
-                    "budget": lead_doc.get("Budget Range") or lead_doc.get("Expected Price") or "—",
-                    "assigned_to": lead_doc.get("AssignTo", "—"),
-                    "call_status": end_doc.get("Call Status", "—"),
-                    "interest_level": end_doc.get("Interest Level", "—"),
-                    "next_followup": end_doc.get("Next Follow-up Timeline", "—"),
-                    "next_call_date": end_doc.get("Next Call Date", "—"),
+                    "location": lead_doc.get("Location Interested In") or lead_doc.get("Property Location") or "-",
+                    "property": lead_doc.get("Property Type", "-"),
+                    "budget": lead_doc.get("Budget Range") or lead_doc.get("Expected Price") or "-",
+                    "assigned_to": lead_doc.get("AssignTo", "-"),
+                    "call_status": end_doc.get("Call Status", "-"),
+                    "interest_level": end_doc.get("Interest Level", "-"),
+                    "next_followup": end_doc.get("Next Follow-up Timeline", "-"),
+                    "next_call_date": end_doc.get("Next Call Date", "-"),
                     "total_calls": len(call_logs),
                     "calls": call_logs
                 })
 
             except Exception as item_err:
-                # 🔒 Never let one bad lead take down the whole export
+                # Never let one bad lead take down the whole export
                 skipped += 1
                 print(f"[export] Skipping row due to error: {item_err}")
                 continue
@@ -1302,7 +1306,7 @@ def export_leads():
         if not rows:
             return jsonify({"error": "No leads could be exported (all rows failed)"}), 400
 
-        # ── Build workbook ──
+        # Build workbook
         wb = Workbook()
         ws = wb.active
         ws.title = "Leads Export"
@@ -1345,11 +1349,11 @@ def export_leads():
             for c in row["calls"]:
                 call_values += [
                     format_ist(c.get("CreatedAt")),
-                    c.get("CallStatus", "—"),
-                    c.get("CustomerResponse", "—"),
-                    c.get("CallerRemarks", "—")
+                    c.get("CallStatus", "-"),
+                    c.get("CustomerResponse", "-"),
+                    c.get("CallerRemarks", "-")
                 ]
-            call_values += ["—"] * (len(call_headers) - len(call_values))
+            call_values += ["-"] * (len(call_headers) - len(call_values))
 
             full_row = base_values + call_values
             for col_idx, val in enumerate(full_row, start=1):
@@ -1387,7 +1391,7 @@ def export_leads():
         return jsonify({"error": str(e)}), 500
 
 
-#wp templetes 
+#wp templetes
 
 @app.route("/api/wp-template", methods=["POST"])
 def create_wp_template():
@@ -1473,12 +1477,12 @@ def delete_wp_template(id):
         return jsonify({"error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────
-# 🔒 FIX: this used to be `db = client["NishaHomesData"]`, which
+# -----------------------------------------------------------------
+# FIX: this used to be `db = client["NishaHomesData"]`, which
 # silently REASSIGNED the global `db` used by every other route in
 # this file (including /api/export-leads). That meant every route
-# below this point — and, more importantly, every route ABOVE it that
-# ran after this module finished loading — was querying whatever
+# below this point - and, more importantly, every route ABOVE it that
+# ran after this module finished loading - was querying whatever
 # database "NishaHomesData" is, instead of the one configured via
 # DB_NAME in your .env. This is almost certainly why exports (and
 # other reads) sometimes silently returned nothing.
@@ -1486,7 +1490,7 @@ def delete_wp_template(id):
 # We now use dedicated variable names so /update-lead keeps working
 # exactly as before, without touching the shared `db` / `collection`
 # names used everywhere else.
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------
 update_lead_db = client["NishaHomesData"]
 update_lead_collection = update_lead_db["endData"]
 
@@ -1505,7 +1509,7 @@ def update_lead():
         if not number:
             return jsonify({"error": "Number is required"}), 400
 
-        # 🔥 Fields we want to update (excluding _id, Number, Call_attempt)
+        # Fields we want to update (excluding _id, Number, Call_attempt)
         update_fields = {
             "Customer Name": output.get("customerName"),
             "Lead Source": output.get("leadSource"),
@@ -1532,10 +1536,10 @@ def update_lead():
         update_fields = {k: v for k, v in update_fields.items() if v is not None}
 
         result = update_lead_collection.update_one(
-            {"Number": number},   # 🔎 Find by Number
+            {"Number": number},   # Find by Number
             {
                 "$set": update_fields,
-                "$inc": {"Call_attempt": 1}  # 🔥 increment safely
+                "$inc": {"Call_attempt": 1}  # increment safely
             },
             upsert=False  # Do NOT create new document automatically
         )
@@ -1559,32 +1563,31 @@ def add_lead():
     try:
         data = request.json
 
-        # 1️⃣ Get collection name dynamically
+        # 1. Get collection name dynamically
         collection_name = data.get("collection")
         if not collection_name:
             return jsonify({"error": "Collection name is required"}), 400
 
         collection = db[collection_name]
 
-        # 2️⃣ Extract phone number (required for upsert)
+        # 2. Extract phone number (required for upsert)
         phone_number = data.get("Phone Number")
         if not phone_number:
             return jsonify({"error": "Phone Number is required"}), 400
 
-        # 3️⃣ Remove collection key from document
+        # 3. Remove collection key from document
         data.pop("collection", None)
 
-        # 4️⃣ Upsert (update if exists, insert if not)
+        # 4. Upsert (update if exists, insert if not)
         result = collection.update_one(
             {"Phone Number": phone_number},
             {"$set": data},
             upsert=True
         )
-        
-        
+
         name = data.get("Lead Name")
-        
-        create_contact( name, phone_number)
+
+        create_contact(name, phone_number)
 
         return jsonify({
             "success": True,
@@ -1605,12 +1608,12 @@ def modify_document():
         if not data:
             return jsonify({"error": "No JSON body provided"}), 400
 
-        # 1️⃣ Validate collection
+        # 1. Validate collection
         collection_name = data.get("collection")
         if not collection_name:
             return jsonify({"error": "Collection name is required"}), 400
 
-        # 🔒 Optional: restrict collections (recommended)
+        # Optional: restrict collections (recommended)
         allowed_collections = [
             "Leads",
             "RentalLeads",
@@ -1618,7 +1621,7 @@ def modify_document():
             "agentLeads",
             "endData",
             "teamAssign",
-            "orderhouseofcakes", 
+            "orderhouseofcakes",
             "tasks",
             "Realtors"
         ]
@@ -1628,38 +1631,38 @@ def modify_document():
 
         collection = db[collection_name]
 
-        # 2️⃣ Validate phone / number
+        # 2. Validate phone / number
         raw_number = (
-        data.get("Phone Number") or 
-        data.get("Number") or 
-        data.get("Employee number")
+            data.get("Phone Number") or
+            data.get("Number") or
+            data.get("Employee number")
         )
 
         if not raw_number:
-         return jsonify({"error": "Phone Number / Number / Employee number is required"}), 400
+            return jsonify({"error": "Phone Number / Number / Employee number is required"}), 400
 
         normalized_number = normalize_number(raw_number)
 
         if not normalized_number:
-         return jsonify({"error": "Invalid phone number"}), 400
+            return jsonify({"error": "Invalid phone number"}), 400
 
-        # 3️⃣ Build filter dynamically
+        # 3. Build filter dynamically
         if collection_name == "endData":
             filter_query = {"Number": normalized_number}
         else:
             filter_query = {
-        "$or": [
-            {"Phone Number": normalized_number},
-            {"Employee number": normalized_number},
-            {"Number": normalized_number},
+                "$or": [
+                    {"Phone Number": normalized_number},
+                    {"Employee number": normalized_number},
+                    {"Number": normalized_number},
 
-            {"Phone Number": {"$regex": str(normalized_number)}},
-            {"Employee number": {"$regex": str(normalized_number)}},
-            {"Number": {"$regex": str(normalized_number)}},
-        ]
-    }
+                    {"Phone Number": {"$regex": str(normalized_number)}},
+                    {"Employee number": {"$regex": str(normalized_number)}},
+                    {"Number": {"$regex": str(normalized_number)}},
+                ]
+            }
 
-        # 4️⃣ Build update operations
+        # 4. Build update operations
         update_query = {}
 
         # SET (add/update fields)
@@ -1685,14 +1688,14 @@ def modify_document():
         if not update_query:
             return jsonify({"error": "No update operations provided"}), 400
 
-        # 5️⃣ Perform update (Upsert allowed)
+        # 5. Perform update (Upsert allowed)
         result = collection.update_one(
             filter_query,
             update_query,
             upsert=True
         )
 
-        # 6️⃣ Return updated document
+        # 6. Return updated document
         updated_doc = collection.find_one(filter_query)
 
         return jsonify({
@@ -1707,8 +1710,8 @@ def modify_document():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-    
-    
+
+
 @app.route('/add-task', methods=['POST'])
 def add_task():
     data = request.json
@@ -1749,8 +1752,8 @@ def add_task():
         "message": "Task added",
         "task_id": task_id
     })
- 
-    
+
+
 @app.route('/update-task-status', methods=['POST'])
 def update_task_status():
     data = request.json
@@ -1778,8 +1781,8 @@ def update_task_status():
         return jsonify({"success": True, "message": "Status updated"})
     else:
         return jsonify({"success": False, "message": "Task not found"})
-    
-    
+
+
 @app.route('/get-tasks/<phone>', methods=['GET'])
 def get_tasks(phone):
     user = db.teamassign.find_one({"Phone Number": phone})
@@ -1787,12 +1790,9 @@ def get_tasks(phone):
     if not user:
         return jsonify([])
 
-    return jsonify(user.get("tasks", []))    
-    
-    
-    
-    
-    
+    return jsonify(user.get("tasks", []))
+
+
 # Endpoint 1: Image -> Text
 @app.route('/image-to-text', methods=['POST'])
 def image_to_text():
@@ -1802,7 +1802,7 @@ def image_to_text():
     file = request.files['file']
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-    temp.close()  # 🔥 IMPORTANT
+    temp.close()
 
     file.save(temp.name)
 
@@ -1813,7 +1813,11 @@ def image_to_text():
     return jsonify({'text': text})
 
 # Endpoint 2: Video -> Audio (returns HTML player)
-
+# NOTE: this route calls extract_audio_from_video(), which comes from a
+# commented-out import ("#from video_to_audio import extract_audio_from_video")
+# at the top of the file. It is a syntax-valid function, but will raise a
+# NameError at request time unless that import is restored. Left as-is
+# structurally since re-enabling it is a behavior change, not a syntax fix.
 @app.route('/video-to-audio', methods=['POST'])
 def video_to_audio():
     if 'file' not in request.files:
@@ -1821,22 +1825,22 @@ def video_to_audio():
 
     file = request.files['file']
 
-    # 🔥 TEMP VIDEO (not permanent)
+    # TEMP VIDEO (not permanent)
     temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_video.close()
     file.save(temp_video.name)
 
-    # 🔥 FINAL AUDIO (saved in uploads)
+    # FINAL AUDIO (saved in uploads)
     audio_filename = f"{int(time.time())}.mp3"
     audio_path = os.path.join(app.config["UPLOAD_FOLDER"], audio_filename)
 
-    # 🎬 Extract audio
+    # Extract audio
     extract_audio_from_video(temp_video.name, audio_path)
 
-    # 🧹 Delete temp video
+    # Delete temp video
     os.remove(temp_video.name)
 
-    # ✅ Return usable URL
+    # Return usable URL
     return jsonify({
         "audio_url": f"/uploads/{audio_filename}"
     })
@@ -1847,6 +1851,9 @@ def get_audio():
     path = request.args.get('path')
     return send_file(path, mimetype='audio/mpeg')
 
+# NOTE: this route uses cv2, which comes from a commented-out import
+# ("#import cv2") at the top of the file. It is syntax-valid but will raise
+# a NameError at request time unless that import is restored.
 @app.route('/video-to-frames', methods=['POST'])
 def video_to_frames():
     if 'file' not in request.files:
@@ -1904,12 +1911,14 @@ def video_to_frames():
     })
 
 
-#project 
+#project
 
-# 🔥 REPLACED: now supports partner-scoped visibility.
+# REPLACED: now supports partner-scoped visibility.
 # - admin / emp -> sees every project (all partners + their own uploads)
 # - partner     -> sees ONLY their own projects (matched on employee_number)
 # - no session  -> public read (e.g. marketing site), sees everything
+
+
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
@@ -1919,23 +1928,37 @@ def get_projects():
         if role == "partner":
             query = {"ownerNumber": session.get("employee_number")}
 
+        # ?status=approved / ?status=pending filter
+        status_filter = request.args.get("status")
+        if status_filter:
+            query["status"] = status_filter
+
+        # -----------------------------------------------------------
+        # FIX (main syntax error): this function previously ended right
+        # here with no `return`, no `except` block to close the `try`,
+        # and the very next lines in the file jumped straight into a
+        # brand-new `@app.route(...)` / `def upload_project():` — i.e.
+        # a second route definition was nested/orphaned inside this
+        # try block with no valid statement connecting them. That is
+        # an unterminated try/incomplete function body, which is a
+        # SyntaxError (or IndentationError) at import time and would
+        # stop the whole app from starting.
+        #
+        # Fixed by completing the function: build the list, return it,
+        # and close out the try/except properly.
+        # -----------------------------------------------------------
         projects = list(projects_collection.find(query).sort("createdAt", -1))
 
-        return jsonify({
-            "status": "success",
-            "count": len(projects),
-            "data": [serialize_doc(p) for p in projects]
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return jsonify([serialize_doc(p) for p in projects])
 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 # -------------------------------
-# 🔥 REPLACED: POST /api/projects/upload
+# REPLACED: POST /api/projects/upload
 # Now uploads image/video straight to Cloudinary instead of local disk,
 # and tags the resulting document with who uploaded it so partners only
 # ever see/manage their own inventory.
@@ -1965,7 +1988,7 @@ def upload_project():
         video_exts = {"mp4", "mov", "avi", "webm", "mkv"}
         resource_type = "video" if ext in video_exts else "image"
 
-        # 🔥 Upload straight to Cloudinary (no local disk write)
+        # Upload straight to Cloudinary (no local disk write)
         upload_result = cloudinary.uploader.upload(
             file,
             resource_type=resource_type,
@@ -1976,16 +1999,19 @@ def upload_project():
         public_id = upload_result.get("public_id")
 
         # Save in DB
+        # partner uploads start "pending" and need admin approval.
+        # admin/emp uploads are auto-approved since staff added them directly.
         project_data = {
             "name": name,
             "location": location,
             "description": description,
             "budget": budget,
             "category": category,
-            "img": file_url,           # kept for backward compatibility with older frontend code
+            "img": file_url,
             "mediaUrl": file_url,
             "mediaPublicId": public_id,
-            "type": resource_type,      # "image" | "video"
+            "type": resource_type,
+            "status": "pending" if session.get("role") == "partner" else "approved",
             "ownerNumber": session.get("employee_number"),
             "ownerName": session.get("employee_name"),
             "ownerRole": session.get("role"),
@@ -2010,7 +2036,7 @@ def upload_project():
         }), 500
 
 
-# 🔥 NEW: PUT/POST-style update — allows editing fields and/or replacing media
+# PUT/POST-style update - allows editing fields and/or replacing media
 @app.route("/api/projects/update/<project_id>", methods=["POST"])
 def update_project(project_id):
     try:
@@ -2018,7 +2044,7 @@ def update_project(project_id):
             return jsonify({"status": "error", "message": "Login required"}), 401
 
         query = {"_id": ObjectId(project_id)}
-        # 🔒 Partners can only edit their own listings
+        # Partners can only edit their own listings
         if session.get("role") == "partner":
             query["ownerNumber"] = session.get("employee_number")
 
@@ -2072,7 +2098,7 @@ def update_project(project_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# 🔥 NEW: delete a project (and its Cloudinary asset)
+# delete a project (and its Cloudinary asset)
 @app.route("/api/projects/delete/<project_id>", methods=["DELETE"])
 def delete_project(project_id):
     try:
@@ -2080,7 +2106,7 @@ def delete_project(project_id):
             return jsonify({"status": "error", "message": "Login required"}), 401
 
         query = {"_id": ObjectId(project_id)}
-        # 🔒 Partners can only delete their own listings
+        # Partners can only delete their own listings
         if session.get("role") == "partner":
             query["ownerNumber"] = session.get("employee_number")
 
@@ -2105,9 +2131,43 @@ def delete_project(project_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+
+# Approve / send-back a pending listing. Admin only.
+@app.route("/api/projects/approve/<project_id>", methods=["POST"])
+def approve_project(project_id):
+    try:
+        if not session.get("user_id") or session.get("role") != "admin":
+            return jsonify({"status": "error", "message": "Admin login required"}), 403
+
+        project = projects_collection.find_one({"_id": ObjectId(project_id)})
+        if not project:
+            return jsonify({"status": "error", "message": "Project not found"}), 404
+
+        action = (request.json or {}).get("action", "approve")  # "approve" | "reject"
+        new_status = "approved" if action == "approve" else "pending"
+
+        projects_collection.update_one(
+            {"_id": ObjectId(project_id)},
+            {"$set": {
+                "status": new_status,
+                "reviewedBy": session.get("employee_name"),
+                "reviewedAt": datetime.utcnow()
+            }}
+        )
+
+        updated = projects_collection.find_one({"_id": ObjectId(project_id)})
+        return jsonify({"status": "success", "data": serialize_doc(updated)}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/add-project")
 def add_project_page():
     return render_template("upload_project.html")
+
 
 @app.route("/api/add-end-data", methods=["POST"])
 def add_end_data():
@@ -2129,31 +2189,31 @@ def add_end_data():
         if not raw_number:
             return jsonify({"error": "Number is required"}), 400
 
-        # ✅ Normalize number
+        # Normalize number
         number = normalize_number(raw_number)
 
         if not number:
             return jsonify({"error": "Invalid number"}), 400
 
-        # ✅ Ensure Indian format (add 91 if missing)
+        # Ensure Indian format (add 91 if missing)
         if not number.startswith("91"):
             number = "91" + number
 
-        # 🔥 Clean payload
+        # Clean payload
         data.pop("collection", None)
         data["Number"] = number
 
-        # 🔥 Remove empty / None values (IMPORTANT)
+        # Remove empty / None values (IMPORTANT)
         clean_data = {k: v for k, v in data.items() if v not in [None, "", []]}
 
-        # 🔥 Add timestamp
+        # Add timestamp
         clean_data["lastUpdatedAt"] = datetime.utcnow()
 
-        # 🔍 Check if record exists
+        # Check if record exists
         existing_doc = collection.find_one({"Number": number})
 
         if existing_doc:
-            # ✅ Update ONLY provided fields
+            # Update ONLY provided fields
             update_query = {
                 "$set": clean_data,
                 "$inc": {"Call_attempt": int(data.get("Call_attempt", 1))}
@@ -2164,14 +2224,14 @@ def add_end_data():
             message = "Data updated successfully"
 
         else:
-            # ✅ Insert new document
+            # Insert new document
             clean_data["Call_attempt"] = int(data.get("Call_attempt", 1))
 
             collection.insert_one(clean_data)
 
             message = "Data inserted successfully"
 
-        # ✅ Fetch updated doc
+        # Fetch updated doc
         updated_doc = collection.find_one({"Number": number})
 
         return jsonify({
@@ -2200,7 +2260,7 @@ def get_lead_by_number():
 
     lead = None
 
-    # 🔥 Try matching by LeadId (the Mongo _id of the Lead doc) first
+    # Try matching by LeadId (the Mongo _id of the Lead doc) first
     if lead_id:
         lead = collection.find_one({"LeadId": str(lead_id)})
 

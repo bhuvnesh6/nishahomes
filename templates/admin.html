@@ -563,7 +563,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
 /* ═══════════════════════════
    RESPONSIVE: Hide table on mobile, show cards
-   FIX: changed display:block to display:flex for mobile-cards-wrap
 ═══════════════════════════ */
 @media(max-width:699px){
   .table-scroll{display:none}
@@ -637,6 +636,20 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .lc-date{font-size:0.72rem;color:var(--text-soft);margin-top:1px}
 .lc-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 
+/* 🔥 NEW: 3-dot overflow button, top-right of card */
+.lc-more-btn{
+  flex-shrink:0;
+  width:30px;height:30px;
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text-soft);
+  border:1.5px solid var(--border);
+  background:#fff;
+  transition:var(--transition);
+  margin-left:auto;
+}
+.lc-more-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(239,131,84,0.05)}
+
 /* Card body */
 .lc-body{
   padding:0 14px 0 18px;
@@ -667,7 +680,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .lc-status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 
-/* Card footer actions */
+/* Card footer actions — now only 4 primary buttons */
 .lc-actions{
   display:flex;
   padding:10px 14px 12px 18px;
@@ -678,7 +691,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .lc-action-btn{
   display:flex;align-items:center;justify-content:center;gap:5px;
-  padding:7px 12px;
+  padding:8px 10px;
   border-radius:var(--radius-sm);
   font-size:0.78rem;font-weight:600;
   border:1.5px solid var(--border);
@@ -932,6 +945,38 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
 #editModal .modal{max-width:500px}
 
+/* 🔥 NEW: card overflow menu modal */
+#cardMenuModal .modal{max-width:360px;padding:22px}
+.cm-lead-name{
+  font-family:'Playfair Display',serif;
+  font-size:1.15rem;font-weight:800;color:#fff;
+  margin-bottom:4px;padding-right:30px;
+}
+.cm-lead-phone{color:var(--accent);font-size:0.82rem;margin-bottom:16px}
+.cm-menu-list{display:flex;flex-direction:column;gap:6px}
+.cm-menu-item{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 12px;border-radius:10px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.08);
+  color:rgba(255,255,255,0.85);
+  font-size:0.86rem;font-weight:600;
+  transition:var(--transition);
+  width:100%;text-align:left;
+}
+.cm-menu-item:hover{background:rgba(239,131,84,0.14);border-color:var(--accent);color:#fff}
+.cm-menu-item.danger{color:#ff8787}
+.cm-menu-item.danger:hover{background:rgba(239,68,68,0.14);border-color:var(--hot)}
+.cm-menu-item.ai-off{color:#ff8787}
+.cm-menu-item svg{flex-shrink:0}
+
+/* 🔥 NEW: Send Property Modal */
+.sp-property-row{
+  display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;
+  border:2px solid rgba(255,255,255,0.1);cursor:pointer;transition:0.2s;
+}
+.sp-property-row:hover{border-color:rgba(239,131,84,0.4)}
+
 #installBtn{
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
   padding:11px 22px;
@@ -1005,6 +1050,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   <a href="/add-project" class="sidebar-link">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
     Projects
+  </a>
+  <a href="/inventory" class="sidebar-link">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Inventory
   </a>
   <a href="/addtemplete" class="sidebar-link">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
@@ -1443,6 +1492,41 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   </div>
 </div>
 
+<!-- 🔥 NEW: Card Overflow Menu Modal (mobile) -->
+<div class="modal-overlay" id="cardMenuModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeCardMenu()">✕</button>
+    <div class="cm-lead-name" id="cmLeadName">—</div>
+    <div class="cm-lead-phone" id="cmLeadPhone">—</div>
+    <div class="cm-menu-list" id="cmMenuList"></div>
+  </div>
+</div>
+
+<!-- 🔥 NEW: Send Property Modal -->
+<div class="modal-overlay" id="sendPropertyModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-close" onclick="closeSendPropertyModal()">✕</button>
+    <h2>Send Property to <span id="spLeadName" style="color:var(--accent)"></span></h2>
+
+    <div class="form-group" style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" class="form-input" id="spFilterLocation" placeholder="Location…" style="flex:1;min-width:140px">
+      <input type="text" class="form-input" id="spFilterBudget" placeholder="Budget…" style="flex:1;min-width:140px">
+      <select class="form-select" id="spFilterCategory" style="flex:1;min-width:140px">
+        <option value="">All Categories</option>
+        <option>Residential</option><option>Commercial</option><option>Plot</option>
+        <option>Villa</option><option>Farmhouse</option><option>Rental</option>
+      </select>
+    </div>
+
+    <div id="spPropertyList" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;margin:14px 0">
+      <div class="loader" style="margin:20px auto"></div>
+    </div>
+
+    <input type="hidden" id="spSelectedProjectId">
+    <button class="submit-btn" id="spSendBtn" disabled>Select a property first</button>
+  </div>
+</div>
+
 <button id="installBtn" style="display:none">📲 Install App</button>
 
 <script>
@@ -1470,20 +1554,10 @@ let selectedLeads = new Map();
 let wpTemplates = [];
 let currentPage = 1;
 const PAGE_SIZE = 25;
-// unsaved form drafts for call-log / edit popups, keyed by phone (edit uses 'edit_'+phone)
 let leadDrafts = {};
-
-// 🔥 tracks exactly which leads are on the currently rendered table
-// page, so the "Export Page" button exports precisely what the admin sees
-// (25 leads per page), not the whole filtered set.
 let currentPageLeadsForExport = [];
-
-// end-data cache
 let endDataMap = {};
 let endDataLoaded = false;
-
-// 🔥 DAI (Disable-AI) cache — leadIds (Mongo _id, as string) that
-// currently have AI disabled for that lead.
 let daiSet = new Set();
 
 /* ═══════════════════════════════════
@@ -1524,9 +1598,6 @@ function initials(name){
 
 /* ═══════════════════════════════════
    LOAD END-DATA
-   🔥 UPDATED: also index every record by its LeadId (Mongo _id of the
-   Lead document) so lookups can match on LeadId first, falling back
-   to phone number if not present yet.
 ═══════════════════════════════════ */
 async function loadEndData(){
   try{
@@ -1538,7 +1609,7 @@ async function loadEndData(){
         const num = digitsOnly(String(r.Number||''));
         if(num) newMap[num] = r;
         if(num.length>10) newMap[num.slice(-10)] = r;
-        if(r.LeadId) newMap['id_'+r.LeadId] = r; // 🔥 NEW: index by LeadId
+        if(r.LeadId) newMap['id_'+r.LeadId] = r;
       });
     }
     endDataMap = newMap;
@@ -1549,8 +1620,6 @@ async function loadEndData(){
   }
 }
 
-// 🔥 UPDATED: match by LeadId first (the Lead document's Mongo _id),
-// fall back to phone number if LeadId isn't found (e.g. no call logged yet)
 function getEndData(phoneRaw, leadId){
   if(leadId && endDataMap['id_'+leadId]) return endDataMap['id_'+leadId];
   const full = digitsOnly(phoneRaw);
@@ -1562,8 +1631,6 @@ function getEndData(phoneRaw, leadId){
 
 /* ═══════════════════════════════════
    LOAD DAI (Disable-AI) LIST
-   Populates daiSet with every leadId currently AI-disabled, so rows/
-   cards can be colored and buttons can show the correct state.
 ═══════════════════════════════════ */
 async function loadDaiList(){
   try{
@@ -1577,8 +1644,6 @@ async function loadDaiList(){
 
 /* ═══════════════════════════════════
    TOGGLE AI FOR A LEAD
-   Flips membership in the DAI collection via /api/toggle-ai, then
-   updates local state and re-renders (no full reload needed).
 ═══════════════════════════════════ */
 async function toggleAI(btn){
   const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
@@ -1600,6 +1665,7 @@ async function toggleAI(btn){
 
     renderTable();
     renderMobileCards();
+    closeCardMenu();
   }catch(e){
     console.error(e);
     alert('Failed to update AI status');
@@ -1646,9 +1712,6 @@ document.getElementById('topbarSearch').addEventListener('input',function(){
 
 /* ═══════════════════════════════════
    LOAD ALL LEADS
-   keepPage=true -> preserve currentPage & don't wipe unrelated data on
-   a partial failure (used after edits/deletes/call-logs so users on
-   page 3+ don't get bounced back to page 1 or see leads disappear).
 ═══════════════════════════════════ */
 async function loadAllLeads(keepPage){
   showLoader();
@@ -1672,9 +1735,6 @@ async function loadAllLeads(keepPage){
           data = data.map(l=>({...l,_leadType:t}));
           return {t, data, others};
         }));
-        // Only overwrite the categories that fetched successfully - if one
-        // endpoint fails transiently, we keep whatever we already had for it
-        // instead of wiping the whole list (this is what caused "lost leads").
         results.forEach(r=>{
           if(r.status==='fulfilled'){
             allLeads[r.value.t] = r.value.data;
@@ -1708,7 +1768,6 @@ async function loadAllLeads(keepPage){
 
 /* ═══════════════════════════════════
    FILTER + RENDER
-   keepPage=true -> clamp to a valid page instead of resetting to page 1
 ═══════════════════════════════════ */
 function applyFilter(keepPage){
   const q = (document.getElementById('leadSearch').value||'').toLowerCase();
@@ -1753,7 +1812,6 @@ function renderTable(){
   const page=filteredLeads.slice(start,end);
   const totalPages=Math.ceil(total/PAGE_SIZE);
 
-  // keep a reference to exactly what's on this page for export
   currentPageLeadsForExport = page;
 
   tbody.innerHTML = page.map(l=>{
@@ -1821,6 +1879,9 @@ function renderTable(){
     ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`
     : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`}
 </button>
+        <button class="icon-btn" title="Send Property" data-lead="${rowData}" onclick="openSendPropertyModal(this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </button>
         <button class="icon-btn" title="History" onclick="openHistoryModal('${escHtml(phone)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
@@ -1861,7 +1922,6 @@ function renderMobileCards(){
   const mobilePag = document.getElementById('mobilePagination');
   const total = filteredLeads.length;
 
-  /* FIX: Always explicitly set display so cards show on mobile */
   wrap.style.display = 'flex';
   wrap.style.flexDirection = 'column';
 
@@ -1904,6 +1964,9 @@ function renderMobileCards(){
 
     const typeColorMap={buying:'',rental:'type-rental',selling:'type-selling',agent:'type-agent',other:'type-other'};
 
+    // 🔥 Only 4 primary buttons stay visible on the card.
+    // Everything else (Assign, AI, Toggle AI, History, Send Property, Delete)
+    // is moved into the 3-dot overflow menu, opened via lc-more-btn.
     return `
     <div class="lead-card ${typeColorMap[t]||''} ${isSelected?'selected':''} ${isAiDisabled?'ai-disabled':''}" data-phone="${escHtml(phone)}">
       <div class="lc-header">
@@ -1919,6 +1982,9 @@ function renderMobileCards(){
             ${isAiDisabled?`<span class="badge" style="background:rgba(239,68,68,.1);color:#dc2626">🔕 AI Off</span>`:''}
           </div>
         </div>
+        <button class="lc-more-btn" data-lead="${rowData}" data-id="${escHtml(l._id)}" data-leadtype="${t}" onclick="openCardMenu(this)" title="More">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+        </button>
       </div>
 
       <div class="lc-body">
@@ -1979,31 +2045,14 @@ function renderMobileCards(){
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
           Log
         </button>
-        <button class="lc-action-btn" onclick="openAssignModal('${escHtml(phone)}','${escHtml(name)}')" title="Assign">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-          Assign
-        </button>
         <button class="lc-action-btn" data-lead="${rowData}" onclick="openEditModalFromData(this)" title="Edit">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Edit
-        </button>
-        <button class="lc-action-btn" data-lead="${rowData}" onclick="senReqtoAI(this)" title="AI">
-          ✨ AI
-        </button>
-        <button class="lc-action-btn ${isAiDisabled?'ai-off':''}" data-lead="${rowData}" onclick="toggleAI(this)" title="${isAiDisabled?'Enable AI':'Disable AI'}">
-  ${isAiDisabled ? '🤖 Enable AI' : '🤖 Disable AI'}
-</button>
-        <button class="lc-action-btn" onclick="openHistoryModal('${escHtml(phone)}')" title="History">
-          🕘 History
-        </button>
-        <button class="lc-action-btn danger" onclick="deleteLead('${escHtml(l._id)}','${l._leadType}')" title="Delete">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
         </button>
       </div>
     </div>`;
   }).join('');
 
-  /* FIX: Show mobile pagination */
   mobilePag.style.display='flex';
   document.getElementById('mobilePaginationInfo').textContent = `${start+1}–${end} of ${total}`;
   const mpb = document.getElementById('mobilePaginationBtns');
@@ -2017,7 +2066,6 @@ function renderMobileCards(){
   const mn=document.createElement('button');mn.className='pg-btn';mn.textContent='›';mn.disabled=currentPage>=totalPages;
   mn.onclick=()=>{currentPage++;renderTable();renderMobileCards();window.scrollTo(0,0)};mpb.appendChild(mn);
 
-  /* Bind mobile card checkboxes */
   wrap.querySelectorAll('.row-check').forEach(cb=>{
     cb.addEventListener('change',function(){
       const ph=this.dataset.phone, nm=this.dataset.name;
@@ -2028,6 +2076,57 @@ function renderMobileCards(){
     });
   });
 }
+
+/* ═══════════════════════════════════
+   🔥 NEW: CARD OVERFLOW (3-DOT) MENU
+   Renders Assign / AI Summary / Toggle AI / History / Send Property /
+   Delete inside a small modal, keyed off the same lead data used by
+   the primary card buttons.
+═══════════════════════════════════ */
+function openCardMenu(btn){
+  const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+  const leadId = btn.dataset.id;
+  const leadType = btn.dataset.leadtype;
+  const isAiDisabled = daiSet.has(String(leadId));
+
+  document.getElementById('cmLeadName').textContent = data.name || 'Unknown';
+  document.getElementById('cmLeadPhone').textContent = data.phone || '';
+
+  const rowDataStr = btn.dataset.lead; // already-encoded JSON, reuse directly
+
+  document.getElementById('cmMenuList').innerHTML = `
+    <button class="cm-menu-item" onclick="closeCardMenu();openAssignModal('${escHtml(data.phone)}','${escHtml(data.name)}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+      Assign Lead
+    </button>
+    <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();senReqtoAI(this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+      AI Summary
+    </button>
+    <button class="cm-menu-item ${isAiDisabled?'ai-off':''}" data-lead="${rowDataStr}" onclick="toggleAI(this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+      ${isAiDisabled?'Enable AI':'Disable AI'}
+    </button>
+    <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();openSendPropertyModal(this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Send Property
+    </button>
+    <button class="cm-menu-item" onclick="closeCardMenu();openHistoryModal('${escHtml(data.phone)}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Call History
+    </button>
+    <button class="cm-menu-item danger" onclick="closeCardMenu();deleteLead('${escHtml(leadId)}','${leadType}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+      Delete Lead
+    </button>
+  `;
+
+  document.getElementById('cardMenuModal').classList.add('active');
+}
+function closeCardMenu(){
+  document.getElementById('cardMenuModal').classList.remove('active');
+}
+document.getElementById('cardMenuModal').addEventListener('click', e=>{if(e.target.id==='cardMenuModal') closeCardMenu()});
 
 /* ═══════════════════════════════════
    FILTER CHIPS
@@ -2197,7 +2296,7 @@ function buildTopLocations(){
 document.getElementById('chartPeriod').addEventListener('change',buildLineChart);
 
 /* ═══════════════════════════════════
-   ADMIN OVERVIEW STATS (follow-up / pending / done / calls today)
+   ADMIN OVERVIEW STATS
 ═══════════════════════════════════ */
 async function loadDashboardStats(){
   try{
@@ -2273,9 +2372,6 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
 /* ═══════════════════════════════════
    EDIT MODAL
-   Drafts are kept in leadDrafts['edit_'+phone] so that closing the popup
-   without saving (X button, overlay click, or navigating away) does NOT
-   throw away whatever the user typed - reopening the same lead restores it.
 ═══════════════════════════════════ */
 function openEditModalFromData(btn){
   const data=JSON.parse(decodeURIComponent(btn.dataset.lead));
@@ -2380,12 +2476,7 @@ document.getElementById('bulkAssignBtn').addEventListener('click',()=>{
 });
 
 /* ═══════════════════════════════════
-   🔥 EXPORT — DATE RANGE MODAL + EXECUTION
-   Two paths:
-   1) "Current Page Only" -> exportCurrentPage() sends the exact leads
-      visible on the current table page (up to 25).
-   2) Any date-range option -> exportByDateRange() asks the backend to
-      scan the requested period + lead type across all leads server-side.
+   EXPORT
 ═══════════════════════════════════ */
 document.getElementById('exportExcelBtn').addEventListener('click', ()=>{
   document.getElementById('exportRangeModal').style.display='flex';
@@ -2480,8 +2571,6 @@ async function exportByDateRange(period, type){
 
 /* ═══════════════════════════════════
    CALL LOG MODAL
-   Same draft-preserving behavior as the Edit modal: closing without
-   saving keeps whatever was typed so reopening the same lead restores it.
 ═══════════════════════════════════ */
 function openCallLogModal(btn){
   const data=JSON.parse(decodeURIComponent(btn.dataset.lead));
@@ -2634,6 +2723,117 @@ function openHistoryModal(phoneRaw){
 }
 function closeHistoryModal(){document.getElementById('historyModal').classList.remove('active')}
 document.getElementById('historyModal').addEventListener('click', e=>{if(e.target.id==='historyModal') closeHistoryModal()});
+
+/* ═══════════════════════════════════
+   🔥 SEND PROPERTY TO LEAD
+═══════════════════════════════════ */
+let spLeadData = null;
+let spProjects = [];
+let spSelectedProject = null;
+
+async function openSendPropertyModal(btn){
+  spLeadData = JSON.parse(decodeURIComponent(btn.dataset.lead));
+  document.getElementById('spLeadName').textContent = spLeadData.name || spLeadData.phone;
+  document.getElementById('spSelectedProjectId').value = '';
+  spSelectedProject = null;
+  document.getElementById('spSendBtn').disabled = true;
+  document.getElementById('spSendBtn').textContent = 'Select a property first';
+  document.getElementById('sendPropertyModal').classList.add('active');
+
+  document.getElementById('spPropertyList').innerHTML = '<div class="loader" style="margin:20px auto"></div>';
+  try{
+    const res = await fetch(`${BASE}/projects?status=approved`, { credentials:'include' });
+    const d = await res.json();
+    spProjects = d.data || [];
+    renderSpPropertyList();
+  }catch(e){
+    console.error(e);
+    document.getElementById('spPropertyList').innerHTML = '<p style="color:#ff6b6b">Failed to load properties</p>';
+  }
+}
+
+function closeSendPropertyModal(){
+  document.getElementById('sendPropertyModal').classList.remove('active');
+}
+document.getElementById('sendPropertyModal').addEventListener('click', e=>{if(e.target.id==='sendPropertyModal') closeSendPropertyModal()});
+
+function renderSpPropertyList(){
+  const locQ = document.getElementById('spFilterLocation').value.trim().toLowerCase();
+  const budgetQ = document.getElementById('spFilterBudget').value.trim().toLowerCase();
+  const catQ = document.getElementById('spFilterCategory').value;
+
+  const filtered = spProjects.filter(p=>{
+    if(catQ && p.category !== catQ) return false;
+    if(locQ && !(p.location||'').toLowerCase().includes(locQ)) return false;
+    if(budgetQ && !(p.budget||'').toLowerCase().includes(budgetQ)) return false;
+    return true;
+  });
+
+  const list = document.getElementById('spPropertyList');
+  if(filtered.length === 0){
+    list.innerHTML = '<p style="color:rgba(255,255,255,0.5);text-align:center;padding:20px">No approved properties match these filters</p>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(p=>{
+    const media = p.mediaUrl || p.img || '';
+    const isVideo = p.type === 'video';
+    return `
+    <div class="sp-property-row" data-id="${p._id}" onclick="selectSpProperty('${p._id}')">
+      <div style="width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#000">
+        ${isVideo
+          ? `<video src="${escHtml(media)}" style="width:100%;height:100%;object-fit:cover" muted></video>`
+          : `<img src="${escHtml(media)}" style="width:100%;height:100%;object-fit:cover">`}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="color:#fff;font-weight:700;font-size:0.88rem">${escHtml(p.name)}</div>
+        <div style="color:rgba(255,255,255,0.55);font-size:0.76rem">📍 ${escHtml(p.location)} · ${escHtml(p.category)}</div>
+        <div style="color:var(--accent);font-weight:600;font-size:0.8rem">${escHtml(p.budget)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+document.getElementById('spFilterLocation').addEventListener('input', renderSpPropertyList);
+document.getElementById('spFilterBudget').addEventListener('input', renderSpPropertyList);
+document.getElementById('spFilterCategory').addEventListener('change', renderSpPropertyList);
+
+function selectSpProperty(id){
+  spSelectedProject = spProjects.find(p=>p._id === id);
+  document.getElementById('spSelectedProjectId').value = id;
+  document.querySelectorAll('.sp-property-row').forEach(r=>{
+    r.style.borderColor = (r.dataset.id === id) ? 'var(--accent)' : 'rgba(255,255,255,0.1)';
+  });
+  const btn = document.getElementById('spSendBtn');
+  btn.disabled = false;
+  btn.textContent = `Send "${spSelectedProject.name}" via WhatsApp →`;
+}
+
+document.getElementById('spSendBtn').addEventListener('click', ()=>{
+  if(!spSelectedProject || !spLeadData) return;
+  const p = spSelectedProject;
+  const rawPhone = String(spLeadData.phone||'').replace(/[^0-9]/g,'');
+
+  const lines = [
+    `Hi ${spLeadData.name || ''},`.trim(),
+    ``,
+    `I'd like to share a property that matches your requirement:`,
+    ``,
+    `🏠 *${p.name}*`,
+    `📍 Location: ${p.location}`,
+    `🏷️ Category: ${p.category}`,
+    `💰 Budget: ${p.budget}`,
+    `📝 ${p.description}`,
+    ``,
+    `📸 View media: ${p.mediaUrl || p.img || ''}`,
+    ``,
+    `Let me know if you'd like to schedule a site visit.`,
+    `— NishaHomes`
+  ];
+  const message = encodeURIComponent(lines.join('\n'));
+  const waUrl = `https://wa.me/${rawPhone}?text=${message}`;
+  window.open(waUrl, '_blank');
+  closeSendPropertyModal();
+});
 
 /* ═══════════════════════════════════
    INIT
