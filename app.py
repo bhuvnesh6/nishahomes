@@ -1966,6 +1966,10 @@ def video_to_frames():
 # - no session  -> public read (e.g. marketing site), sees everything
 
 
+# REPLACED: now supports partner-scoped visibility.
+# - admin / emp -> sees every project (all partners + their own uploads)
+# - partner     -> sees ONLY their own projects (matched on employee_number)
+# - no session  -> public read (e.g. marketing site), sees everything
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
@@ -1980,28 +1984,24 @@ def get_projects():
         if status_filter:
             query["status"] = status_filter
 
-        # -----------------------------------------------------------
-        # FIX (main syntax error): this function previously ended right
-        # here with no `return`, no `except` block to close the `try`,
-        # and the very next lines in the file jumped straight into a
-        # brand-new `@app.route(...)` / `def upload_project():` — i.e.
-        # a second route definition was nested/orphaned inside this
-        # try block with no valid statement connecting them. That is
-        # an unterminated try/incomplete function body, which is a
-        # SyntaxError (or IndentationError) at import time and would
-        # stop the whole app from starting.
-        #
-        # Fixed by completing the function: build the list, return it,
-        # and close out the try/except properly.
-        # -----------------------------------------------------------
         projects = list(projects_collection.find(query).sort("createdAt", -1))
 
-        return jsonify([serialize_doc(p) for p in projects])
+        # FIX: wrap response in {success, data} instead of returning a bare
+        # array. Both inventory_dash.html (`allProjects = d.data || []`)
+        # and admin.html's Send-Property modal (`spProjects = d.data || []`)
+        # read `.data` off the response — a bare array made `.data`
+        # always undefined, so listings never rendered no matter their
+        # status. This was the only bug; the query/filter logic above was
+        # already correct.
+        return jsonify({
+            "success": True,
+            "data": [serialize_doc(p) for p in projects]
+        })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "data": [], "error": str(e)}), 500
 
 
 # -------------------------------
