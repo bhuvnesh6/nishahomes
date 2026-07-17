@@ -20,6 +20,7 @@
   --border-dark:   rgba(255,255,255,0.10);
   --success:       #10B981;
   --hot:           #EF4444;
+  --info:          #3B82F6;
   --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
   --sh:            0 6px 24px rgba(45,49,66,0.10);
   --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
@@ -32,6 +33,7 @@
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 a{text-decoration:none;color:inherit}
 button{font-family:inherit;cursor:pointer;border:none;background:none}
+textarea,input,select{font-family:'DM Sans',sans-serif}
 
 .loader-overlay{position:fixed;inset:0;background:rgba(250,249,246,0.97);display:flex;align-items:center;justify-content:center;z-index:10000;transition:opacity .4s ease,visibility .4s ease}
 .loader-overlay.hidden{opacity:0;pointer-events:none;visibility:hidden}
@@ -71,13 +73,25 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .page-title{font-family:'Playfair Display',serif;font-size:1.7rem;font-weight:900;color:var(--text);letter-spacing:-.5px}
 .page-subtitle{font-size:0.85rem;color:var(--text-soft);margin-top:3px}
 
+/* TABS */
+.tabbar{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;scrollbar-width:thin}
+.tab-btn{
+  padding:9px 18px;border-radius:var(--radius-pill);border:1.5px solid var(--border);background:#fff;
+  font-size:0.82rem;font-weight:600;color:var(--text-soft);white-space:nowrap;transition:var(--transition);
+  display:flex;align-items:center;gap:6px;
+}
+.tab-btn:hover{border-color:var(--accent);color:var(--accent)}
+.tab-btn.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.tab-badge{background:var(--accent);color:#fff;border-radius:var(--radius-pill);font-size:0.65rem;font-weight:700;padding:2px 7px}
+.tab-btn.active .tab-badge{background:rgba(255,255,255,.25)}
+
 /* FILTERS */
 .filter-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px}
 .filter-search-wrap{position:relative;flex:1;min-width:200px;max-width:340px}
 .filter-search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-soft)}
 .filter-search{
   width:100%;padding:10px 14px 10px 36px;border:2px solid var(--border);border-radius:var(--radius-sm);
-  background:#fff;font-family:'DM Sans',sans-serif;font-size:0.875rem;color:var(--text);box-shadow:var(--sh-sm);
+  background:#fff;font-size:0.875rem;color:var(--text);box-shadow:var(--sh-sm);
 }
 .filter-search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
 .filter-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
@@ -108,8 +122,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   position:absolute;top:10px;right:10px;padding:4px 9px;border-radius:var(--radius-pill);
   font-size:0.68rem;font-weight:700;background:rgba(239,131,84,0.9);color:#fff;
 }
-
-/* 🔥 NEW */
 .pc-status-badge{
   position:absolute;bottom:10px;left:10px;padding:4px 11px;border-radius:var(--radius-pill);
   font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
@@ -117,6 +129,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .pc-status-badge.pending{background:rgba(245,158,11,0.92);color:#fff}
 .pc-status-badge.approved{background:rgba(16,185,129,0.92);color:#fff}
+.pc-stage-badge{
+  position:absolute;bottom:10px;right:10px;padding:4px 10px;border-radius:var(--radius-pill);
+  font-size:0.64rem;font-weight:700;background:rgba(59,130,246,0.92);color:#fff;backdrop-filter:blur(4px);
+}
 .pc-action-btn.approve-btn{border-color:var(--success);color:var(--success)}
 .pc-action-btn.approve-btn:hover{background:rgba(16,185,129,.08)}
 
@@ -131,14 +147,16 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   font-size:0.68rem;color:var(--text-soft);background:var(--bg);padding:3px 9px;
   border-radius:var(--radius-pill);border:1px solid var(--border);
 }
-.pc-actions{display:flex;gap:6px;padding:10px 16px 14px;border-top:1px solid var(--border)}
+.pc-actions{display:flex;gap:6px;padding:10px 16px 14px;border-top:1px solid var(--border);flex-wrap:wrap}
 .pc-action-btn{
   flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;
   border-radius:var(--radius-sm);border:1.5px solid var(--border);font-size:0.78rem;font-weight:600;
-  color:var(--text-soft);transition:var(--transition);background:#fff;
+  color:var(--text-soft);transition:var(--transition);background:#fff;min-width:70px;
 }
 .pc-action-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(239,131,84,.05)}
 .pc-action-btn.danger:hover{border-color:var(--hot);color:var(--hot);background:rgba(239,68,68,.05)}
+.pc-action-btn.stage-btn{border-color:var(--info);color:var(--info)}
+.pc-action-btn.stage-btn:hover{background:rgba(59,130,246,.08)}
 
 .empty-state{padding:80px 20px;text-align:center;grid-column:1/-1}
 .empty-state-icon{font-size:3rem;margin-bottom:12px;opacity:.6}
@@ -153,10 +171,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .modal-overlay.active{display:flex}
 .modal{
   background:linear-gradient(145deg,var(--primary) 0%,var(--primary-mid) 100%);
-  border-radius:22px;padding:32px 26px;max-width:480px;width:100%;
+  border-radius:22px;padding:32px 26px;max-width:520px;width:100%;
   box-shadow:0 24px 70px rgba(0,0,0,.35);position:relative;max-height:90vh;overflow-y:auto;
   animation:modalIn .35s cubic-bezier(.22,1,.36,1) both;
 }
+.modal.wide{max-width:640px}
 @keyframes modalIn{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:scale(1) translateY(0)}}
 .modal-close{
   position:absolute;top:16px;right:16px;width:32px;height:32px;background:rgba(255,255,255,.1);
@@ -165,15 +184,17 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .modal-close:hover{background:var(--accent);color:#fff;transform:rotate(90deg)}
 .modal h2{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:900;color:#fff;margin-bottom:22px}
+.modal h4{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700;color:var(--accent-light);margin:18px 0 10px}
 .form-group{margin-bottom:16px}
 .form-label{display:block;font-size:0.73rem;font-weight:600;color:rgba(255,255,255,.5);
   text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px}
 .form-input,.form-select,.form-textarea{
   width:100%;padding:11px 13px;border:2px solid rgba(255,255,255,.12);border-radius:var(--radius-sm);
-  font-family:'DM Sans',sans-serif;font-size:0.88rem;color:var(--text);background:var(--bg);
+  font-size:0.88rem;color:var(--text);background:var(--bg);
 }
 .form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
 .form-textarea{resize:vertical;min-height:70px}
+.form-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .file-drop{
   border:2px dashed rgba(255,255,255,.2);border-radius:var(--radius-sm);padding:18px;text-align:center;
   color:rgba(255,255,255,.55);font-size:0.82rem;cursor:pointer;transition:var(--transition);
@@ -187,9 +208,20 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,131,84,.38)}
 .submit-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.ghost-btn{
+  width:100%;padding:11px;border-radius:var(--radius-sm);border:1.5px solid rgba(255,255,255,.18);
+  color:#fff;font-size:0.85rem;font-weight:600;background:transparent;transition:var(--transition);margin-top:8px;
+}
+.ghost-btn:hover{border-color:var(--accent);color:var(--accent-light)}
+.danger-btn{
+  width:100%;padding:11px;border-radius:var(--radius-sm);border:1.5px solid var(--hot);
+  color:var(--hot);font-size:0.85rem;font-weight:600;background:transparent;margin-top:8px;
+}
+.danger-btn:hover{background:rgba(239,68,68,.1)}
 
 .stats-row{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px}
-@media(min-width:600px){.stats-row{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:640px){.stats-row{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:900px){.stats-row.dash{grid-template-columns:repeat(5,1fr)}}
 .stat-card{
   background:var(--primary-deep);border-radius:var(--radius);padding:16px;border:1px solid var(--border-dark);
   position:relative;overflow:hidden;
@@ -199,6 +231,43 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .stat-label{font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.7px;
   color:rgba(255,255,255,.45);margin-bottom:6px}
 .stat-value{font-family:'Playfair Display',serif;font-size:1.7rem;font-weight:900;color:#fff}
+
+/* Requirement / Partner rows */
+.req-card{
+  background:#fff;border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--sh-sm);
+  padding:16px;transition:var(--transition);cursor:pointer;
+}
+.req-card:hover{transform:translateY(-2px);box-shadow:var(--sh-lg);border-color:var(--accent)}
+.req-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.req-pill{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 10px;border-radius:var(--radius-pill);border:1.5px solid}
+.req-title{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700;color:var(--primary)}
+.req-loc{font-size:0.8rem;color:var(--accent);margin-top:2px}
+.req-meta{font-size:0.78rem;color:var(--text-soft);margin-top:6px}
+.req-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:0.72rem;color:var(--text-soft)}
+
+.partner-row{
+  background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--sh-sm);
+}
+.partner-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.partner-name{font-weight:700;color:var(--primary);font-size:0.95rem}
+.partner-sub{font-size:0.78rem;color:var(--text-soft);margin-top:2px}
+.partner-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.tag-btn{
+  padding:6px 13px;border-radius:var(--radius-pill);border:1.5px solid var(--border);font-size:0.75rem;font-weight:600;
+  color:var(--text-soft);background:#fff;transition:var(--transition);
+}
+.tag-btn:hover{border-color:var(--accent);color:var(--accent)}
+.tag-btn.revoked{color:var(--hot);border-color:var(--hot)}
+.tag-btn.active-tag{color:var(--success);border-color:var(--success)}
+
+.detail-row{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.detail-k{width:120px;flex-shrink:0;color:rgba(255,255,255,.45);font-size:0.78rem}
+.detail-v{font-size:0.85rem;color:#fff;line-height:1.5}
+.detail-v a{color:var(--accent-light)}
+
+.perf-row{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px}
+.resp-block{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -206,7 +275,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 <div class="loader-overlay" id="loader"><div class="loader"></div></div>
 
 <header class="topbar">
-  <div class="topbar-title">Nisha<span>Homes</span> <span style="color:rgba(255,255,255,.3);font-size:.8rem;font-family:'DM Sans',sans-serif;font-weight:400">Inventory</span></div>
+  <div class="topbar-title">Nisha<span>Homes</span> <span style="color:rgba(255,255,255,.3);font-size:.8rem;font-weight:400">Inventory Desk</span></div>
   <span class="topbar-role-badge" id="roleBadge">{{ role|upper }}</span>
   <div class="topbar-right">
     <button class="topbar-btn" id="openAddModalBtn">
@@ -222,83 +291,37 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
 <div class="content">
 
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-label">Total Listings</div>
-      <div class="stat-value" id="statTotal">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Images</div>
-      <div class="stat-value" id="statImages">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Videos</div>
-      <div class="stat-value" id="statVideos">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Categories</div>
-      <div class="stat-value" id="statCategories">—</div>
-    </div>
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card"><div class="stat-label">Total Listings</div><div class="stat-value" id="statTotal">—</div></div>
+    <div class="stat-card"><div class="stat-label">Images</div><div class="stat-value" id="statImages">—</div></div>
+    <div class="stat-card"><div class="stat-label">Videos</div><div class="stat-value" id="statVideos">—</div></div>
+    <div class="stat-card"><div class="stat-label">Categories</div><div class="stat-value" id="statCategories">—</div></div>
   </div>
 
-  <div class="page-header">
-    <div>
-      <div class="page-title">{{ 'All Partner Inventory' if role in ('admin','emp') else 'My Inventory' }}</div>
-      <div class="page-subtitle" id="pageSubtitle">Loading listings…</div>
-    </div>
-  </div>
+  <div class="tabbar" id="tabbar"></div>
 
-  <div class="filter-bar">
-    <div class="filter-search-wrap">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" class="filter-search" id="searchInput" placeholder="Search name, location…" autocomplete="off">
-    </div>
-    <div class="filter-chips" id="categoryChips">
-      <button class="filter-chip active" data-cat="all">All</button>
-    </div>
-  </div>
-
-  <div class="projects-grid" id="projectsGrid">
-    <div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>
-  </div>
+  <div id="tabContent"></div>
 
 </div>
 
-<!-- ADD / EDIT MODAL -->
+<!-- ADD / EDIT PROJECT MODAL -->
 <div class="modal-overlay" id="projectModal">
   <div class="modal">
     <button class="modal-close" id="closeProjectModal">✕</button>
     <h2 id="projectModalTitle">Add Listing</h2>
     <form id="projectForm">
       <input type="hidden" id="editingId" value="">
-      <div class="form-group">
-        <label class="form-label">Project Name</label>
-        <input type="text" class="form-input" id="pName" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Location</label>
-        <input type="text" class="form-input" id="pLocation" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Category</label>
+      <div class="form-group"><label class="form-label">Project Name</label><input type="text" class="form-input" id="pName" required></div>
+      <div class="form-group"><label class="form-label">Location</label><input type="text" class="form-input" id="pLocation" required></div>
+      <div class="form-group"><label class="form-label">Category</label>
         <select class="form-select" id="pCategory" required>
           <option value="">Select category</option>
-          <option>Residential</option>
-          <option>Commercial</option>
-          <option>Plot</option>
-          <option>Villa</option>
-          <option>Farmhouse</option>
-          <option>Rental</option>
+          <option>Residential</option><option>Commercial</option><option>Plot</option>
+          <option>Villa</option><option>Farmhouse</option><option>Rental</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">Budget</label>
-        <input type="text" class="form-input" id="pBudget" placeholder="e.g. ₹85L - ₹1.2Cr" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-textarea" id="pDescription" required></textarea>
-      </div>
+      <div class="form-group"><label class="form-label">Budget</label><input type="text" class="form-input" id="pBudget" placeholder="e.g. ₹85L - ₹1.2Cr" required></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="pDescription" required></textarea></div>
       <div class="form-group">
         <label class="form-label">Media (Image or Video)</label>
         <div class="file-drop" id="fileDropZone">Click to choose an image or video</div>
@@ -309,18 +332,143 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   </div>
 </div>
 
+<!-- STAGE UPDATE MODAL -->
+<div class="modal-overlay" id="stageModal">
+  <div class="modal">
+    <button class="modal-close" id="closeStageModal">✕</button>
+    <h2>Update Stage</h2>
+    <input type="hidden" id="stageProjectId">
+    <div class="form-group"><label class="form-label">CRM Stage</label><select class="form-select" id="stageSelect"></select></div>
+    <div class="form-group"><label class="form-label">Remark (optional)</label><textarea class="form-textarea" id="stageRemark" placeholder="e.g. Client visiting Saturday"></textarea></div>
+    <button class="submit-btn" id="stageSaveBtn">Update Stage</button>
+  </div>
+</div>
+
+<!-- ADD REQUIREMENT MODAL -->
+<div class="modal-overlay" id="reqModal">
+  <div class="modal wide">
+    <button class="modal-close" id="closeReqModal">✕</button>
+    <h2>Add Requirement</h2>
+    <div id="reqOnBehalfWrap" class="form-group" style="display:none">
+      <label class="form-label">On behalf of</label>
+      <select class="form-select" id="rOnBehalf"><option value="">Coordinator (self)</option></select>
+    </div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Client name (optional)</label><input class="form-input" id="rClientName"></div>
+      <div class="form-group"><label class="form-label">Client mobile (optional)</label><input class="form-input" id="rClientMobile" inputmode="tel"></div>
+    </div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Requirement type</label>
+        <select class="form-select" id="rType"><option>Buy</option><option>Rent</option><option>Lease</option></select></div>
+      <div class="form-group"><label class="form-label">Priority</label>
+        <select class="form-select" id="rPriority"><option>High</option><option selected>Medium</option><option>Low</option></select></div>
+    </div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Property type</label>
+        <select class="form-select" id="rPropType"><option>Apartment</option><option>Builder Floor</option><option>Villa</option><option>Independent House</option><option>Plot</option><option>Farmhouse</option><option>Commercial</option><option>Studio</option><option>Holiday Home</option></select></div>
+      <div class="form-group"><label class="form-label">Configuration</label>
+        <select class="form-select" id="rConfig"><option>Studio</option><option>1 BHK</option><option selected>2 BHK</option><option>3 BHK</option><option>4 BHK</option><option>Villa</option><option>Builder Floor</option><option>Plot</option><option>Commercial</option><option>Farm House</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Preferred location</label><input class="form-input" id="rLocation" placeholder="e.g. Vasant Kunj"></div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Budget minimum</label><input class="form-input" id="rBudgetMin" placeholder="e.g. 2 Cr"></div>
+      <div class="form-group"><label class="form-label">Budget maximum</label><input class="form-input" id="rBudgetMax" placeholder="e.g. 2.5 Cr"></div>
+    </div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Min area</label><input class="form-input" id="rAreaMin" placeholder="e.g. 1500 sq.ft"></div>
+      <div class="form-group"><label class="form-label">Max area</label><input class="form-input" id="rAreaMax" placeholder="e.g. 2000 sq.ft"></div>
+    </div>
+    <div class="form-row2">
+      <div class="form-group"><label class="form-label">Furnishing</label>
+        <select class="form-select" id="rFurnish"><option>Unfurnished</option><option>Semi-furnished</option><option>Furnished</option></select></div>
+      <div class="form-group"><label class="form-label">Possession</label>
+        <select class="form-select" id="rPossession"><option>Ready to move</option><option>Under construction</option><option>New launch</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Additional notes</label><textarea class="form-textarea" id="rNotes"></textarea></div>
+    <button class="submit-btn" id="reqSubmitBtn">Submit Requirement</button>
+  </div>
+</div>
+
+<!-- REQUIREMENT DETAIL / BROADCAST MODAL (admin/emp) -->
+<div class="modal-overlay" id="reqDetailModal">
+  <div class="modal wide">
+    <button class="modal-close" id="closeReqDetailModal">✕</button>
+    <div id="reqDetailBody"></div>
+  </div>
+</div>
+
+<!-- RESPOND MODAL (partner) -->
+<div class="modal-overlay" id="respondModal">
+  <div class="modal">
+    <button class="modal-close" id="closeRespondModal">✕</button>
+    <div id="respondBody"></div>
+  </div>
+</div>
+
 <script>
 const BASE = 'https://api.phishnix.site/api';
 const ROLE = "{{ role }}";
+const EMP_NUMBER = "{{ employee_number }}";
+const EMP_NAME = "{{ employee_name }}";
 const IS_STAFF = (ROLE === 'admin' || ROLE === 'emp');
+const IS_ADMIN = (ROLE === 'admin');
+
+const STAGES = ["Approved","Customer Shared","Site Visit Scheduled","Negotiation","Token Received","Agreement Done","Registration Done","Sold","Rented","Closed","Cancelled"];
+const REQ_STATUS_LABELS = {new:"New",broadcasted:"Broadcasted",responses:"Responses",matched:"Matched",visit:"Visit scheduled",closed:"Closed",cancelled:"Cancelled",expired:"Expired",rejected:"Rejected"};
 
 let allProjects = [];
+let allRequirements = [];
+let allPartners = [];
+let settingsData = {};
 let currentCategory = 'all';
+let reqStatusFilter = 'new';
+let state = { tab: 'inventory' };
 
 function showLoader(){document.getElementById('loader').classList.remove('hidden')}
 function hideLoader(){document.getElementById('loader').classList.add('hidden')}
-function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toast(m){ alert(m); } // simple, non-blocking-enough for this admin tool
+function fmtDate(v){ if(!v) return '-'; try{ return new Date(v).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '-'; } }
+function clean(p){ return String(p||'').replace(/\D/g,''); }
+function waLink(number, text){ let p = clean(number); if(p.length===10) p = '91'+p; return 'https://wa.me/'+p+(text?('?text='+encodeURIComponent(text)):''); }
 
+/* ===================== TABS ===================== */
+function tabDefs(){
+  let t = [{id:'inventory', label:'Inventory'}, {id:'requirements', label:'Requirements', badge: allRequirements.filter(r=>r.status==='new').length}];
+  if(ROLE === 'partner') t.push({id:'broadcasts', label:'Broadcasts', badge: myPendingBroadcasts().length});
+  if(IS_STAFF){
+    t.push({id:'dashboard', label:'Dashboard'});
+  }
+  if(IS_ADMIN){
+    t.push({id:'partners', label:'Partners'});
+    t.push({id:'settings', label:'Settings'});
+  }
+  return t;
+}
+function renderTabbar(){
+  const defs = tabDefs();
+  document.getElementById('tabbar').innerHTML = defs.map(t=>{
+    const active = state.tab===t.id ? 'active' : '';
+    const badge = t.badge ? `<span class="tab-badge">${t.badge}</span>` : '';
+    return `<button class="tab-btn ${active}" data-tab="${t.id}">${t.label}${badge}</button>`;
+  }).join('');
+  document.querySelectorAll('[data-tab]').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.tab = b.dataset.tab; switchTab(); });
+  });
+}
+function switchTab(){
+  renderTabbar();
+  document.getElementById('statsRow').style.display = state.tab==='inventory' ? 'grid' : 'none';
+  const c = document.getElementById('tabContent');
+  if(state.tab==='inventory'){ c.innerHTML = inventoryTabHTML(); bindInventoryTab(); }
+  else if(state.tab==='requirements'){ c.innerHTML = requirementsTabHTML(); bindRequirementsTab(); }
+  else if(state.tab==='broadcasts'){ c.innerHTML = broadcastsTabHTML(); bindBroadcastsTab(); }
+  else if(state.tab==='dashboard'){ c.innerHTML = `<div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>`; loadDashboard(); }
+  else if(state.tab==='partners'){ c.innerHTML = `<div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>`; loadPartnersTab(); }
+  else if(state.tab==='settings'){ c.innerHTML = settingsTabHTML(); bindSettingsTab(); }
+}
+
+/* ===================== INVENTORY TAB (existing behavior) ===================== */
 async function loadProjects(){
   showLoader();
   try{
@@ -328,102 +476,111 @@ async function loadProjects(){
     const d = await res.json();
     allProjects = (d.data || []).sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
     buildStats();
-    buildCategoryChips();
-    render();
+    if(state.tab==='inventory'){ document.getElementById('tabContent').innerHTML = inventoryTabHTML(); bindInventoryTab(); }
   }catch(e){
     console.error(e);
-    document.getElementById('projectsGrid').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><h3>Failed to load</h3><p>Please refresh the page</p></div>`;
   }finally{
     hideLoader();
   }
 }
-
 function buildStats(){
   document.getElementById('statTotal').textContent = allProjects.length;
   document.getElementById('statImages').textContent = allProjects.filter(p=>p.type==='image').length;
   document.getElementById('statVideos').textContent = allProjects.filter(p=>p.type==='video').length;
   document.getElementById('statCategories').textContent = new Set(allProjects.map(p=>p.category).filter(Boolean)).size;
 }
-
-function buildCategoryChips(){
+function inventoryTabHTML(){
   const cats = Array.from(new Set(allProjects.map(p=>p.category).filter(Boolean)));
-  const wrap = document.getElementById('categoryChips');
-  wrap.innerHTML = `<button class="filter-chip ${currentCategory==='all'?'active':''}" data-cat="all">All</button>` +
-    cats.map(c=>`<button class="filter-chip ${currentCategory===c?'active':''}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`).join('');
-  wrap.querySelectorAll('.filter-chip').forEach(chip=>{
-    chip.addEventListener('click', ()=>{
-      currentCategory = chip.dataset.cat;
-      wrap.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
-      chip.classList.add('active');
-      render();
-    });
-  });
+  let html = `<div class="page-header"><div>
+      <div class="page-title">${IS_STAFF ? 'All Partner Inventory' : 'My Inventory'}</div>
+      <div class="page-subtitle" id="pageSubtitle">Loading listings…</div></div></div>`;
+  html += `<div class="filter-bar">
+    <div class="filter-search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" class="filter-search" id="searchInput" placeholder="Search name, location…" autocomplete="off">
+    </div>
+    <div class="filter-chips" id="categoryChips">
+      <button class="filter-chip ${currentCategory==='all'?'active':''}" data-cat="all">All</button>
+      ${cats.map(c=>`<button class="filter-chip ${currentCategory===c?'active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+    </div></div>`;
+  html += `<div class="projects-grid" id="projectsGrid"></div>`;
+  return html;
 }
-
-function render(){
-  const q = (document.getElementById('searchInput').value||'').toLowerCase();
+function bindInventoryTab(){
+  document.getElementById('searchInput').addEventListener('input', renderInventoryGrid);
+  document.querySelectorAll('#categoryChips [data-cat]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ currentCategory = chip.dataset.cat; document.getElementById('tabContent').innerHTML = inventoryTabHTML(); bindInventoryTab(); renderInventoryGrid(); });
+  });
+  document.getElementById('openAddModalBtn').onclick = openAddModal;
+  renderInventoryGrid();
+}
+function renderInventoryGrid(){
+  const q = (document.getElementById('searchInput')?.value||'').toLowerCase();
   const filtered = allProjects.filter(p=>{
     if(currentCategory!=='all' && p.category!==currentCategory) return false;
     if(!q) return true;
     return (p.name||'').toLowerCase().includes(q) || (p.location||'').toLowerCase().includes(q);
   });
-
-  document.getElementById('pageSubtitle').textContent = `${filtered.length} listing${filtered.length!==1?'s':''}`;
-
-  const grid = document.getElementById('projectsGrid');
-  if(filtered.length===0){
-    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏗️</div><h3>No listings yet</h3><p>Click "Add Listing" to create your first one</p></div>`;
-    return;
-  }
-
-  grid.innerHTML = filtered.map(p=>{
-    const media = p.mediaUrl || p.img || '';
-    const isVideo = p.type === 'video';
-    const mediaTag = isVideo
-      ? `<video src="${escHtml(media)}" muted></video>`
-      : `<img src="${escHtml(media)}" alt="${escHtml(p.name)}" loading="lazy">`;
-
-    const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === "{{ employee_number }}");
-    // 🔥 NEW: default "approved" for older records without a status field
-    const status = p.status || 'approved';
-    const isPending = status === 'pending';
-
-    return `
-    <div class="project-card">
-      <div class="pc-media">
-        ${mediaTag}
-        <span class="pc-cat-badge">${escHtml(p.category||'—')}</span>
-        <span class="pc-type-badge">${isVideo?'🎥 Video':'🖼 Image'}</span>
-        <span class="pc-status-badge ${isPending?'pending':'approved'}">${isPending?'⏳ Pending Review':'✅ Approved'}</span>
+  const sub = document.getElementById('pageSubtitle'); if(sub) sub.textContent = `${filtered.length} listing${filtered.length!==1?'s':''}`;
+  const grid = document.getElementById('projectsGrid'); if(!grid) return;
+  if(filtered.length===0){ grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏗️</div><h3>No listings yet</h3><p>Click "Add Listing" to create your first one</p></div>`; return; }
+  grid.innerHTML = filtered.map(projectCardHTML).join('');
+  document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click', ()=>openEditModal(JSON.parse(b.dataset.edit))));
+  document.querySelectorAll('[data-del-proj]').forEach(b=>b.addEventListener('click', ()=>deleteProject(b.dataset.delProj)));
+  document.querySelectorAll('[data-approve]').forEach(b=>b.addEventListener('click', ()=>approveProject(b.dataset.approve)));
+  document.querySelectorAll('[data-unapprove]').forEach(b=>b.addEventListener('click', ()=>unapproveProject(b.dataset.unapprove)));
+  document.querySelectorAll('[data-stage]').forEach(b=>b.addEventListener('click', ()=>openStageModal(b.dataset.stage, b.dataset.stageCurrent)));
+  document.querySelectorAll('[data-share-proj]').forEach(b=>b.addEventListener('click', ()=>shareListingWA(b.dataset.shareProj)));
+}
+function projectCardHTML(p){
+  const media = p.mediaUrl || p.img || '';
+  const isVideo = p.type === 'video';
+  const mediaTag = isVideo ? `<video src="${esc(media)}" muted></video>` : `<img src="${esc(media)}" alt="${esc(p.name)}" loading="lazy">`;
+  const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === EMP_NUMBER);
+  const status = p.status || 'approved';
+  const isPending = status === 'pending';
+  const stage = p.stage || (status==='approved' ? 'Approved' : '');
+  return `
+  <div class="project-card">
+    <div class="pc-media">
+      ${mediaTag}
+      <span class="pc-cat-badge">${esc(p.category||'—')}</span>
+      <span class="pc-type-badge">${isVideo?'🎥 Video':'🖼 Image'}</span>
+      <span class="pc-status-badge ${isPending?'pending':'approved'}">${isPending?'⏳ Pending':'✅ Approved'}</span>
+      ${(!isPending && stage) ? `<span class="pc-stage-badge">${esc(stage)}</span>` : ''}
+    </div>
+    <div class="pc-body">
+      <div class="pc-name">${esc(p.name)}</div>
+      <div class="pc-location">📍 ${esc(p.location)}</div>
+      <div class="pc-desc">${esc(p.description)}</div>
+      <div class="pc-footer">
+        <div class="pc-budget">${esc(p.budget)}</div>
+        ${IS_STAFF ? `<div class="pc-owner">${esc(p.ownerName || 'Unassigned')}</div>` : ''}
       </div>
-      <div class="pc-body">
-        <div class="pc-name">${escHtml(p.name)}</div>
-        <div class="pc-location">📍 ${escHtml(p.location)}</div>
-        <div class="pc-desc">${escHtml(p.description)}</div>
-        <div class="pc-footer">
-          <div class="pc-budget">${escHtml(p.budget)}</div>
-          ${IS_STAFF ? `<div class="pc-owner">${escHtml(p.ownerName || 'Unassigned')}</div>` : ''}
-        </div>
-      </div>
-      ${canManage || (ROLE==='admin' && isPending) ? `
-      <div class="pc-actions">
-        ${ROLE==='admin' && isPending ? `<button class="pc-action-btn approve-btn" onclick="approveProject('${p._id}')">✅ Approve</button>` : ''}
-        ${ROLE==='admin' && !isPending ? `<button class="pc-action-btn" onclick="unapproveProject('${p._id}')">↩️ Unapprove</button>` : ''}
-        ${canManage ? `<button class="pc-action-btn" onclick='openEditModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️ Edit</button>` : ''}
-        ${canManage ? `<button class="pc-action-btn danger" onclick="deleteProject('${p._id}')">🗑 Delete</button>` : ''}
-      </div>` : ''}
-    </div>`;
-  }).join('');
+    </div>
+    <div class="pc-actions">
+      ${IS_ADMIN && isPending ? `<button class="pc-action-btn approve-btn" data-approve="${p._id}">✅ Approve</button>` : ''}
+      ${IS_ADMIN && !isPending ? `<button class="pc-action-btn" data-unapprove="${p._id}">↩️ Unapprove</button>` : ''}
+      ${IS_STAFF && !isPending ? `<button class="pc-action-btn stage-btn" data-stage="${p._id}" data-stage-current="${esc(stage)}">📊 Stage</button>` : ''}
+      ${!isPending ? `<button class="pc-action-btn" data-share-proj="${p._id}">📤 Share</button>` : ''}
+      ${canManage ? `<button class="pc-action-btn" data-edit='${JSON.stringify(p).replace(/'/g,"&#39;")}'>✏️ Edit</button>` : ''}
+      ${canManage ? `<button class="pc-action-btn danger" data-del-proj="${p._id}">🗑 Delete</button>` : ''}
+    </div>
+  </div>`;
+}
+function shareListingWA(id){
+  const p = allProjects.find(x=>x._id===id); if(!p) return;
+  const lines = [`🏡 ${p.name}`, `📍 ${p.location}`, `💰 ${p.budget}`, '', p.description||'', ''];
+  if(settingsData.corporate) lines.push(`Nisha Homes: ${settingsData.corporate}`);
+  const target = settingsData.corporate || '';
+  window.open(waLink(target, lines.join('\n')), '_blank');
 }
 
-document.getElementById('searchInput').addEventListener('input', render);
-
-/* ── ADD/EDIT MODAL ── */
+/* ADD/EDIT project modal (same as before) */
 const projectModal = document.getElementById('projectModal');
 const fileDropZone = document.getElementById('fileDropZone');
 const fileInput = document.getElementById('pMedia');
-
-document.getElementById('openAddModalBtn').addEventListener('click', ()=>{
+function openAddModal(){
   document.getElementById('editingId').value = '';
   document.getElementById('projectModalTitle').textContent = 'Add Listing';
   document.getElementById('projectForm').reset();
@@ -431,18 +588,13 @@ document.getElementById('openAddModalBtn').addEventListener('click', ()=>{
   fileDropZone.classList.remove('has-file');
   fileInput.required = true;
   projectModal.classList.add('active');
-});
+}
 document.getElementById('closeProjectModal').addEventListener('click', ()=> projectModal.classList.remove('active'));
 projectModal.addEventListener('click', e=>{ if(e.target.id==='projectModal') projectModal.classList.remove('active') });
-
 fileDropZone.addEventListener('click', ()=> fileInput.click());
 fileInput.addEventListener('change', ()=>{
-  if(fileInput.files[0]){
-    fileDropZone.textContent = '✓ ' + fileInput.files[0].name;
-    fileDropZone.classList.add('has-file');
-  }
+  if(fileInput.files[0]){ fileDropZone.textContent = '✓ ' + fileInput.files[0].name; fileDropZone.classList.add('has-file'); }
 });
-
 function openEditModal(p){
   document.getElementById('editingId').value = p._id;
   document.getElementById('projectModalTitle').textContent = 'Edit Listing';
@@ -457,12 +609,10 @@ function openEditModal(p){
   fileInput.value = '';
   projectModal.classList.add('active');
 }
-
 document.getElementById('projectForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const btn = document.getElementById('projectSubmitBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
-
   const editingId = document.getElementById('editingId').value;
   const fd = new FormData();
   fd.append('name', document.getElementById('pName').value);
@@ -471,71 +621,515 @@ document.getElementById('projectForm').addEventListener('submit', async (e)=>{
   fd.append('budget', document.getElementById('pBudget').value);
   fd.append('description', document.getElementById('pDescription').value);
   if(fileInput.files[0]) fd.append('media', fileInput.files[0]);
-
   try{
     const url = editingId ? `${BASE}/projects/update/${editingId}` : `${BASE}/projects/upload`;
     const res = await fetch(url, { method: 'POST', body: fd, credentials: 'include' });
     const d = await res.json();
-    if(d.status !== 'success'){ alert(d.message || 'Save failed'); return; }
+    if(d.status !== 'success'){ toast(d.message || 'Save failed'); return; }
     projectModal.classList.remove('active');
     loadProjects();
-  }catch(err){
-    console.error(err);
-    alert('Save failed. Please try again.');
-  }finally{
-    btn.disabled = false; btn.textContent = 'Save Listing';
-  }
+  }catch(err){ console.error(err); toast('Save failed. Please try again.'); }
+  finally{ btn.disabled = false; btn.textContent = 'Save Listing'; }
 });
-
 async function deleteProject(id){
   if(!confirm('Delete this listing? This cannot be undone.')) return;
   showLoader();
   try{
     const res = await fetch(`${BASE}/projects/delete/${id}`, { method: 'DELETE', credentials: 'include' });
     const d = await res.json();
-    if(d.status !== 'success'){ alert(d.message || 'Delete failed'); return; }
+    if(d.status !== 'success'){ toast(d.message || 'Delete failed'); return; }
     loadProjects();
-  }catch(e){
-    console.error(e);
-    alert('Delete failed. Please try again.');
-  }finally{
-    hideLoader();
-  }
+  }catch(e){ console.error(e); toast('Delete failed.'); }
+  finally{ hideLoader(); }
 }
-
-
-
-// 🔥 NEW
 async function approveProject(id){
   showLoader();
   try{
-    const res = await fetch(`${BASE}/projects/approve/${id}`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
-      body: JSON.stringify({ action:'approve' })
-    });
+    const res = await fetch(`${BASE}/projects/approve/${id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ action:'approve' }) });
     const d = await res.json();
-    if(d.status !== 'success'){ alert(d.message || 'Approve failed'); return; }
+    if(d.status !== 'success'){ toast(d.message || 'Approve failed'); return; }
     loadProjects();
-  }catch(e){ console.error(e); alert('Approve failed.'); }
+  }catch(e){ console.error(e); toast('Approve failed.'); }
   finally{ hideLoader(); }
 }
-
 async function unapproveProject(id){
   if(!confirm('Move this listing back to Pending?')) return;
   showLoader();
   try{
-    const res = await fetch(`${BASE}/projects/approve/${id}`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
-      body: JSON.stringify({ action:'reject' })
-    });
+    const res = await fetch(`${BASE}/projects/approve/${id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ action:'reject' }) });
     const d = await res.json();
-    if(d.status !== 'success'){ alert(d.message || 'Update failed'); return; }
+    if(d.status !== 'success'){ toast(d.message || 'Update failed'); return; }
     loadProjects();
-  }catch(e){ console.error(e); alert('Update failed.'); }
+  }catch(e){ console.error(e); toast('Update failed.'); }
   finally{ hideLoader(); }
 }
+function openStageModal(id, current){
+  document.getElementById('stageProjectId').value = id;
+  const sel = document.getElementById('stageSelect');
+  sel.innerHTML = STAGES.map(s=>`<option ${s===current?'selected':''}>${s}</option>`).join('');
+  document.getElementById('stageRemark').value = '';
+  document.getElementById('stageModal').classList.add('active');
+}
+document.getElementById('closeStageModal').addEventListener('click', ()=>document.getElementById('stageModal').classList.remove('active'));
+document.getElementById('stageModal').addEventListener('click', e=>{ if(e.target.id==='stageModal') e.currentTarget.classList.remove('active'); });
+document.getElementById('stageSaveBtn').addEventListener('click', async ()=>{
+  const id = document.getElementById('stageProjectId').value;
+  const stage = document.getElementById('stageSelect').value;
+  const remark = document.getElementById('stageRemark').value;
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/projects/stage/${id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ stage, remark }) });
+    const d = await res.json();
+    if(d.status !== 'success'){ toast(d.message || 'Update failed'); return; }
+    document.getElementById('stageModal').classList.remove('active');
+    loadProjects();
+  }catch(e){ console.error(e); toast('Update failed.'); }
+  finally{ hideLoader(); }
+});
 
-loadProjects();
+/* ===================== REQUIREMENTS TAB ===================== */
+async function loadRequirements(){
+  try{
+    const res = await fetch(`${BASE}/requirements`, { credentials:'include' });
+    const d = await res.json();
+    allRequirements = d.data || [];
+  }catch(e){ console.error(e); allRequirements = []; }
+}
+function myPendingBroadcasts(){
+  return allRequirements.filter(r=>{
+    const broadcasted = r.broadcastTo === 'all' || (Array.isArray(r.broadcastTo) && r.broadcastTo.includes(EMP_NUMBER));
+    if(!broadcasted) return false;
+    if(r.submittedByNumber === EMP_NUMBER) return false;
+    const responded = (r.responses||[]).some(x=>x.partnerNumber===EMP_NUMBER);
+    return !responded;
+  });
+}
+function reqPillColor(status){
+  return {new:'var(--accent)',broadcasted:'var(--info)',responses:'var(--accent)',matched:'var(--success)',visit:'var(--success)',closed:'var(--text-soft)',cancelled:'var(--hot)',expired:'var(--hot)',rejected:'var(--hot)'}[status] || 'var(--text-soft)';
+}
+function reqCardHTML(r){
+  const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
+  const c = reqPillColor(r.status);
+  return `<div class="req-card" data-req-open="${r._id}">
+    <div class="req-top"><span class="req-pill" style="color:${c};border-color:${c}">${REQ_STATUS_LABELS[r.status]||r.status}</span>
+    <span style="font-size:0.72rem;color:var(--text-soft)">${esc(r.reqType)}${r.priority==='High'?' · <span style="color:var(--hot)">High</span>':''}</span></div>
+    <div class="req-title">${esc((r.config?r.config+' ':'')+r.propertyType)}</div>
+    <div class="req-loc">📍 ${esc(r.location)}</div>
+    <div class="req-meta">${budget?('₹'+esc(budget)):''}</div>
+    <div class="req-foot"><span>${fmtDate(r.createdAt)}</span><span>${(r.responses||[]).length} response(s)</span></div>
+  </div>`;
+}
+function requirementsTabHTML(){
+  let filterBar = '';
+  if(IS_STAFF){
+    const counts = {new:0, active:0, closed:0};
+    allRequirements.forEach(r=>{
+      if(r.status==='new') counts.new++;
+      else if(['broadcasted','responses','matched','visit'].includes(r.status)) counts.active++;
+      else counts.closed++;
+    });
+    filterBar = `<div class="filter-bar">
+      <button class="topbar-btn" id="addReqBtn" style="background:var(--primary)">+ Add Requirement</button>
+      <div class="filter-chips">
+        <button class="filter-chip ${reqStatusFilter==='new'?'active':''}" data-rf="new">New (${counts.new})</button>
+        <button class="filter-chip ${reqStatusFilter==='active'?'active':''}" data-rf="active">In progress (${counts.active})</button>
+        <button class="filter-chip ${reqStatusFilter==='closed'?'active':''}" data-rf="closed">Closed (${counts.closed})</button>
+        <button class="filter-chip ${reqStatusFilter==='all'?'active':''}" data-rf="all">All</button>
+      </div></div>`;
+  } else {
+    filterBar = `<div class="filter-bar"><button class="topbar-btn" id="addReqBtn" style="background:var(--primary)">+ Add Requirement</button></div>`;
+  }
+  let list;
+  if(IS_STAFF){
+    list = allRequirements.filter(r=>{
+      if(reqStatusFilter==='new') return r.status==='new';
+      if(reqStatusFilter==='active') return ['broadcasted','responses','matched','visit'].includes(r.status);
+      if(reqStatusFilter==='closed') return ['closed','cancelled','rejected','expired'].includes(r.status);
+      return true;
+    });
+  } else {
+    list = allRequirements.filter(r=>r.submittedByNumber===EMP_NUMBER);
+  }
+  list = list.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  const grid = list.length ? `<div class="projects-grid">${list.map(reqCardHTML).join('')}</div>`
+    : `<div class="empty-state"><div class="empty-state-icon">📋</div><h3>No requirements here</h3><p>Client requirements will appear here.</p></div>`;
+  return `<div class="page-header"><div><div class="page-title">Requirements Desk</div><div class="page-subtitle">${list.length} requirement${list.length!==1?'s':''}</div></div></div>${filterBar}${grid}`;
+}
+function bindRequirementsTab(){
+  document.getElementById('addReqBtn').addEventListener('click', openReqAddModal);
+  document.querySelectorAll('[data-rf]').forEach(b=>b.addEventListener('click', ()=>{ reqStatusFilter = b.dataset.rf; document.getElementById('tabContent').innerHTML = requirementsTabHTML(); bindRequirementsTab(); }));
+  document.querySelectorAll('[data-req-open]').forEach(c=>c.addEventListener('click', ()=>{
+    const r = allRequirements.find(x=>x._id===c.dataset.reqOpen);
+    if(IS_STAFF) openReqDetail(r); else openReqReadonly(r);
+  }));
+}
+function openReqReadonly(r){
+  const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
+  document.getElementById('reqDetailBody').innerHTML = `
+    <h2>${esc((r.config?r.config+' ':'')+r.propertyType)}</h2>
+    <div class="detail-row"><div class="detail-k">Location</div><div class="detail-v">${esc(r.location)}</div></div>
+    <div class="detail-row"><div class="detail-k">Budget</div><div class="detail-v">${budget?('₹'+esc(budget)):'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Status</div><div class="detail-v">${REQ_STATUS_LABELS[r.status]||r.status}</div></div>
+    <div class="detail-row"><div class="detail-k">Notes</div><div class="detail-v">${esc(r.notes)||'-'}</div></div>`;
+  document.getElementById('reqDetailModal').classList.add('active');
+}
+document.getElementById('closeReqDetailModal').addEventListener('click', ()=>document.getElementById('reqDetailModal').classList.remove('active'));
+document.getElementById('reqDetailModal').addEventListener('click', e=>{ if(e.target.id==='reqDetailModal') e.currentTarget.classList.remove('active'); });
+
+/* ADD REQUIREMENT modal */
+function openReqAddModal(){
+  document.getElementById('reqOnBehalfWrap').style.display = IS_STAFF ? 'block' : 'none';
+  if(IS_STAFF){
+    const sel = document.getElementById('rOnBehalf');
+    sel.innerHTML = '<option value="">Coordinator (self)</option>' + allPartners.map(p=>`<option value="${p['Employee number']}">${esc(p['Employee name'])} (${p['Employee number']})</option>`).join('');
+  }
+  document.getElementById('reqModal').classList.add('active');
+}
+document.getElementById('closeReqModal').addEventListener('click', ()=>document.getElementById('reqModal').classList.remove('active'));
+document.getElementById('reqModal').addEventListener('click', e=>{ if(e.target.id==='reqModal') e.currentTarget.classList.remove('active'); });
+document.getElementById('reqSubmitBtn').addEventListener('click', async ()=>{
+  const g = id => document.getElementById(id).value.trim();
+  const location = g('rLocation');
+  if(!location){ toast('Enter a preferred location'); return; }
+  const payload = {
+    reqType: g('rType'), priority: g('rPriority'), propertyType: g('rPropType'), config: g('rConfig'),
+    location, budgetMin: g('rBudgetMin'), budgetMax: g('rBudgetMax'), areaMin: g('rAreaMin'), areaMax: g('rAreaMax'),
+    furnishing: g('rFurnish'), possession: g('rPossession'), notes: g('rNotes'),
+    clientName: g('rClientName'), clientMobile: g('rClientMobile')
+  };
+  if(IS_STAFF){
+    const sel = document.getElementById('rOnBehalf');
+    const num = sel.value;
+    if(num){
+      const opt = sel.options[sel.selectedIndex].textContent;
+      payload.onBehalfNumber = num;
+      payload.onBehalfName = opt.split(' (')[0];
+    }
+  }
+  showLoader();
+  try{
+    const res = await fetch(`${BASE}/requirements/add`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(payload) });
+    const d = await res.json();
+    if(!d.success){ toast(d.message||'Failed to submit'); return; }
+    document.getElementById('reqModal').classList.remove('active');
+    document.getElementById('reqForm')?.reset?.();
+    toast('Requirement submitted');
+    await loadRequirements();
+    switchTab();
+  }catch(e){ console.error(e); toast('Failed to submit'); }
+  finally{ hideLoader(); }
+});
+
+/* REQUIREMENT DETAIL (staff): status update, broadcast, responses */
+function openReqDetail(r){
+  const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
+  const area = [r.areaMin,r.areaMax].filter(Boolean).join(' – ');
+  const responses = (r.responses||[]).map(x=>{
+    const p = x.property||{};
+    return `<div class="resp-block">
+      <div style="display:flex;justify-content:space-between"><b style="color:#fff">${esc(x.partnerName)}</b><span style="color:var(--accent-light);font-size:0.78rem">${esc(x.type)}</span></div>
+      ${p.title?`<div style="color:#fff;font-size:0.85rem;margin-top:4px">${esc(p.title)} ${p.price?('· '+esc(p.price)):''}</div>`:''}
+      ${p.location?`<div style="color:rgba(255,255,255,.6);font-size:0.78rem">${esc(p.location)}</div>`:''}
+      ${p.notes?`<div style="color:rgba(255,255,255,.75);font-size:0.78rem;margin-top:4px">${esc(p.notes)}</div>`:''}
+      <a href="${waLink(x.partnerNumber,'')}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--accent-light);font-size:0.78rem">WhatsApp ${esc(x.partnerName)} ↗</a>
+    </div>`;
+  }).join('') || `<div style="color:rgba(255,255,255,.5);font-size:0.85rem">No responses yet.</div>`;
+  const broadcastNote = r.broadcastTo === 'all' ? 'Broadcasted to all partners' : (Array.isArray(r.broadcastTo) && r.broadcastTo.length ? `Broadcasted to ${r.broadcastTo.length} partner(s)` : 'Not yet broadcasted');
+
+  document.getElementById('reqDetailBody').innerHTML = `
+    <h2>${esc((r.config?r.config+' ':'')+r.propertyType)}</h2>
+    <div class="detail-row"><div class="detail-k">Status</div><div class="detail-v">${REQ_STATUS_LABELS[r.status]||r.status}</div></div>
+    <div class="detail-row"><div class="detail-k">Location</div><div class="detail-v">${esc(r.location)}</div></div>
+    <div class="detail-row"><div class="detail-k">Budget</div><div class="detail-v">${budget?('₹'+esc(budget)):'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Area</div><div class="detail-v">${esc(area)||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Furnishing</div><div class="detail-v">${esc(r.furnishing)||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Possession</div><div class="detail-v">${esc(r.possession)||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Notes</div><div class="detail-v">${esc(r.notes)||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Client</div><div class="detail-v">${esc([r.clientName,r.clientMobile].filter(Boolean).join(' · '))||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Source</div><div class="detail-v">${esc(r.submittedByName)} · ${esc(r.submittedByNumber)} <a href="${waLink(r.submittedByNumber,'')}" target="_blank">WhatsApp ↗</a></div></div>
+    <div class="detail-row"><div class="detail-k">Received</div><div class="detail-v">${fmtDate(r.createdAt)}</div></div>
+
+    <h4>Broadcast — ${esc(broadcastNote)}</h4>
+    <div class="form-group"><label class="form-label">Send to</label>
+      <select class="form-select" id="bcSelect">
+        <option value="all">All active partners</option>
+        ${allPartners.map(p=>`<option value="${p['Employee number']}">${esc(p['Employee name'])}${p.Areas?(' — '+esc(p.Areas)):''}</option>`).join('')}
+      </select>
+    </div>
+    <button class="ghost-btn" id="bcSendBtn">Broadcast ↗</button>
+
+    <h4>Responses</h4>
+    ${responses}
+
+    <h4>Update Status</h4>
+    <div class="form-group"><select class="form-select" id="reqStatusSelect">
+      ${Object.keys(REQ_STATUS_LABELS).map(k=>`<option value="${k}" ${k===r.status?'selected':''}>${REQ_STATUS_LABELS[k]}</option>`).join('')}
+    </select></div>
+    <button class="submit-btn" id="reqStatusSaveBtn">Update Status</button>
+    <button class="danger-btn" id="reqDeleteBtn">Delete Requirement</button>
+  `;
+  document.getElementById('reqDetailModal').classList.add('active');
+
+  document.getElementById('bcSendBtn').onclick = async ()=>{
+    const val = document.getElementById('bcSelect').value;
+    const to = val==='all' ? 'all' : [val];
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/requirements/broadcast/${r._id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({to}) });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Broadcast failed'); return; }
+      if(val!=='all'){ window.open(waLink(val, `NEW REQUIREMENT (Nisha Homes)\n${r.reqType} · ${r.config||''} ${r.propertyType}\nLocation: ${r.location}${budget?('\nBudget: ₹'+budget):''}\n\nHave matching inventory? Please respond in the app.`), '_blank'); }
+      document.getElementById('reqDetailModal').classList.remove('active');
+      toast('Broadcasted');
+      await loadRequirements(); switchTab();
+    }catch(e){ console.error(e); toast('Broadcast failed'); }
+    finally{ hideLoader(); }
+  };
+  document.getElementById('reqStatusSaveBtn').onclick = async ()=>{
+    const status = document.getElementById('reqStatusSelect').value;
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/requirements/status/${r._id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({status}) });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Update failed'); return; }
+      document.getElementById('reqDetailModal').classList.remove('active');
+      toast('Status updated');
+      await loadRequirements(); switchTab();
+    }catch(e){ console.error(e); toast('Update failed'); }
+    finally{ hideLoader(); }
+  };
+  document.getElementById('reqDeleteBtn').onclick = async ()=>{
+    if(!confirm('Delete this requirement?')) return;
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/requirements/delete/${r._id}`, { method:'DELETE', credentials:'include' });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Delete failed'); return; }
+      document.getElementById('reqDetailModal').classList.remove('active');
+      await loadRequirements(); switchTab();
+    }catch(e){ console.error(e); toast('Delete failed'); }
+    finally{ hideLoader(); }
+  };
+}
+
+/* ===================== BROADCASTS TAB (partner) ===================== */
+function broadcastsTabHTML(){
+  const list = allRequirements.filter(r=>{
+    const broadcasted = r.broadcastTo === 'all' || (Array.isArray(r.broadcastTo) && r.broadcastTo.includes(EMP_NUMBER));
+    return broadcasted && r.submittedByNumber !== EMP_NUMBER;
+  }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  if(!list.length) return `<div class="page-header"><div class="page-title">Broadcasts</div></div><div class="empty-state"><div class="empty-state-icon">📢</div><h3>No broadcasts yet</h3><p>When the coordinator sends you a requirement, it appears here.</p></div>`;
+  return `<div class="page-header"><div><div class="page-title">Broadcasts</div><div class="page-subtitle">${list.length} requirement(s) sent to you</div></div></div>
+    <div class="projects-grid">${list.map(r=>{
+      const mine = (r.responses||[]).find(x=>x.partnerNumber===EMP_NUMBER);
+      const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
+      return `<div class="req-card" data-bc-open="${r._id}">
+        <div class="req-top"><span class="req-pill" style="color:var(--info);border-color:var(--info)">${esc(r.reqType)}</span>
+        ${mine?`<span style="font-size:0.72rem;color:var(--success)">You: ${esc(mine.type)}</span>`:''}</div>
+        <div class="req-title">${esc((r.config?r.config+' ':'')+r.propertyType)}</div>
+        <div class="req-loc">📍 ${esc(r.location)}</div>
+        <div class="req-meta">${budget?('₹'+esc(budget)):''}</div>
+        <div class="req-foot"><span>${fmtDate(r.createdAt)}</span><span>${mine?'Responded':'Respond →'}</span></div>
+      </div>`;
+    }).join('')}</div>`;
+}
+function bindBroadcastsTab(){
+  document.querySelectorAll('[data-bc-open]').forEach(c=>c.addEventListener('click', ()=>{
+    const r = allRequirements.find(x=>x._id===c.dataset.bcOpen);
+    openRespondModal(r);
+  }));
+}
+function openRespondModal(r){
+  const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
+  document.getElementById('respondBody').innerHTML = `
+    <h2>${esc((r.config?r.config+' ':'')+r.propertyType)}</h2>
+    <div class="detail-row"><div class="detail-k">Location</div><div class="detail-v">${esc(r.location)}</div></div>
+    <div class="detail-row"><div class="detail-k">Budget</div><div class="detail-v">${budget?('₹'+esc(budget)):'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Furnishing</div><div class="detail-v">${esc(r.furnishing)||'-'}</div></div>
+    <div class="detail-row"><div class="detail-k">Notes</div><div class="detail-v">${esc(r.notes)||'-'}</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+      <button class="submit-btn" style="flex:1" id="rHaveBtn">I Have Inventory</button>
+      <button class="ghost-btn" style="flex:1;margin-top:0" id="rMoreBtn">Need More Details</button>
+      <button class="danger-btn" style="flex:1;margin-top:0" id="rNoBtn">Not Available</button>
+    </div>
+    <div id="rHaveForm" style="display:none;margin-top:16px">
+      <div class="form-group"><label class="form-label">Property title</label><input class="form-input" id="rp_title"></div>
+      <div class="form-row2">
+        <div class="form-group"><label class="form-label">Price</label><input class="form-input" id="rp_price"></div>
+        <div class="form-group"><label class="form-label">Location</label><input class="form-input" id="rp_loc"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Owner details</label><input class="form-input" id="rp_owner"></div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="rp_notes"></textarea></div>
+      <button class="submit-btn" id="rSendBtn">Send to Coordinator</button>
+    </div>`;
+  document.getElementById('respondModal').classList.add('active');
+  async function sendResponse(type, property){
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/requirements/respond/${r._id}`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({type, property: property||{}}) });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Failed'); return; }
+      document.getElementById('respondModal').classList.remove('active');
+      toast('Response sent');
+      await loadRequirements(); switchTab();
+    }catch(e){ console.error(e); toast('Failed to respond'); }
+    finally{ hideLoader(); }
+  }
+  document.getElementById('rMoreBtn').onclick = ()=>sendResponse('Need More Details');
+  document.getElementById('rNoBtn').onclick = ()=>sendResponse('Not Available');
+  document.getElementById('rHaveBtn').onclick = ()=>{ document.getElementById('rHaveForm').style.display='block'; };
+  document.getElementById('rSendBtn').onclick = ()=>{
+    const g = id=>document.getElementById(id).value.trim();
+    sendResponse('I Have Inventory', {title:g('rp_title'), price:g('rp_price'), location:g('rp_loc'), owner:g('rp_owner'), notes:g('rp_notes')});
+  };
+}
+document.getElementById('closeRespondModal').addEventListener('click', ()=>document.getElementById('respondModal').classList.remove('active'));
+document.getElementById('respondModal').addEventListener('click', e=>{ if(e.target.id==='respondModal') e.currentTarget.classList.remove('active'); });
+
+/* ===================== DASHBOARD TAB (staff) ===================== */
+async function loadDashboard(){
+  try{
+    const res = await fetch(`${BASE}/inventory-dashboard-stats`, { credentials:'include' });
+    const d = await res.json();
+    if(!d.success){ document.getElementById('tabContent').innerHTML = `<div class="empty-state"><h3>Dashboard unavailable</h3></div>`; return; }
+    document.getElementById('tabContent').innerHTML = `
+      <div class="page-header"><div class="page-title">Coordinator Dashboard</div></div>
+      <div class="stats-row dash">
+        ${kpiCard(d.todayInventory,'New Inventory Today')}
+        ${kpiCard(d.todayRequirements,'New Requests Today')}
+        ${kpiCard(d.pendingInventory,'Pending Inventory')}
+        ${kpiCard(d.pendingRequirements,'Pending Requirements')}
+        ${kpiCard(d.liveStock,'Live Stock')}
+        ${kpiCard(d.visits,'Visits Scheduled')}
+        ${kpiCard(d.sold,'Sold')}
+        ${kpiCard(d.rented,'Rented')}
+        ${kpiCard(d.requirementsClosed,'Requirements Closed')}
+        ${kpiCard(d.inventoryClosed,'Inventory Closed')}
+      </div>
+      <div class="page-header"><div class="page-title" style="font-size:1.2rem">Partner Performance</div></div>
+      ${(d.partnerPerformance||[]).map(p=>`<div class="perf-row">
+        <div><div style="font-weight:700">${esc(p.name)}</div><div style="font-size:0.78rem;color:var(--text-soft)">Inv ${p.inventory} · Req ${p.requirements} · Approved ${p.approved}</div></div>
+        <div style="text-align:right"><div style="color:var(--success);font-weight:700">${p.deals} deals</div><div style="color:var(--accent);font-size:0.78rem">${p.conversion}% conv</div></div>
+      </div>`).join('') || '<div class="empty-state"><p>No partners yet.</p></div>'}
+    `;
+  }catch(e){ console.error(e); }
+}
+function kpiCard(n,label){ return `<div class="stat-card"><div class="stat-label">${esc(label)}</div><div class="stat-value">${n}</div></div>`; }
+
+/* ===================== PARTNERS TAB (admin) ===================== */
+async function loadPartnersData(){
+  try{
+    const res = await fetch(`${BASE}/get-team-assign`, { credentials:'include' });
+    const d = await res.json();
+    allPartners = (d||[]).filter(x=>x.roll==='partner');
+  }catch(e){ console.error(e); allPartners = []; }
+}
+async function loadPartnersTab(){
+  await loadPartnersData();
+  document.getElementById('tabContent').innerHTML = partnersTabHTML();
+  bindPartnersTab();
+}
+function partnersTabHTML(){
+  const rows = allPartners.length ? allPartners.map(p=>`
+    <div class="partner-row">
+      <div class="partner-top">
+        <div><div class="partner-name">${esc(p['Employee name'])}${p.Active===false?' <span style="color:var(--hot);font-size:0.72rem">· revoked</span>':''}</div>
+        <div class="partner-sub">${esc(p['Employee number'])}${p.Areas?(' · '+esc(p.Areas)):''}</div></div>
+      </div>
+      <div class="partner-tags">
+        <button class="tag-btn active-tag" data-chat="${p['Employee number']}">Chat ↗</button>
+        <button class="tag-btn" data-areas="${p['Employee number']}" data-areas-current="${esc(p.Areas||'')}">Edit Areas</button>
+        <button class="tag-btn ${p.Active===false?'active-tag':'revoked'}" data-toggle="${p['Employee number']}">${p.Active===false?'Restore':'Revoke'}</button>
+        <button class="tag-btn revoked" data-remove="${p['Employee number']}">Remove</button>
+      </div>
+    </div>`).join('') : `<div class="empty-state"><div class="empty-state-icon">🤝</div><h3>No partners yet</h3><p>Authorize a partner from Manage Team.</p></div>`;
+  return `<div class="page-header"><div><div class="page-title">Partners</div><div class="page-subtitle">${allPartners.length} authorized partner(s)</div></div>
+    <a href="/manageteam" class="topbar-btn" style="background:var(--primary)">+ Add via Manage Team</a></div>
+    ${rows}`;
+}
+function bindPartnersTab(){
+  document.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click', ()=>window.open(waLink(b.dataset.chat,''),'_blank')));
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click', async ()=>{
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/toggle-team-active/${b.dataset.toggle}`, { method:'POST', credentials:'include' });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Failed'); return; }
+      await loadPartnersTab();
+    }catch(e){ console.error(e); toast('Failed'); }
+    finally{ hideLoader(); }
+  }));
+  document.querySelectorAll('[data-remove]').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm('Remove this partner permanently?')) return;
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/remove-team-assign/${b.dataset.remove}`, { method:'DELETE', credentials:'include' });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Failed'); return; }
+      await loadPartnersTab();
+    }catch(e){ console.error(e); toast('Failed'); }
+    finally{ hideLoader(); }
+  }));
+  document.querySelectorAll('[data-areas]').forEach(b=>b.addEventListener('click', async ()=>{
+    const areas = prompt('Areas covered (comma separated):', b.dataset.areasCurrent||'');
+    if(areas===null) return;
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/update-team-areas`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({number:b.dataset.areas, areas}) });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Failed'); return; }
+      await loadPartnersTab();
+    }catch(e){ console.error(e); toast('Failed'); }
+    finally{ hideLoader(); }
+  }));
+}
+
+/* ===================== SETTINGS TAB (admin) ===================== */
+async function loadSettings(){
+  try{
+    const res = await fetch(`${BASE}/settings`, { credentials:'include' });
+    const d = await res.json();
+    settingsData = d.data || {};
+  }catch(e){ console.error(e); settingsData = {}; }
+}
+function settingsTabHTML(){
+  const s = settingsData;
+  return `<div class="page-header"><div class="page-title">Sharing &amp; Contact Settings</div></div>
+    <div style="max-width:520px">
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Corporate WhatsApp number</label><input class="filter-search" id="setCorporate" value="${esc(s.corporate||'')}" placeholder="e.g. 7303515710"></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Property Advisor number</label><input class="filter-search" id="setAgent" value="${esc(s.agent||'')}"></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Property Advisor name</label><input class="filter-search" id="setAdvisor" value="${esc(s.advisorName||'')}"></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Website</label><input class="filter-search" id="setWebsite" value="${esc(s.website||'')}"></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Landing page link</label><input class="filter-search" id="setLanding" value="${esc(s.landing||'')}"></div>
+      <div class="form-group"><label class="form-label" style="color:var(--text-soft)">Call-to-action line</label><textarea class="filter-search" style="min-height:70px" id="setCta">${esc(s.cta||'')}</textarea></div>
+      <button class="topbar-btn" id="saveSettingsBtn" style="background:var(--primary)">Save Settings</button>
+    </div>`;
+}
+function bindSettingsTab(){
+  document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
+    const g = id => document.getElementById(id).value.trim();
+    const payload = { corporate:g('setCorporate'), agent:g('setAgent'), advisorName:g('setAdvisor'), website:g('setWebsite'), landing:g('setLanding'), cta:g('setCta') };
+    showLoader();
+    try{
+      const res = await fetch(`${BASE}/settings`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(payload) });
+      const d = await res.json();
+      if(!d.success){ toast(d.message||'Failed'); return; }
+      settingsData = payload;
+      toast('Settings saved');
+    }catch(e){ console.error(e); toast('Failed to save'); }
+    finally{ hideLoader(); }
+  });
+}
+
+/* ===================== INIT ===================== */
+async function init(){
+  showLoader();
+  await Promise.all([loadProjects(), loadRequirements(), loadSettings(), IS_ADMIN ? loadPartnersData() : Promise.resolve()]);
+  renderTabbar();
+  switchTab();
+  hideLoader();
+}
+init();
 </script>
 </body>
 </html>

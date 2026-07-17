@@ -2003,6 +2003,366 @@ def get_projects():
         traceback.print_exc()
         return jsonify({"success": False, "data": [], "error": str(e)}), 500
 
+# =============================
+# CRM STAGE (extends projects)
+# =============================
+LIST_STAGES = [
+    "Approved", "Customer Shared", "Site Visit Scheduled", "Negotiation",
+    "Token Received", "Agreement Done", "Registration Done",
+    "Sold", "Rented", "Closed", "Cancelled"
+]
+
+@app.route("/api/projects/stage/<project_id>", methods=["POST"])
+def update_project_stage(project_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"status": "error", "message": "Staff only"}), 403
+
+    data = request.json or {}
+    stage = data.get("stage")
+    if stage not in LIST_STAGES:
+        return jsonify({"status": "error", "message": "Invalid stage"}), 400
+
+    project = projects_collection.find_one({"_id": ObjectId(project_id)})
+    if not project:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+
+    history_entry = {
+        "action": f"Stage: {stage}",
+        "remark": data.get("remark", ""),
+        "at": datetime.utcnow(),
+        "by": session.get("employee_name")
+    }
+
+    projects_collection.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {"stage": stage, "lastUpdatedAt": datetime.utcnow()},
+            "$push": {"history": history_entry}
+        }
+    )
+
+    updated = projects_collection.find_one({"_id": ObjectId(project_id)})
+    return jsonify({"status": "success", "data": serialize_doc(updated)}), 200
+
+
+# =============================
+# REQUIREMENTS DESK
+# =============================
+requirements_collection = db["requirements"]
+
+REQ_STATUS_LABELS = {
+    "new": "New", "broadcasted": "Broadcasted", "responses": "Responses",
+    "matched": "Matched", "visit": "Visit scheduled", "closed": "Closed",
+    "cancelled": "Cancelled", "expired": "Expired", "rejected": "Rejected"
+}
+
+
+@app.route("/api/requirements", methods=["GET"])
+def get_requirements():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "data": []}), 401
+
+    role = session.get("role")
+    query = {}
+    if role == "partner":
+        num = session.get("employee_number")
+        query = {"$or": [
+            {"submittedByNumber": num},
+            {"broadcastTo": "all"},
+            {"broadcastTo": num}
+        ]}
+
+    docs = list(requirements_collection.find(query).sort("createdAt", -1))
+    return jsonify({"success": True, "data": [serialize_doc(d) for d in docs]}), 200
+
+
+@app.route("/api/requirements/add", methods=["POST"])
+def add_requirement():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    data = request.json or {}
+    role = session.get("role")
+
+    if role == "partner":
+        submitted_by_number = session.get("employee_number")
+        submitted_by_name = session.get("employee_name")
+    else:
+        # staff can attribute this to a partner, or keep it as their own
+        submitted_by_number = data.get("onBehalfNumber") or session.get("employee_number")
+        submitted_by_name = data.get("onBehalfName") or session.get("employee_name")
+
+    location = (data.get("location") or "").strip()
+    if not location:
+        return jsonify({"success": False, "message": "Location is required"}), 400
+
+    doc = {
+        "reqType": data.get("reqType", "Buy"),
+        "propertyType": data.get("propertyType", ""),
+        "config": data.get("config", ""),
+        "location": location,
+        "budgetMin": data.get("budgetMin", ""),
+        "budgetMax": data.get("budgetMax", ""),
+        "areaMin": data.get("areaMin", ""),
+        "areaMax": data.get("areaMax", ""),
+        "furnishing": data.get("furnishing", ""),
+        "possession": data.get("possession", ""),
+        "notes": data.get("notes", ""),
+        "priority": data.get("priority", "Medium"),
+        "clientName": data.get("clientName", ""),
+        "clientMobile": data.get("clientMobile", ""),
+        "submittedByNumber": submitted_by_number,
+        "submittedByName": submitted_by_name,
+        "status": "new",
+        "broadcastTo": [],
+        "responses": [],
+        "history": [{
+            "action": "Submitted", "remark": "",
+            "at": datetime.utcnow(), "by": submitted_by_name
+        }],
+        "createdAt": datetime.utcnow()
+    }
+
+    result = requirements_collection.insert_one(doc)
+    return jsonify({"success": True, "id": str(result.inserted_id)}), 201
+
+
+@app.route("/api/requirements/status/<req_id>", methods=["POST"])
+def update_requirement_status(req_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    data = request.json or {}
+    status = data.get("status")
+    if status not in REQ_STATUS_LABELS:
+        return jsonify({"success": False, "message": "Invalid status"}), 400
+
+    req_doc = requirements_collection.find_one({"_id": ObjectId(req_id)})
+    if not req_doc:
+        return jsonify({"success": False, "message": "Not found"}), 404
+
+    requirements_collection.update_one(
+        {"_id": ObjectId(req_id)},
+        {
+            "$set": {"status": status},
+            "$push": {"history": {
+                "action": REQ_STATUS_LABELS.get(status, status),
+                "remark": data.get("remark", ""),
+                "at": datetime.utcnow(),
+                "by": session.get("employee_name")
+            }}
+        }
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/requirements/broadcast/<req_id>", methods=["POST"])
+def broadcast_requirement(req_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    data = request.json or {}
+    to = data.get("to")  # "all" or a list of employee numbers
+
+    req_doc = requirements_collection.find_one({"_id": ObjectId(req_id)})
+    if not req_doc:
+        return jsonify({"success": False, "message": "Not found"}), 404
+
+    if to == "all":
+        broadcast_to = "all"
+    else:
+        existing = req_doc.get("broadcastTo", [])
+        if existing == "all":
+            existing = []
+        existing = list(set(existing + (to or [])))
+        broadcast_to = existing
+
+    new_status = "broadcasted" if req_doc.get("status") == "new" else req_doc.get("status")
+
+    requirements_collection.update_one(
+        {"_id": ObjectId(req_id)},
+        {
+            "$set": {"broadcastTo": broadcast_to, "status": new_status},
+            "$push": {"history": {
+                "action": "Broadcasted", "remark": "",
+                "at": datetime.utcnow(), "by": session.get("employee_name")
+            }}
+        }
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/requirements/respond/<req_id>", methods=["POST"])
+def respond_requirement(req_id):
+    if session.get("role") != "partner":
+        return jsonify({"success": False, "message": "Partner only"}), 403
+
+    data = request.json or {}
+    partner_number = session.get("employee_number")
+    partner_name = session.get("employee_name")
+
+    resp = {
+        "partnerNumber": partner_number,
+        "partnerName": partner_name,
+        "type": data.get("type", "Need More Details"),
+        "at": datetime.utcnow(),
+        "property": data.get("property", {})
+    }
+
+    req_doc = requirements_collection.find_one({"_id": ObjectId(req_id)})
+    if not req_doc:
+        return jsonify({"success": False, "message": "Not found"}), 404
+
+    responses = [r for r in req_doc.get("responses", []) if r.get("partnerNumber") != partner_number]
+    responses.append(resp)
+
+    new_status = "responses" if req_doc.get("status") == "broadcasted" else req_doc.get("status")
+
+    requirements_collection.update_one(
+        {"_id": ObjectId(req_id)},
+        {
+            "$set": {"responses": responses, "status": new_status},
+            "$push": {"history": {
+                "action": f"{partner_name}: {resp['type']}",
+                "remark": "", "at": datetime.utcnow(), "by": partner_name
+            }}
+        }
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/requirements/delete/<req_id>", methods=["DELETE"])
+def delete_requirement(req_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    requirements_collection.delete_one({"_id": ObjectId(req_id)})
+    return jsonify({"success": True}), 200
+
+
+# =============================
+# PARTNER MANAGEMENT (extends teamAssign)
+# =============================
+@app.route("/api/toggle-team-active/<number>", methods=["POST"])
+def toggle_team_active(number):
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    try:
+        number = int(normalize_number(number))
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid number"}), 400
+
+    collection = db["teamAssign"]
+    member = collection.find_one({"Employee number": number})
+    if not member:
+        return jsonify({"success": False, "message": "Not found"}), 404
+
+    new_active = not member.get("Active", True)
+    collection.update_one({"_id": member["_id"]}, {"$set": {"Active": new_active}})
+    return jsonify({"success": True, "active": new_active}), 200
+
+
+@app.route("/api/update-team-areas", methods=["POST"])
+def update_team_areas():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    data = request.json or {}
+    try:
+        number = int(normalize_number(str(data.get("number", ""))))
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid number"}), 400
+
+    db["teamAssign"].update_one(
+        {"Employee number": number},
+        {"$set": {"Areas": data.get("areas", "")}}
+    )
+    return jsonify({"success": True}), 200
+
+
+# =============================
+# SETTINGS (corporate/agent share settings)
+# =============================
+settings_collection = db["settings"]
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings_api():
+    if not session.get("user_id"):
+        return jsonify({"success": False}), 401
+    doc = settings_collection.find_one({"_id": "global"}) or {}
+    doc.pop("_id", None)
+    return jsonify({"success": True, "data": doc}), 200
+
+
+@app.route("/api/settings", methods=["POST"])
+def save_settings_api():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    data = request.json or {}
+    fields = {k: data.get(k, "") for k in ["corporate", "agent", "advisorName", "website", "landing", "cta"]}
+    settings_collection.update_one({"_id": "global"}, {"$set": fields}, upsert=True)
+    return jsonify({"success": True}), 200
+
+
+# =============================
+# COORDINATOR DASHBOARD STATS
+# =============================
+@app.route("/api/inventory-dashboard-stats", methods=["GET"])
+def inventory_dashboard_stats():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False}), 403
+
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    closed_stages = {"Sold", "Rented", "Closed", "Cancelled"}
+
+    all_projects = list(projects_collection.find())
+    all_reqs = list(requirements_collection.find())
+    all_partners = list(db["teamAssign"].find({"roll": "partner"}))
+
+    today_inventory = sum(1 for p in all_projects if p.get("createdAt") and p["createdAt"] >= today_start)
+    today_requirements = sum(1 for r in all_reqs if r.get("createdAt") and r["createdAt"] >= today_start)
+    pending_inventory = sum(1 for p in all_projects if p.get("status") == "pending")
+    pending_requirements = sum(1 for r in all_reqs if r.get("status") == "new")
+    live_stock = sum(1 for p in all_projects if p.get("status") == "approved")
+    sold = sum(1 for p in all_projects if p.get("stage") == "Sold")
+    rented = sum(1 for p in all_projects if p.get("stage") == "Rented")
+    visits = (sum(1 for p in all_projects if p.get("stage") == "Site Visit Scheduled") +
+              sum(1 for r in all_reqs if r.get("status") == "visit"))
+    inventory_closed = sum(1 for p in all_projects if p.get("stage") in closed_stages)
+    requirements_closed = sum(1 for r in all_reqs if r.get("status") in ("closed", "matched"))
+
+    perf = []
+    for p in all_partners:
+        num = p.get("Employee number")
+        p_inv = [x for x in all_projects if x.get("ownerNumber") == num]
+        p_req = [x for x in all_reqs if x.get("submittedByNumber") == num]
+        approved = sum(1 for x in p_inv if x.get("status") == "approved" or x.get("stage") in closed_stages)
+        deals = sum(1 for x in p_inv if x.get("stage") in ("Sold", "Rented"))
+        conv = round(deals * 100 / len(p_inv)) if p_inv else 0
+        perf.append({
+            "name": p.get("Employee name"),
+            "inventory": len(p_inv),
+            "requirements": len(p_req),
+            "approved": approved,
+            "deals": deals,
+            "conversion": conv
+        })
+    perf.sort(key=lambda x: (-x["deals"], -x["inventory"]))
+
+    return jsonify({
+        "success": True,
+        "todayInventory": today_inventory,
+        "todayRequirements": today_requirements,
+        "pendingInventory": pending_inventory,
+        "pendingRequirements": pending_requirements,
+        "liveStock": live_stock,
+        "sold": sold,
+        "rented": rented,
+        "visits": visits,
+        "inventoryClosed": inventory_closed,
+        "requirementsClosed": requirements_closed,
+        "partnerPerformance": perf
+    }), 200
 
 # -------------------------------
 # REPLACED: POST /api/projects/upload
