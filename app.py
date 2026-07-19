@@ -91,6 +91,8 @@ def serialize_doc(doc):
     for key, value in doc.items():
         if isinstance(value, float) and math.isnan(value):
             doc[key] = None
+        elif isinstance(value, datetime):
+            doc[key] = format_ist(value)
 
     return doc
 
@@ -687,132 +689,171 @@ def normalize_number(number):
 @app.route("/api/assign-lead", methods=["POST"])
 def assign_lead():
     try:
-        data = request.json
+        data = request.json or {}
 
         collection_name = data.get("collection")
-        raw_number = data.get("leadNumber")
-        assign_to = data.get("assignTo")
+        lead_id = data.get("leadId")            # Mongo _id of the lead doc
+        assign_to_number = data.get("assignToNumber")  # employee number, NOT name
 
-        if not collection_name or not raw_number or not assign_to:
+        if not collection_name or not lead_id or not assign_to_number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
 
-        lead_collection = db[collection_name]
-        employee_collection = db["teamAssign"]
+        try:
+            assign_to_number = int(str(assign_to_number).strip())
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid employee number"}), 400
 
-        # Normalize number
-        lead_number = normalize_number(raw_number)
+        try:
+            obj_id = ObjectId(lead_id)
+        except Exception:
+            return jsonify({"success": False, "message": "Invalid lead id"}), 400
 
-        # 1. Update Lead using REGEX match (handles all formats)
-        lead_result = lead_collection.update_one(
-            {
-                "Phone Number": {
-                    "$regex": lead_number
-                }
-            },
-            {"$set": {"AssignTo": assign_to}}
-        )
-
-        if lead_result.matched_count == 0:
-            return jsonify({"success": False, "message": "Lead not found"}), 404
-
-        # 2. Update Employee Lead List
-        employee = employee_collection.find_one({"Employee name": assign_to})
-
+        employee = db["teamAssign"].find_one({"Employee number": assign_to_number})
         if not employee:
             return jsonify({"success": False, "message": "Employee not found"}), 404
 
-        existing_leads = employee.get("Leads", "")
+        assigner_name = session.get("employee_name") or "Unknown"
+        assigner_number = session.get("employee_number")
 
-        if existing_leads:
-            clean = existing_leads.strip("{}")
-            leads_list = [x.strip() for x in clean.split(",") if x.strip()]
-        else:
-            leads_list = []
+        history_entry = {
+            "by": assigner_name,
+            "byNumber": assigner_number,
+            "to": employee.get("Employee name"),
+            "toNumber": assign_to_number,
+            "at": datetime.utcnow()
+        }
 
-        formatted_number = f"+{lead_number}"
-
-        if formatted_number not in leads_list:
-            leads_list.append(formatted_number)
-
-        new_leads_string = "{" + ", ".join(leads_list) + "}"
-
-        employee_collection.update_one(
-            {"_id": employee["_id"]},
-            {"$set": {"Leads": new_leads_string}}
+        result = db[collection_name].update_one(
+            {"_id": obj_id},
+            {
+                "$set": {
+                    "AssignTo": employee.get("Employee name"),
+                    "AssignToNumber": assign_to_number,
+                    "AssignedBy": assigner_name,
+                    "AssignedByNumber": assigner_number,
+                    "AssignedAt": datetime.utcnow()
+                },
+                "$push": {"AssignmentHistory": history_entry}
+            }
         )
+
+        if result.matched_count == 0:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
 
         return jsonify({"success": True})
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route("/api/get-lead-by-id", methods=["POST"])
+def get_lead_by_id():
+    try:
+        data = request.json or {}
+        collection_name = data.get("collection")
+        lead_id = data.get("id")
+
+        if not collection_name or not lead_id:
+            return jsonify({"error": "collection and id are required"}), 400
+
+        lead = db[collection_name].find_one({"_id": ObjectId(lead_id)})
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+
+        return jsonify({"success": True, "data": serialize_doc(lead)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/update-lead-by-id", methods=["POST"])
+def update_lead_by_id():
+    try:
+        data = request.json or {}
+        collection_name = data.get("collection")
+        lead_id = data.get("id")
+        set_fields = data.get("set", {})
+
+        if not collection_name or not lead_id:
+            return jsonify({"error": "collection and id are required"}), 400
+        if not set_fields:
+            return jsonify({"error": "No fields to update"}), 400
+
+        set_fields.pop("_id", None)
+
+        result = db[collection_name].update_one(
+            {"_id": ObjectId(lead_id)},
+            {"$set": set_fields}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"error": "Lead not found"}), 404
+
+        updated = db[collection_name].find_one({"_id": ObjectId(lead_id)})
+        return jsonify({"success": True, "data": serialize_doc(updated)})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/bulk-assign-leads", methods=["POST"])
 def bulk_assign_leads():
     try:
-        data = request.json
+        data = request.json or {}
 
         collection_name = data.get("collection")
-        lead_numbers = data.get("leadNumbers")
-        assign_to = data.get("assignTo")
+        lead_ids = data.get("leadIds", [])
+        assign_to_number = data.get("assignToNumber")
 
-        if not collection_name or not lead_numbers or not assign_to:
+        if not collection_name or not lead_ids or not assign_to_number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
 
-        lead_collection = db[collection_name]
-        employee_collection = db["teamAssign"]
+        try:
+            assign_to_number = int(str(assign_to_number).strip())
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid employee number"}), 400
 
-        # Normalize all numbers
-        cleaned_numbers = [normalize_number(num) for num in lead_numbers]
-
-        # 1. Update leads one by one using regex (safer for mixed formats)
-        matched_count = 0
-
-        for number in cleaned_numbers:
-            result = lead_collection.update_one(
-                {
-                    "Phone Number": {
-                        "$regex": number
-                    }
-                },
-                {"$set": {"AssignTo": assign_to}}
-            )
-            matched_count += result.matched_count
-
-        if matched_count == 0:
-            return jsonify({"success": False, "message": "No leads matched"}), 404
-
-        # 2. Update Employee Lead List
-        employee = employee_collection.find_one({"Employee name": assign_to})
-
+        employee = db["teamAssign"].find_one({"Employee number": assign_to_number})
         if not employee:
             return jsonify({"success": False, "message": "Employee not found"}), 404
 
-        existing_leads = employee.get("Leads", "")
+        try:
+            obj_ids = [ObjectId(i) for i in lead_ids]
+        except Exception:
+            return jsonify({"success": False, "message": "Invalid lead id in list"}), 400
 
-        if existing_leads:
-            clean = existing_leads.strip("{}")
-            leads_list = [x.strip() for x in clean.split(",") if x.strip()]
-        else:
-            leads_list = []
+        assigner_name = session.get("employee_name") or "Unknown"
+        assigner_number = session.get("employee_number")
 
-        for number in cleaned_numbers:
-            formatted = f"+{number}"
-            if formatted not in leads_list:
-                leads_list.append(formatted)
+        history_entry = {
+            "by": assigner_name,
+            "byNumber": assigner_number,
+            "to": employee.get("Employee name"),
+            "toNumber": assign_to_number,
+            "at": datetime.utcnow()
+        }
 
-        new_leads_string = "{" + ", ".join(leads_list) + "}"
-
-        employee_collection.update_one(
-            {"_id": employee["_id"]},
-            {"$set": {"Leads": new_leads_string}}
+        result = db[collection_name].update_many(
+            {"_id": {"$in": obj_ids}},
+            {
+                "$set": {
+                    "AssignTo": employee.get("Employee name"),
+                    "AssignToNumber": assign_to_number,
+                    "AssignedBy": assigner_name,
+                    "AssignedByNumber": assigner_number,
+                    "AssignedAt": datetime.utcnow()
+                },
+                "$push": {"AssignmentHistory": history_entry}
+            }
         )
 
-        return jsonify({
-            "success": True,
-            "assignedCount": matched_count
-        })
+        return jsonify({"success": True, "assignedCount": result.modified_count})
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
 
