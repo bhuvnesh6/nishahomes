@@ -747,6 +747,38 @@ def assign_lead():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route("/api/assigned-leads", methods=["GET"])
+def assigned_leads():
+    try:
+        collections_map = {
+            "buying": "Leads",
+            "rental": "RentalLeads",
+            "selling": "sellingLeads",
+            "agent": "agentLeads"
+        }
+
+        results = []
+        for lead_type, coll_name in collections_map.items():
+            docs = list(db[coll_name].find({
+                "AssignTo": {"$exists": True, "$ne": ""}
+            }))
+            for d in docs:
+                d["_leadType"] = lead_type
+                d["_collection"] = coll_name
+                results.append(d)
+
+        # newest assignment first (sort BEFORE serialize_doc converts datetimes to strings)
+        results.sort(key=lambda x: x.get("AssignedAt") or datetime.min, reverse=True)
+
+        out = [serialize_doc(d) for d in results]
+
+        return jsonify({"success": True, "data": out})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "data": [], "error": str(e)}), 500
+
 @app.route("/api/get-lead-by-id", methods=["POST"])
 def get_lead_by_id():
     try:
