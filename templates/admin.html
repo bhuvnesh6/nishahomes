@@ -1762,7 +1762,7 @@ async function toggleAI(btn){
 ═══════════════════════════════════ */
 async function loadAssignedLeads(){
   try{
-    const res = await fetch(`${BASE}/api/assigned-leads`);
+    const res = await fetch(`${BASE}/assigned-leads`);
     const d = await res.json();
     assignedLeadsFlat = d.data || [];
     document.getElementById('sidebarAssignedCount').textContent = assignedLeadsFlat.length;
