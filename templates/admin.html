@@ -1604,7 +1604,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 <button id="installBtn" style="display:none">📲 Install App</button>
 
 <script>
-/* ═══════════════════════════════════
+  /* ═══════════════════════════════════
    CONFIG
 ═══════════════════════════════════ */
 const BASE = 'https://api.phishnix.site/api';
@@ -1950,6 +1950,16 @@ function renderAssignedCards(){
 
 /* ═══════════════════════════════════
    SIDEBAR NAV
+   ── FIX APPLIED HERE ──
+   The original code declared `sidebarLinks` with `const`, then a few
+   lines later tried to REASSIGN it (`sidebarLinks = document.query...`)
+   without `let`/`var`. Reassigning a const throws:
+     Uncaught TypeError: Assignment to constant variable.
+   This is top-level script code, so the error halted ALL further JS
+   execution on the page — including the final `window.addEventListener
+   ('load', ...)` block at the bottom that calls hideLoader(). That is
+   why the loader spun forever and nothing else on the page ever
+   initialized. Fixed by declaring it once and never reassigning it.
 ═══════════════════════════════════ */
 const sidebarLinks = document.querySelectorAll('.sidebar-link[data-page]');
 function switchPage(page){
@@ -1960,7 +1970,6 @@ function switchPage(page){
   if(page==='assigned') loadAssignedLeads();
   closeSidebar();
 }
-sidebarLinks = document.querySelectorAll('.sidebar-link[data-page]');
 sidebarLinks.forEach(l=>l.addEventListener('click',()=>switchPage(l.dataset.page)));
 
 /* ═══════════════════════════════════
@@ -2002,7 +2011,7 @@ async function loadAllLeads(keepPage){
           const res = await fetch(API[t]);
           let data = await res.json();
           data = data.reverse();
-          
+
           let others = null;
           if(t==='buying'){
             others = data.filter(l=>String(l.LeadType||'').toLowerCase()==='other').map(l=>({...l,_leadType:'other'}));
@@ -2245,9 +2254,6 @@ function renderMobileCards(){
 
     const typeColorMap={buying:'',rental:'type-rental',selling:'type-selling',agent:'type-agent',other:'type-other'};
 
-    // 🔥 Only 4 primary buttons stay visible on the card.
-    // Everything else (Assign, AI, Toggle AI, History, Send Property, Delete)
-    // is moved into the 3-dot overflow menu, opened via lc-more-btn.
     return `
     <div class="lead-card ${typeColorMap[t]||''} ${isSelected?'selected':''} ${isAiDisabled?'ai-disabled':''}" data-phone="${escHtml(phone)}">
       <div class="lc-header">
@@ -2359,10 +2365,7 @@ function renderMobileCards(){
 }
 
 /* ═══════════════════════════════════
-   🔥 NEW: CARD OVERFLOW (3-DOT) MENU
-   Renders Assign / AI Summary / Toggle AI / History / Send Property /
-   Delete inside a small modal, keyed off the same lead data used by
-   the primary card buttons.
+   CARD OVERFLOW (3-DOT) MENU
 ═══════════════════════════════════ */
 function openCardMenu(btn){
   const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
@@ -2373,7 +2376,7 @@ function openCardMenu(btn){
   document.getElementById('cmLeadName').textContent = data.name || 'Unknown';
   document.getElementById('cmLeadPhone').textContent = data.phone || '';
 
-  const rowDataStr = btn.dataset.lead; // already-encoded JSON, reuse directly
+  const rowDataStr = btn.dataset.lead;
 
   document.getElementById('cmMenuList').innerHTML = `
     <button class="cm-menu-item" onclick="closeCardMenu();openAssignModal('${escHtml(data.phone)}','${escHtml(data.name)}')">
@@ -3059,7 +3062,7 @@ function closeHistoryModal(){document.getElementById('historyModal').classList.r
 document.getElementById('historyModal').addEventListener('click', e=>{if(e.target.id==='historyModal') closeHistoryModal()});
 
 /* ═══════════════════════════════════
-   🔥 SEND PROPERTY TO LEAD
+   SEND PROPERTY TO LEAD
 ═══════════════════════════════════ */
 let spLeadData = null;
 let spProjects = [];
