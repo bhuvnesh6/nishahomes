@@ -1651,6 +1651,18 @@ function fmtPhone(p){
 function digitsOnly(p){
   return String(p).replace(/[^0-9]/g,'');
 }
+
+// Normalizes any phone into "91XXXXXXXXXX" — strips '+', strips leading zeros,
+// and prepends '91' only if it's a bare 10-digit number without a country code.
+function normalizeAIPhone(phoneRaw){
+  let digits = String(phoneRaw||'').replace(/[^0-9]/g,''); // strips '+' and everything non-numeric
+  digits = digits.replace(/^0+/, '');                       // strip leading zeros, if any
+  if(digits.length === 10){                                 // bare 10-digit Indian mobile number
+    digits = '91' + digits;
+  }
+  return digits; // already-prefixed 12-digit numbers pass through unchanged
+}
+
 function showLoader(){document.getElementById('loader').classList.remove('hidden')}
 function hideLoader(){document.getElementById('loader').classList.add('hidden')}
 function getTypeLabel(t){
@@ -1732,12 +1744,14 @@ async function toggleAI(btn){
   const leadId = data.id;
   if(!leadId){ alert('Missing lead id — cannot toggle AI'); return; }
 
+  const normalizedPhone = normalizeAIPhone(data.phone); // NEW: strip '+', ensure 91 prefix
+
   btn.disabled = true;
   try{
     const res = await fetch(`${BASE}/toggle-ai`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ leadId, phone: data.phone, name: data.name })
+      body: JSON.stringify({ leadId, phone: normalizedPhone, name: data.name }) // CHANGED: data.phone -> normalizedPhone
     });
     const d = await res.json();
     if(!d.success){ alert(d.message || 'Failed to update AI status'); return; }

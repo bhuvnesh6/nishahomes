@@ -747,37 +747,50 @@ def assign_lead():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route("/api/assigned-leads", methods=["GET"])
+@app.route('/api/assigned-leads')
 def assigned_leads():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Not authenticated"}), 401
+
+    role = session.get("role")
+    employee_number = session.get("employee_number")  # stored as int at login time
+
+    # Assigned leads aren't a separate collection — they're documents
+    # inside these four collections that have an AssignTo/AssignToNumber
+    # field set (by /api/assign-lead or /api/bulk-assign-leads).
+    collection_type_map = {
+        "Leads": "buying",
+        "RentalLeads": "rental",
+        "sellingLeads": "selling",
+        "agentLeads": "agent",
+    }
+
+    query = {"AssignTo": {"$exists": True, "$nin": [None, ""]}}
+
+    # emp -> only their own assigned leads. admin -> everyone's.
+    if role != "admin":
+        if not employee_number:
+            return jsonify({"success": False, "message": "No employee number in session"}), 400
+        query["AssignToNumber"] = employee_number
+
+    all_docs = []
     try:
-        collections_map = {
-            "buying": "Leads",
-            "rental": "RentalLeads",
-            "selling": "sellingLeads",
-            "agent": "agentLeads"
-        }
-
-        results = []
-        for lead_type, coll_name in collections_map.items():
-            docs = list(db[coll_name].find({
-                "AssignTo": {"$exists": True, "$ne": ""}
-            }))
+        for collection_name, lead_type in collection_type_map.items():
+            docs = db[collection_name].find(query)
             for d in docs:
+                d = serialize_doc(d)
                 d["_leadType"] = lead_type
-                d["_collection"] = coll_name
-                results.append(d)
-
-        # newest assignment first (sort BEFORE serialize_doc converts datetimes to strings)
-        results.sort(key=lambda x: x.get("AssignedAt") or datetime.min, reverse=True)
-
-        out = [serialize_doc(d) for d in results]
-
-        return jsonify({"success": True, "data": out})
-
+                d["_collection"] = collection_name
+                all_docs.append(d)
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"success": False, "data": [], "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    return jsonify({"success": True, "data": all_docs})
+
+
+
 
 @app.route("/api/get-lead-by-id", methods=["POST"])
 def get_lead_by_id():
@@ -2810,9 +2823,13 @@ def toggle_ai():
             })
         else:
             # Currently enabled -> insert -> AI disabled
+            normalized_phone = normalize_number(phone)  # strips '+', spaces, @s.whatsapp.net etc.
+            if normalized_phone and not normalized_phone.startswith("91"):
+                normalized_phone = "91" + normalized_phone
+
             doc = {
                 "leadId": lead_id,
-                "Phone Number": str(phone or ""),
+                "Phone Number": normalized_phone,
                 "Lead Name": name or "",
                 "createdAt": datetime.utcnow()
             }
