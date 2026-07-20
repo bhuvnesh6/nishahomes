@@ -755,9 +755,6 @@ def assigned_leads():
     role = session.get("role")
     employee_number = session.get("employee_number")  # stored as int at login time
 
-    # Assigned leads aren't a separate collection — they're documents
-    # inside these four collections that have an AssignTo/AssignToNumber
-    # field set (by /api/assign-lead or /api/bulk-assign-leads).
     collection_type_map = {
         "Leads": "buying",
         "RentalLeads": "rental",
@@ -767,16 +764,30 @@ def assigned_leads():
 
     query = {"AssignTo": {"$exists": True, "$nin": [None, ""]}}
 
-    # emp -> only their own assigned leads. admin -> everyone's.
     if role != "admin":
         if not employee_number:
             return jsonify({"success": False, "message": "No employee number in session"}), 400
         query["AssignToNumber"] = employee_number
 
+    # Cap per-collection to keep this fast/light with ~8k+ assigned docs.
+    # Frontend paginates 25/page anyway, so a few hundred newest per
+    # collection is more than enough for normal browsing.
+    PER_COLLECTION_LIMIT = 500
+
     all_docs = []
     try:
         for collection_name, lead_type in collection_type_map.items():
-            docs = db[collection_name].find(query)
+            # Sort by AssignedAt descending (fresh assignments first).
+            # Docs assigned before this field existed won't have it, so
+            # they naturally sort to the bottom (missing field sorts
+            # last for descending numeric/date sorts in Mongo) - fine,
+            # they're the oldest anyway.
+            docs = (
+                db[collection_name]
+                .find(query)
+                .sort("AssignedAt", -1)
+                .limit(PER_COLLECTION_LIMIT)
+            )
             for d in docs:
                 d = serialize_doc(d)
                 d["_leadType"] = lead_type
@@ -787,8 +798,15 @@ def assigned_leads():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
-    return jsonify({"success": True, "data": all_docs})
+    # Merge-sort across collections too, since each was sorted
+    # individually - without this, "newest overall" could be buried
+    # under a whole other collection's block of older docs.
+    def sort_key(doc):
+        return doc.get("AssignedAt") or ""
 
+    all_docs.sort(key=sort_key, reverse=True)
+
+    return jsonify({"success": True, "data": all_docs})
 
 
 
