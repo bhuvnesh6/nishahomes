@@ -26,6 +26,8 @@ from openpyxl.utils import get_column_letter
 import io
 import calendar
 import re
+import json
+import fitz  # PyMuPDF — pip install pymupdf
 
 # NEW: Cloudinary (used for Inventory / project image & video uploads)
 import cloudinary
@@ -124,8 +126,8 @@ def add_cors_headers(response):
 # Everything else (leads, team, exports, admin/emp dashboards, etc.)
 # redirects them straight back to /inventory.
 # -----------------------------------------------------------------
-PARTNER_ALLOWED_PATHS = {"/inventory", "/logout"}
-PARTNER_ALLOWED_PREFIXES = ("/api/projects", "/uploads", "/static")
+PARTNER_ALLOWED_PATHS = {"/inventory", "/logout", "/add-inventory"}
+PARTNER_ALLOWED_PREFIXES = ("/api/projects", "/api/ai", "/uploads", "/static")
 
 @app.before_request
 def restrict_partner_access():
@@ -181,6 +183,118 @@ def get_date_range(period):
 
     return None, None  # "all"
 
+
+# =============================
+# AI PROPERTY AUTOFILL (Mistral)
+# =============================
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+# Schema for the PARTNER "Add Inventory" form (Image 1)
+INVENTORY_FIELDS_SCHEMA = {
+    "listingBasis": "Individual property | Project",
+    "dealType": "For Sale | For Rent",
+    "propertyType": "Apartment | Villa | Plot | Independent House | Commercial | Farmhouse",
+    "propertyTitle": "short catchy listing title",
+    "locality": "locality / landmark",
+    "configuration": "e.g. 2 BHK",
+    "furnishing": "Unfurnished | Semi-furnished | Fully furnished",
+    "areaUnit": "sqft",
+    "carpetArea": "number only, as string",
+    "superArea": "number only, as string",
+    "floor": "e.g. 3 of 5",
+    "bathrooms": "number only, as string",
+    "facing": "East | West | North | South | North-East | North-West | South-East | South-West",
+    "parking": "number of parking spots, as string",
+    "possession": "Ready to move | Under construction",
+    "price": "number only, no currency symbol, as string",
+    "quickNotes": "short internal note, 1 sentence",
+    "description": "polished 3-5 sentence marketing description"
+}
+
+# Schema for the ADMIN "Add Project" form (Image 2)
+PROJECT_FIELDS_SCHEMA = {
+    "name": "project name",
+    "location": "location, e.g. Sidon, Himachal Pradesh",
+    "propertyType": "Apartment | Villa | Plot | Independent House | Commercial",
+    "possession": "New launch | Ready to move | Under construction",
+    "configuration": "e.g. Studio / 1 BHK / 2 BHK",
+    "startingPrice": "e.g. 70 Lakhs onwards",
+    "description": "3-5 sentence project note / marketing description"
+}
+
+
+def extract_text_from_pdf(pdf_path):
+    """
+    Text-extracts a PDF. Tries the fast direct-text path first (works for
+    brochures/typed PDFs). Any page with no extractable text is assumed
+    scanned/image-only, so it's rasterized and sent through the existing
+    extract_text_from_image() OCR helper instead.
+    """
+    text_chunks = []
+    try:
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            page_text = page.get_text().strip()
+            if page_text:
+                text_chunks.append(page_text)
+                continue
+
+            # Scanned page — rasterize and OCR it
+            pix = page.get_pixmap(dpi=200)
+            tmp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp_img.close()
+            pix.save(tmp_img.name)
+            try:
+                ocr_text = extract_text_from_image(tmp_img.name)
+                if ocr_text:
+                    text_chunks.append(ocr_text)
+            except Exception as ocr_err:
+                print(f"[pdf-extract] OCR fallback failed: {ocr_err}")
+            finally:
+                os.remove(tmp_img.name)
+        doc.close()
+    except Exception as e:
+        print(f"[pdf-extract] failed: {e}")
+    return "\n".join(text_chunks)
+
+
+def call_mistral_generate(extracted_text, schema):
+    """Sends extracted OCR/PDF text to Mistral and asks it to fill the given field schema, returning parsed JSON."""
+    if not MISTRAL_API_KEY:
+        raise RuntimeError("MISTRAL_API_KEY not configured in .env")
+
+    system_prompt = (
+        "You are a real-estate data-entry assistant. Given raw text extracted "
+        "from property photos and/or a brochure PDF (may be messy OCR output), "
+        "fill in the JSON fields described below as best you can infer. "
+        "Return ONLY a valid JSON object — no markdown fences, no commentary. "
+        "If a field cannot be determined from the text, return an empty string for it. "
+        f"Fields and guidance: {json.dumps(schema)}"
+    )
+
+    payload = {
+        "model": "mistral-large-latest",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": extracted_text[:12000] or "No text could be extracted."}
+        ],
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"}
+    }
+
+    resp = requests.post(
+        MISTRAL_API_URL,
+        headers={
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json=payload,
+        timeout=60
+    )
+    resp.raise_for_status()
+    content = resp.json()["choices"][0]["message"]["content"]
+    return json.loads(content)
 
 
 @app.route("/")
@@ -1282,7 +1396,7 @@ def dashboard_stats():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
@@ -2068,12 +2182,6 @@ def video_to_frames():
 # - admin / emp -> sees every project (all partners + their own uploads)
 # - partner     -> sees ONLY their own projects (matched on employee_number)
 # - no session  -> public read (e.g. marketing site), sees everything
-
-
-# REPLACED: now supports partner-scoped visibility.
-# - admin / emp -> sees every project (all partners + their own uploads)
-# - partner     -> sees ONLY their own projects (matched on employee_number)
-# - no session  -> public read (e.g. marketing site), sees everything
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
@@ -2468,6 +2576,67 @@ def inventory_dashboard_stats():
         "partnerPerformance": perf
     }), 200
 
+
+# =============================
+# AI: SHARED GENERATE-PROPERTY ENDPOINT
+# Used by BOTH the partner "Add Inventory" form and the admin
+# "Add Project" form. Runs OCR on any uploaded photos + text/OCR
+# extraction on an optional PDF, then sends the combined text to
+# Mistral and returns suggested field values for the frontend to
+# autofill into the relevant form.
+# =============================
+@app.route("/api/ai/generate-property", methods=["POST"])
+def ai_generate_property():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    try:
+        form_type = request.form.get("form_type", "inventory")
+        combined_text = []
+
+        for f in request.files.getlist("images"):
+            if not f or not f.filename:
+                continue
+            ext = os.path.splitext(f.filename)[-1] or ".png"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+            tmp.close()
+            f.save(tmp.name)
+            try:
+                txt = extract_text_from_image(tmp.name)
+                if txt:
+                    combined_text.append(txt)
+            except Exception as img_err:
+                print(f"[ai-generate] image OCR failed: {img_err}")
+            finally:
+                os.remove(tmp.name)
+
+        pdf_file = request.files.get("pdf")
+        if pdf_file and pdf_file.filename:
+            tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+            tmp_pdf.close()
+            pdf_file.save(tmp_pdf.name)
+            try:
+                txt = extract_text_from_pdf(tmp_pdf.name)
+                if txt:
+                    combined_text.append(txt)
+            finally:
+                os.remove(tmp_pdf.name)
+
+        full_text = "\n\n".join(combined_text).strip()
+        if not full_text:
+            return jsonify({"success": False, "message": "Could not extract any text from the uploaded photos/PDF"}), 400
+
+        schema = INVENTORY_FIELDS_SCHEMA if form_type == "inventory" else PROJECT_FIELDS_SCHEMA
+        result = call_mistral_generate(full_text, schema)
+
+        return jsonify({"success": True, "data": result})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 # -------------------------------
 # REPLACED: POST /api/projects/upload
 # Now uploads image/video straight to Cloudinary instead of local disk,
@@ -2509,6 +2678,17 @@ def upload_project():
         file_url = upload_result.get("secure_url")
         public_id = upload_result.get("public_id")
 
+        # NEW: optional PDF / brochure upload for the project
+        pdf_url = None
+        pdf_file = request.files.get("pdf")
+        if pdf_file and pdf_file.filename:
+            pdf_upload = cloudinary.uploader.upload(
+                pdf_file,
+                resource_type="raw",
+                folder="nishahomes/projects/docs"
+            )
+            pdf_url = pdf_upload.get("secure_url")
+
         # Save in DB
         # partner uploads start "pending" and need admin approval.
         # admin/emp uploads are auto-approved since staff added them directly.
@@ -2522,6 +2702,7 @@ def upload_project():
             "mediaUrl": file_url,
             "mediaPublicId": public_id,
             "type": resource_type,
+            "pdfUrl": pdf_url,
             "status": "pending" if session.get("role") == "partner" else "approved",
             "ownerNumber": session.get("employee_number"),
             "ownerName": session.get("employee_name"),
@@ -2545,6 +2726,85 @@ def upload_project():
             "status": "error",
             "message": str(e)
         }), 500
+
+
+# -------------------------------
+# NEW: PARTNER "Add Inventory" upload
+# Full detailed listing (Image 1 form) — image gallery, video, optional
+# PDF brochure. Same projects_collection, tagged type="inventory".
+# -------------------------------
+@app.route("/api/projects/upload-inventory", methods=["POST"])
+def upload_inventory():
+    try:
+        if not session.get("user_id"):
+            return jsonify({"status": "error", "message": "Login required"}), 401
+
+        f = request.form.get
+        required = ["propertyType", "propertyTitle", "locality", "price"]
+        if not all(f(k) for k in required):
+            return jsonify({"status": "error", "message": "Property type, title, locality and price are required"}), 400
+
+        media_urls, media_public_ids = [], []
+        for file in request.files.getlist("photos"):
+            if not file or not file.filename:
+                continue
+            up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/inventory")
+            media_urls.append(up.get("secure_url"))
+            media_public_ids.append(up.get("public_id"))
+
+        for file in request.files.getlist("videos"):
+            if not file or not file.filename:
+                continue
+            up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
+            media_urls.append(up.get("secure_url"))
+            media_public_ids.append(up.get("public_id"))
+
+        pdf_url = None
+        pdf_file = request.files.get("pdf")
+        if pdf_file and pdf_file.filename:
+            up = cloudinary.uploader.upload(pdf_file, resource_type="raw", folder="nishahomes/inventory/docs")
+            pdf_url = up.get("secure_url")
+
+        inventory_data = {
+            "listingBasis": f("listingBasis", ""),
+            "dealType": f("dealType", ""),
+            "category": f("propertyType", ""),        # keeps compatibility with existing "category" field used elsewhere
+            "name": f("propertyTitle", ""),            # keeps compatibility with existing "name" field
+            "location": f("locality", ""),              # keeps compatibility with existing "location" field
+            "configuration": f("configuration", ""),
+            "furnishing": f("furnishing", ""),
+            "areaUnit": f("areaUnit", "sqft"),
+            "carpetArea": f("carpetArea", ""),
+            "superArea": f("superArea", ""),
+            "floor": f("floor", ""),
+            "bathrooms": f("bathrooms", ""),
+            "facing": f("facing", ""),
+            "parking": f("parking", ""),
+            "possession": f("possession", ""),
+            "budget": f("price", ""),                    # keeps compatibility with existing "budget" field
+            "landingPageLink": f("landingPageLink", ""),
+            "mapLink": f("mapLink", ""),
+            "quickNotes": f("quickNotes", ""),
+            "description": f("description", ""),
+            "img": media_urls[0] if media_urls else None,
+            "mediaUrls": media_urls,
+            "mediaPublicIds": media_public_ids,
+            "pdfUrl": pdf_url,
+            "type": "inventory",
+            "status": "pending" if session.get("role") == "partner" else "approved",
+            "ownerNumber": session.get("employee_number"),
+            "ownerName": session.get("employee_name"),
+            "ownerRole": session.get("role"),
+            "createdAt": datetime.utcnow()
+        }
+
+        result = projects_collection.insert_one(inventory_data)
+        return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # PUT/POST-style update - allows editing fields and/or replacing media
@@ -2678,6 +2938,13 @@ def approve_project(project_id):
 @app.route("/add-project")
 def add_project_page():
     return render_template("upload_project.html")
+
+
+@app.route("/add-inventory")
+def add_inventory_page():
+    if not session.get("user_id"):
+        return redirect("/")
+    return render_template("add_inventory.html")
 
 
 @app.route("/api/add-end-data", methods=["POST"])
@@ -2874,5 +3141,28 @@ def get_dai_list():
         return jsonify({"error": str(e)}), 500
 
 
+
+def remove_assign_to_from_leads():
+    """
+    ONE-TIME CLEANUP: strips AssignTo (and related assignment fields)
+    from every document in the Leads collection.
+    Run once, then delete this function and its call below.
+    """
+    result = db["Leads"].update_many(
+        {},
+        {
+            "$unset": {
+                "AssignTo": "",
+                "AssignToNumber": "",
+                "AssignedBy": "",
+                "AssignedByNumber": "",
+                "AssignedAt": ""
+            }
+        }
+    )
+    print(f"[cleanup] matched: {result.matched_count}, modified: {result.modified_count}")
+
+
 if __name__ == "__main__":
+    #remove_assign_to_from_leads()
     app.run(host="0.0.0.0", port=8000)

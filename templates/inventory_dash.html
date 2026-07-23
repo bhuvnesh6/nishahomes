@@ -157,6 +157,7 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
 .pc-action-btn.danger:hover{border-color:var(--hot);color:var(--hot);background:rgba(239,68,68,.05)}
 .pc-action-btn.stage-btn{border-color:var(--info);color:var(--info)}
 .pc-action-btn.stage-btn:hover{background:rgba(59,130,246,.08)}
+.pc-pdf-link{font-size:0.72rem;color:var(--accent);font-weight:600}
 
 .empty-state{padding:80px 20px;text-align:center;grid-column:1/-1}
 .empty-state-icon{font-size:3rem;margin-bottom:12px;opacity:.6}
@@ -208,6 +209,14 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
 }
 .submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,131,84,.38)}
 .submit-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.ai-btn{
+  width:100%;padding:12px;background:linear-gradient(135deg,#8B5CF6,#c4b5fd);color:#fff;
+  border-radius:var(--radius-sm);font-size:0.87rem;font-weight:700;margin-bottom:18px;
+  box-shadow:0 4px 16px rgba(139,92,246,.35);transition:var(--transition);
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.ai-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(139,92,246,.45)}
+.ai-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
 .ghost-btn{
   width:100%;padding:11px;border-radius:var(--radius-sm);border:1.5px solid rgba(255,255,255,.18);
   color:#fff;font-size:0.85rem;font-weight:600;background:transparent;transition:var(--transition);margin-top:8px;
@@ -218,6 +227,13 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
   color:var(--hot);font-size:0.85rem;font-weight:600;background:transparent;margin-top:8px;
 }
 .danger-btn:hover{background:rgba(239,68,68,.1)}
+.section-heading-sm{
+  font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--accent-light);margin:16px 0 8px;display:flex;align-items:center;gap:7px;
+}
+.section-heading-sm::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:2px}
+.file-chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.file-chip{background:rgba(255,255,255,.1);color:#fff;font-size:.7rem;padding:4px 9px;border-radius:var(--radius-pill)}
 
 .stats-row{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px}
 @media(min-width:640px){.stats-row{grid-template-columns:repeat(4,1fr)}}
@@ -268,6 +284,7 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
 
 .perf-row{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px}
 .resp-block{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+@media(max-width:520px){.form-row2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -304,11 +321,17 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
 
 </div>
 
-<!-- ADD / EDIT PROJECT MODAL -->
+<!-- ═══════════════════════════════════════════════════
+     ADD/EDIT LISTING MODAL — used by ADMIN/EMP (simple form)
+     Partners get a separate, more detailed modal (inventoryModal) below.
+═══════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="projectModal">
   <div class="modal">
     <button class="modal-close" id="closeProjectModal">✕</button>
     <h2 id="projectModalTitle">Add Listing</h2>
+
+    <button type="button" class="ai-btn" id="projAiBtn">✨ Generate with AI</button>
+
     <form id="projectForm">
       <input type="hidden" id="editingId" value="">
       <div class="form-group"><label class="form-label">Project Name</label><input type="text" class="form-input" id="pName" required></div>
@@ -322,12 +345,116 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
       </div>
       <div class="form-group"><label class="form-label">Budget</label><input type="text" class="form-input" id="pBudget" placeholder="e.g. ₹85L - ₹1.2Cr" required></div>
       <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="pDescription" required></textarea></div>
+
       <div class="form-group">
         <label class="form-label">Media (Image or Video)</label>
         <div class="file-drop" id="fileDropZone">Click to choose an image or video</div>
         <input type="file" id="pMedia" accept="image/*,video/*" style="display:none">
       </div>
+
+      <div class="form-group">
+        <label class="form-label">Brochure / PDF (optional)</label>
+        <div class="file-drop" id="pdfDropZone">Click to choose a PDF</div>
+        <input type="file" id="pPdf" accept="application/pdf" style="display:none">
+      </div>
+
       <button type="submit" class="submit-btn" id="projectSubmitBtn">Save Listing</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     ADD PROPERTY MODAL — PARTNER detailed form (Image 1 style)
+═══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="inventoryModal">
+  <div class="modal">
+    <button class="modal-close" id="closeInventoryModal">✕</button>
+    <h2>Add Property</h2>
+
+    <button type="button" class="ai-btn" id="invAiBtn">✨ Write description with AI</button>
+
+    <form id="inventoryForm">
+      <div class="form-row2">
+        <div class="form-group">
+          <label class="form-label">Listing basis</label>
+          <select class="form-select" id="inv_listingBasis"><option>Individual property</option><option>Project</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Deal type</label>
+          <select class="form-select" id="inv_dealType"><option>For Sale</option><option>For Rent</option></select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Property type</label>
+        <select class="form-select" id="inv_propertyType">
+          <option>Apartment</option><option>Villa</option><option>Plot</option>
+          <option>Independent House</option><option>Commercial</option><option>Farmhouse</option>
+        </select>
+      </div>
+
+      <div class="form-group"><label class="form-label">Property title</label><input class="form-input" id="inv_propertyTitle" placeholder="e.g. Spacious 3BHK near Metro" required></div>
+      <div class="form-group"><label class="form-label">Locality / landmark</label><input class="form-input" id="inv_locality" placeholder="e.g. Sector 45, near Metro" required></div>
+
+      <div class="form-row2">
+        <div class="form-group"><label class="form-label">Configuration</label><input class="form-input" id="inv_configuration" placeholder="e.g. 2 BHK"></div>
+        <div class="form-group">
+          <label class="form-label">Furnishing</label>
+          <select class="form-select" id="inv_furnishing"><option>Unfurnished</option><option>Semi-furnished</option><option>Fully furnished</option></select>
+        </div>
+      </div>
+
+      <div class="form-row2">
+        <div class="form-group"><label class="form-label">Carpet area (sqft)</label><input class="form-input" id="inv_carpetArea" placeholder="e.g. 1200"></div>
+        <div class="form-group"><label class="form-label">Super / built-up area</label><input class="form-input" id="inv_superArea" placeholder="e.g. 1450"></div>
+      </div>
+
+      <div class="form-row2">
+        <div class="form-group"><label class="form-label">Bathrooms</label><input class="form-input" id="inv_bathrooms" placeholder="e.g. 2"></div>
+        <div class="form-group"><label class="form-label">Floor</label><input class="form-input" id="inv_floor" placeholder="e.g. 3 of 5"></div>
+      </div>
+
+      <div class="form-row2">
+        <div class="form-group">
+          <label class="form-label">Facing</label>
+          <select class="form-select" id="inv_facing">
+            <option>East</option><option>West</option><option>North</option><option>South</option>
+            <option>North-East</option><option>North-West</option><option>South-East</option><option>South-West</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parking</label>
+          <select class="form-select" id="inv_parking"><option>0</option><option>1</option><option>2</option><option>3+</option></select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Possession</label>
+        <select class="form-select" id="inv_possession"><option>Ready to move</option><option>Under construction</option></select>
+      </div>
+
+      <div class="form-group"><label class="form-label">Price / rent</label><input class="form-input" id="inv_price" placeholder="e.g. 85 Lakhs" required></div>
+      <div class="form-group"><label class="form-label">Landing page link (optional)</label><input class="form-input" id="inv_landingPageLink" placeholder="https://…"></div>
+      <div class="form-group"><label class="form-label">Map link / location (optional)</label><input class="form-input" id="inv_mapLink" placeholder="https://maps.google.com/…"></div>
+      <div class="form-group"><label class="form-label">Quick notes</label><textarea class="form-textarea" id="inv_quickNotes" style="min-height:50px" placeholder="Internal notes — negotiable, urgent, etc."></textarea></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="inv_description" placeholder="Marketing description shown to customers"></textarea></div>
+
+      <div class="section-heading-sm">Photos</div>
+      <div class="file-drop" id="invPhotosDropZone">📷 Click to choose photos</div>
+      <input type="file" id="inv_photos" accept="image/*" multiple style="display:none">
+      <div class="file-chip-row" id="inv_photosChips"></div>
+
+      <div class="section-heading-sm">Videos</div>
+      <div class="file-drop" id="invVideosDropZone">🎬 Click to choose video(s)</div>
+      <input type="file" id="inv_videos" accept="video/*" multiple style="display:none">
+      <div class="file-chip-row" id="inv_videosChips"></div>
+
+      <div class="section-heading-sm">Brochure / PDF (optional)</div>
+      <div class="file-drop" id="invPdfDropZone">📄 Click to choose a PDF</div>
+      <input type="file" id="inv_pdf" accept="application/pdf" style="display:none">
+      <div class="file-chip-row" id="inv_pdfChip"></div>
+
+      <button type="submit" class="submit-btn" id="inv_submitBtn">Send to the desk</button>
     </form>
   </div>
 </div>
@@ -412,6 +539,7 @@ const EMP_NUMBER = "{{ employee_number }}";
 const EMP_NAME = "{{ employee_name }}";
 const IS_STAFF = (ROLE === 'admin' || ROLE === 'emp');
 const IS_ADMIN = (ROLE === 'admin');
+const IS_PARTNER = (ROLE === 'partner');
 
 const STAGES = ["Approved","Customer Shared","Site Visit Scheduled","Negotiation","Token Received","Agreement Done","Registration Done","Sold","Rented","Closed","Cancelled"];
 const REQ_STATUS_LABELS = {new:"New",broadcasted:"Broadcasted",responses:"Responses",matched:"Matched",visit:"Visit scheduled",closed:"Closed",cancelled:"Cancelled",expired:"Expired",rejected:"Rejected"};
@@ -533,9 +661,11 @@ function renderInventoryGrid(){
   document.querySelectorAll('[data-share-proj]').forEach(b=>b.addEventListener('click', ()=>shareListingWA(b.dataset.shareProj)));
 }
 function projectCardHTML(p){
-  const media = p.mediaUrl || p.img || '';
+  const media = p.mediaUrl || p.img || (p.mediaUrls && p.mediaUrls[0]) || '';
   const isVideo = p.type === 'video';
-  const mediaTag = isVideo ? `<video src="${esc(media)}" muted></video>` : `<img src="${esc(media)}" alt="${esc(p.name)}" loading="lazy">`;
+  const mediaTag = media
+    ? (isVideo ? `<video src="${esc(media)}" muted></video>` : `<img src="${esc(media)}" alt="${esc(p.name)}" loading="lazy">`)
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:2rem">🏠</div>`;
   const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === EMP_NUMBER);
   const status = p.status || 'approved';
   const isPending = status === 'pending';
@@ -557,6 +687,7 @@ function projectCardHTML(p){
         <div class="pc-budget">${esc(p.budget)}</div>
         ${IS_STAFF ? `<div class="pc-owner">${esc(p.ownerName || 'Unassigned')}</div>` : ''}
       </div>
+      ${p.pdfUrl ? `<a href="${esc(p.pdfUrl)}" target="_blank" class="pc-pdf-link">📄 View brochure</a>` : ''}
     </div>
     <div class="pc-actions">
       ${IS_ADMIN && isPending ? `<button class="pc-action-btn approve-btn" data-approve="${p._id}">✅ Approve</button>` : ''}
@@ -576,17 +707,29 @@ function shareListingWA(id){
   window.open(waLink(target, lines.join('\n')), '_blank');
 }
 
-/* ADD/EDIT project modal (same as before) */
+/* ===== "Add Listing" top-bar button routes by role ===== */
+function openAddModal(){
+  if(IS_PARTNER){ openInventoryModal(); return; }
+  openAdminProjectModal();
+}
+
+/* ============ ADMIN/EMP SIMPLE PROJECT MODAL (existing) ============ */
 const projectModal = document.getElementById('projectModal');
 const fileDropZone = document.getElementById('fileDropZone');
 const fileInput = document.getElementById('pMedia');
-function openAddModal(){
+const pdfDropZone = document.getElementById('pdfDropZone');
+const pdfInput = document.getElementById('pPdf');
+
+function openAdminProjectModal(){
   document.getElementById('editingId').value = '';
   document.getElementById('projectModalTitle').textContent = 'Add Listing';
   document.getElementById('projectForm').reset();
   fileDropZone.textContent = 'Click to choose an image or video';
   fileDropZone.classList.remove('has-file');
   fileInput.required = true;
+  pdfDropZone.textContent = 'Click to choose a PDF';
+  pdfDropZone.classList.remove('has-file');
+  pdfInput.value = '';
   projectModal.classList.add('active');
 }
 document.getElementById('closeProjectModal').addEventListener('click', ()=> projectModal.classList.remove('active'));
@@ -595,6 +738,11 @@ fileDropZone.addEventListener('click', ()=> fileInput.click());
 fileInput.addEventListener('change', ()=>{
   if(fileInput.files[0]){ fileDropZone.textContent = '✓ ' + fileInput.files[0].name; fileDropZone.classList.add('has-file'); }
 });
+pdfDropZone.addEventListener('click', ()=> pdfInput.click());
+pdfInput.addEventListener('change', ()=>{
+  if(pdfInput.files[0]){ pdfDropZone.textContent = '✓ ' + pdfInput.files[0].name; pdfDropZone.classList.add('has-file'); }
+});
+
 function openEditModal(p){
   document.getElementById('editingId').value = p._id;
   document.getElementById('projectModalTitle').textContent = 'Edit Listing';
@@ -607,6 +755,9 @@ function openEditModal(p){
   fileDropZone.classList.remove('has-file');
   fileInput.required = false;
   fileInput.value = '';
+  pdfDropZone.textContent = p.pdfUrl ? '✓ Existing brochure — click to replace' : 'Click to choose a PDF';
+  pdfDropZone.classList.toggle('has-file', !!p.pdfUrl);
+  pdfInput.value = '';
   projectModal.classList.add('active');
 }
 document.getElementById('projectForm').addEventListener('submit', async (e)=>{
@@ -621,6 +772,7 @@ document.getElementById('projectForm').addEventListener('submit', async (e)=>{
   fd.append('budget', document.getElementById('pBudget').value);
   fd.append('description', document.getElementById('pDescription').value);
   if(fileInput.files[0]) fd.append('media', fileInput.files[0]);
+  if(pdfInput.files[0]) fd.append('pdf', pdfInput.files[0]);
   try{
     const url = editingId ? `${BASE}/projects/update/${editingId}` : `${BASE}/projects/upload`;
     const res = await fetch(url, { method: 'POST', body: fd, credentials: 'include' });
@@ -631,6 +783,33 @@ document.getElementById('projectForm').addEventListener('submit', async (e)=>{
   }catch(err){ console.error(err); toast('Save failed. Please try again.'); }
   finally{ btn.disabled = false; btn.textContent = 'Save Listing'; }
 });
+
+/* AI generate — admin/emp simple project form */
+document.getElementById('projAiBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('projAiBtn');
+  const media = fileInput.files;
+  const pdf = pdfInput.files[0];
+  if(!media.length && !pdf){ toast('Choose a photo/video or PDF first, then generate'); return; }
+
+  btn.disabled = true; btn.textContent = '✨ Reading & generating…';
+  const fd = new FormData();
+  fd.append('form_type', 'project');
+  Array.from(media).forEach(f=>{ if(f.type.startsWith('image')) fd.append('images', f); });
+  if(pdf) fd.append('pdf', pdf);
+
+  try{
+    const res = await fetch(`${BASE}/ai/generate-property`, { method:'POST', body: fd, credentials:'include' });
+    const d = await res.json();
+    if(!d.success){ toast(d.message || 'AI generation failed'); return; }
+    const v = d.data;
+    if(v.name) document.getElementById('pName').value = v.name;
+    if(v.location) document.getElementById('pLocation').value = v.location;
+    if(v.description) document.getElementById('pDescription').value = v.description;
+    if(v.startingPrice) document.getElementById('pBudget').value = v.startingPrice;
+  }catch(e){ console.error(e); toast('AI generation failed'); }
+  finally{ btn.disabled = false; btn.textContent = '✨ Generate with AI'; }
+});
+
 async function deleteProject(id){
   if(!confirm('Delete this listing? This cannot be undone.')) return;
   showLoader();
@@ -685,6 +864,93 @@ document.getElementById('stageSaveBtn').addEventListener('click', async ()=>{
     loadProjects();
   }catch(e){ console.error(e); toast('Update failed.'); }
   finally{ hideLoader(); }
+});
+
+/* ============ PARTNER DETAILED "ADD PROPERTY" MODAL (new) ============ */
+const inventoryModal = document.getElementById('inventoryModal');
+function openInventoryModal(){
+  document.getElementById('inventoryForm').reset();
+  document.getElementById('inv_photosChips').innerHTML = '';
+  document.getElementById('inv_videosChips').innerHTML = '';
+  document.getElementById('inv_pdfChip').innerHTML = '';
+  inventoryModal.classList.add('active');
+}
+document.getElementById('closeInventoryModal').addEventListener('click', ()=>inventoryModal.classList.remove('active'));
+inventoryModal.addEventListener('click', e=>{ if(e.target.id==='inventoryModal') inventoryModal.classList.remove('active'); });
+
+function bindFileDropToInput(dropId, inputId, chipRowId){
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  const chipRow = document.getElementById(chipRowId);
+  drop.addEventListener('click', ()=> input.click());
+  input.addEventListener('change', ()=>{
+    chipRow.innerHTML = Array.from(input.files).map(f=>`<span class="file-chip">${esc(f.name)}</span>`).join('');
+    if(input.files.length){ drop.classList.add('has-file'); }
+  });
+}
+bindFileDropToInput('invPhotosDropZone','inv_photos','inv_photosChips');
+bindFileDropToInput('invVideosDropZone','inv_videos','inv_videosChips');
+bindFileDropToInput('invPdfDropZone','inv_pdf','inv_pdfChip');
+
+/* AI generate — partner detailed form */
+document.getElementById('invAiBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('invAiBtn');
+  const photos = document.getElementById('inv_photos').files;
+  const pdf = document.getElementById('inv_pdf').files[0];
+  if(!photos.length && !pdf){ toast('Upload at least one photo or a PDF first, then generate'); return; }
+
+  btn.disabled = true; btn.textContent = '✨ Reading photos & PDF…';
+  const fd = new FormData();
+  fd.append('form_type', 'inventory');
+  Array.from(photos).forEach(p=>fd.append('images', p));
+  if(pdf) fd.append('pdf', pdf);
+
+  try{
+    const res = await fetch(`${BASE}/ai/generate-property`, { method:'POST', body: fd, credentials:'include' });
+    const d = await res.json();
+    if(!d.success){ toast(d.message || 'AI generation failed'); return; }
+    const v = d.data;
+    const fieldMap = {
+      listingBasis:'inv_listingBasis', dealType:'inv_dealType', propertyType:'inv_propertyType',
+      propertyTitle:'inv_propertyTitle', locality:'inv_locality', configuration:'inv_configuration',
+      furnishing:'inv_furnishing', carpetArea:'inv_carpetArea', superArea:'inv_superArea',
+      floor:'inv_floor', bathrooms:'inv_bathrooms', facing:'inv_facing', parking:'inv_parking',
+      possession:'inv_possession', price:'inv_price', quickNotes:'inv_quickNotes', description:'inv_description'
+    };
+    Object.entries(fieldMap).forEach(([key, id])=>{
+      const el = document.getElementById(id);
+      if(el && v[key]) el.value = v[key];
+    });
+  }catch(e){ console.error(e); toast('AI generation failed'); }
+  finally{ btn.disabled = false; btn.textContent = '✨ Write description with AI'; }
+});
+
+document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('inv_submitBtn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+
+  const fd = new FormData();
+  const fields = ['listingBasis','dealType','propertyType','propertyTitle','locality','configuration',
+    'furnishing','carpetArea','superArea','floor','bathrooms','facing','parking','possession',
+    'price','landingPageLink','mapLink','quickNotes','description'];
+  fields.forEach(f=>fd.append(f, document.getElementById('inv_'+f).value));
+  fd.append('areaUnit','sqft');
+
+  Array.from(document.getElementById('inv_photos').files).forEach(f=>fd.append('photos', f));
+  Array.from(document.getElementById('inv_videos').files).forEach(f=>fd.append('videos', f));
+  const pdf = document.getElementById('inv_pdf').files[0];
+  if(pdf) fd.append('pdf', pdf);
+
+  try{
+    const res = await fetch(`${BASE}/projects/upload-inventory`, { method:'POST', body: fd, credentials:'include' });
+    const d = await res.json();
+    if(d.status !== 'success'){ toast(d.message || 'Upload failed'); return; }
+    toast('Sent to the desk ✅');
+    inventoryModal.classList.remove('active');
+    loadProjects();
+  }catch(e){ console.error(e); toast('Upload failed'); }
+  finally{ btn.disabled = false; btn.textContent = 'Send to the desk'; }
 });
 
 /* ===================== REQUIREMENTS TAB ===================== */
