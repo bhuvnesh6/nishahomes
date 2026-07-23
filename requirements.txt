@@ -11,3 +11,4 @@ setuptools
 requests
 openpyxl
 cloudinary
+PyMuPDF==1.26.3
