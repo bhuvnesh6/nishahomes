@@ -156,6 +156,25 @@ def parse_lead_date(date_str):
     return None
 
 
+# NEW: only show leads dated from July 2026 up to "now". Any lead whose
+# Date field is missing or doesn't parse in any known format is dropped
+# entirely (never shown as "undated") — same rule applies automatically
+# to any new lead added going forward, as long as its Date field parses
+# and isn't in the future.
+JULY_2026_START = datetime(2026, 7, 1)
+
+def filter_by_july_range(docs):
+    now = datetime.utcnow()
+    kept = []
+    for d in docs:
+        parsed = parse_lead_date(d.get("Date"))
+        if not parsed:
+            continue
+        if JULY_2026_START <= parsed <= now:
+            kept.append(d)
+    return kept
+
+
 def get_date_range(period):
     """Returns (start_date, end_date) for the given export period, or (None, None) for 'all'."""
     now = datetime.utcnow()
@@ -324,18 +343,6 @@ def login():
     raw_number = request.form.get("number", "")
     raw_password = request.form.get("password", "")
 
-    # FIX: previously this used its own ad-hoc cleanup
-    # (number.replace("+", "").strip()), which only strips a leading "+"
-    # and outer whitespace. Any other stray character (space, dash,
-    # invisible autofill artifact, etc.) made int(number) either raise or
-    # produce a value that didn't match what's stored in Mongo, so the
-    # find_one() below silently returned None -> "Invalid number or
-    # password" -> redirect("/"). That's exactly the 302 -> GET "/"
-    # pattern you saw for the admin login while the partner login (whose
-    # number happened to be "clean") succeeded.
-    #
-    # Now reuses the same normalize_number() helper used everywhere else
-    # in the app, so admin and partner numbers are cleaned identically.
     number = normalize_number(raw_number)
 
     if not number:
@@ -348,9 +355,6 @@ def login():
         flash("Invalid phone number format")
         return redirect("/")
 
-    # FIX: also strip the password, in case of trailing/leading spaces
-    # from autofill/copy-paste, which would otherwise cause a silent
-    # match failure the same way.
     password = raw_password.strip()
 
     remember = request.form.get("remember")
@@ -362,11 +366,6 @@ def login():
         "password": password
     })
 
-    # DIAGNOSTIC: check `docker logs <container>` after a failed login.
-    # If found_user=False, the DB this container is connected to simply
-    # does not have a matching Employee number/password document — a
-    # data/connection issue, not a code issue (see startup diagnostic
-    # above, and double-check MONGO_URI/DB_NAME reach the container).
     print(f"[login] number={number} found_user={bool(user)}"
           + (f" roll={user.get('roll')!r}" if user else ""))
 
@@ -374,9 +373,6 @@ def login():
         flash("Invalid number or password")
         return redirect("/")
 
-    # FIX: normalize the stored role too (strip + lowercase) so stray
-    # whitespace or case differences in the DB don't silently fall
-    # through to the "Invalid role" branch.
     role = (user.get("roll") or "").strip().lower()
 
     # Store session
@@ -459,19 +455,11 @@ def addlead():
     return render_template("addlead.html")
 
 
-# NOTE: duplicate route path "/leadjourney" registered twice under two
-# different view function names (leadjourney / lead_journey). Flask allows
-# this (different endpoint names), so it is left as-is; only true syntax
-# errors have been fixed in this pass.
 @app.route("/leadjourney")
 def lead_journey():
     return render_template("leadjourney.html")
 
 
-# NEW: Inventory Dashboard page
-# Accessible to admin, emp, and partner. Partners are locked to ONLY this
-# route (see restrict_partner_access above); admin/emp can also reach it
-# from their normal dashboards.
 @app.route("/inventory")
 def inventory():
     if not session.get("user_id"):
@@ -536,9 +524,10 @@ def upload():
 # APIs
 # =============================
 
+# CHANGED: now filtered to July 2026 -> today only (see filter_by_july_range)
 @app.route("/api/leads")
 def leads():
-    return jsonify(get_collection_data("Leads"))
+    return jsonify(filter_by_july_range(get_collection_data("Leads")))
 
 #single lead
 def clean_nan(data):
@@ -633,24 +622,21 @@ def update_realtor():
 def hofcorders():
     return jsonify(get_collection_data("orderhouseofcakes"))
 
+# CHANGED: now filtered to July 2026 -> today only
 @app.route("/api/rental-leads")
 def rental_leads():
-    return jsonify(get_collection_data("RentalLeads"))
+    return jsonify(filter_by_july_range(get_collection_data("RentalLeads")))
 
+# CHANGED: now filtered to July 2026 -> today only
 @app.route("/api/agent-leads")
 def agent_leads():
-    return jsonify(get_collection_data("agentLeads"))
+    return jsonify(filter_by_july_range(get_collection_data("agentLeads")))
 
+# CHANGED: now filtered to July 2026 -> today only
 @app.route("/api/selling-leads")
 def selling_leads():
-    return jsonify(get_collection_data("sellingLeads"))
+    return jsonify(filter_by_july_range(get_collection_data("sellingLeads")))
 
-# NOTE: "/api/end-data" was originally defined twice (once as end_data()
-# returning the raw collection dump, once as get_end_data() with the
-# number-filter logic). Flask does not allow two view functions mapped to
-# the same route+methods combo at import time in some configurations, and
-# having both is redundant/confusing regardless. Kept only the more
-# complete version (get_end_data) which supersedes the first.
 @app.route("/api/end-data")
 def get_end_data():
 
@@ -691,9 +677,6 @@ def add_team_member():
         number = data.get("number")
         role = data.get("role", "emp")  # default emp
 
-        # NEW: validate role - now includes "partner"
-        # Admin onboards partners from the same "Manage Team" flow; they
-        # log in through the same /login form and get routed to /inventory.
         if role not in ("admin", "emp", "partner"):
             return jsonify({"success": False, "message": "Invalid role"}), 400
 
@@ -764,7 +747,6 @@ def remove_team_member(number):
     try:
         collection = db["teamAssign"]
 
-        # CLEAN + CONVERT SAME AS ADD
         number = str(number).strip()
         number = number.replace("+", "")
         number = "".join(filter(str.isdigit, number))
@@ -861,12 +843,15 @@ def assign_lead():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+# CHANGED: every user (admin or emp) now only sees leads assigned to the
+# employee number they are CURRENTLY logged in as — even admin-to-admin
+# assignments stay private to the assignee. Previously any admin saw
+# every admin's assigned leads.
 @app.route('/api/assigned-leads')
 def assigned_leads():
     if not session.get("user_id"):
         return jsonify({"success": False, "message": "Not authenticated"}), 401
 
-    role = session.get("role")
     employee_number = session.get("employee_number")  # stored as int at login time
 
     collection_type_map = {
@@ -876,26 +861,20 @@ def assigned_leads():
         "agentLeads": "agent",
     }
 
-    query = {"AssignTo": {"$exists": True, "$nin": [None, ""]}}
+    if not employee_number:
+        return jsonify({"success": False, "message": "No employee number in session"}), 400
 
-    if role != "admin":
-        if not employee_number:
-            return jsonify({"success": False, "message": "No employee number in session"}), 400
-        query["AssignToNumber"] = employee_number
+    query = {
+        "AssignTo": {"$exists": True, "$nin": [None, ""]},
+        "AssignToNumber": employee_number
+    }
 
     # Cap per-collection to keep this fast/light with ~8k+ assigned docs.
-    # Frontend paginates 25/page anyway, so a few hundred newest per
-    # collection is more than enough for normal browsing.
     PER_COLLECTION_LIMIT = 500
 
     all_docs = []
     try:
         for collection_name, lead_type in collection_type_map.items():
-            # Sort by AssignedAt descending (fresh assignments first).
-            # Docs assigned before this field existed won't have it, so
-            # they naturally sort to the bottom (missing field sorts
-            # last for descending numeric/date sorts in Mongo) - fine,
-            # they're the oldest anyway.
             docs = (
                 db[collection_name]
                 .find(query)
@@ -912,9 +891,6 @@ def assigned_leads():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
-    # Merge-sort across collections too, since each was sorted
-    # individually - without this, "newest overall" could be buried
-    # under a whole other collection's block of older docs.
     def sort_key(doc):
         return doc.get("AssignedAt") or ""
 
@@ -1255,9 +1231,6 @@ def add_call_log():
 
         call_logs_collection.insert_one(log_entry)
 
-        # Find the lead doc by phone (it already has a Mongo _id by
-        # default), copy that _id onto endData as LeadId, and stamp who
-        # made this call directly onto the Lead document (callBy field).
         lead_type = data.get("leadType")
         collection_name = COLLECTION_MAP.get(lead_type)
         if collection_name:
@@ -1398,6 +1371,84 @@ def dashboard_stats():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+
+# =============================
+# NEW: FOLLOW-UPS DUE TODAY / THIS WEEK (for admin dashboard widget)
+# Scans every lead across all 4 collections, looks up its endData
+# doc for "Next Call Date", and buckets it into today / this week.
+# Visible to admin & emp; shows follow-ups set by ANY employee/admin.
+# =============================
+@app.route("/api/dashboard-followups", methods=["GET"])
+def dashboard_followups():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    today = datetime.utcnow().date()
+    week_start = today - timedelta(days=today.weekday())   # Monday
+    week_end = week_start + timedelta(days=6)               # Sunday
+
+    def parse_followup_date(s):
+        if not s:
+            return None
+        s = str(s).strip()
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(s, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    end_collection = db["endData"]
+    collections = {
+        "buying": "Leads", "rental": "RentalLeads",
+        "selling": "sellingLeads", "agent": "agentLeads"
+    }
+
+    today_list, week_list = [], []
+
+    try:
+        for lead_type, coll_name in collections.items():
+            for lead in db[coll_name].find():
+                phone = normalize_number(lead.get("Phone Number", ""))
+                if not phone:
+                    continue
+                if not phone.startswith("91"):
+                    phone = "91" + phone
+
+                ed = end_collection.find_one({"Number": phone}) or {}
+                fdate = parse_followup_date(ed.get("Next Call Date"))
+                if not fdate or fdate < today:
+                    continue   # only today-forward, not overdue
+
+                entry = {
+                    "id": str(lead["_id"]),
+                    "collection": coll_name,
+                    "leadType": lead_type,
+                    "name": lead.get("Lead Name") or lead.get("Name") or "Unknown",
+                    "phone": phone,
+                    "assignedTo": lead.get("AssignTo", "Unassigned"),
+                    "nextCallDate": ed.get("Next Call Date"),
+                    "callStatus": ed.get("Call Status", "-"),
+                    "location": lead.get("Location Interested In") or lead.get("Property Location") or "-",
+                }
+                if fdate == today:
+                    today_list.append(entry)
+                if week_start <= fdate <= week_end:
+                    week_list.append(entry)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    return jsonify({
+        "success": True,
+        "todayCount": len(today_list),
+        "weekCount": len(week_list),
+        "todayLeads": today_list,
+        "weekLeads": week_list
+    }), 200
+
+
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
     try:
@@ -1438,11 +1489,6 @@ def delete_lead():
 def export_leads():
     """
     Builds an Excel export of leads.
-
-    Hardened so a single bad record (missing/garbage phone, bad ObjectId,
-    a transient Mongo hiccup on one collection, etc.) can never abort the
-    whole export - it's skipped and logged, and the export still returns
-    whatever rows it could successfully build.
     """
     try:
         data = request.json or {}
@@ -1501,23 +1547,18 @@ def export_leads():
                 raw_phone = item.get("phone", "")
                 phone = normalize_number(raw_phone)
 
-                # Guard: an empty/too-short phone must never be used as a
-                # regex filter - that would match arbitrary documents and
-                # pull the wrong lead's data into this row.
                 valid_phone = bool(phone) and len(phone) >= 8
                 if valid_phone and not phone.startswith("91"):
                     phone = "91" + phone
 
                 lead_doc = None
 
-                # 1) Try by _id first - most reliable, no regex needed
                 if lead_id:
                     try:
                         lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
                     except Exception:
                         lead_doc = None
 
-                # 2) Fall back to a safely-escaped phone regex match
                 if not lead_doc and valid_phone:
                     try:
                         safe_phone = re.escape(phone)
@@ -1529,7 +1570,6 @@ def export_leads():
 
                 lead_doc = lead_doc or {}
 
-                # end-data / call-logs lookups, also guarded individually
                 end_doc = {}
                 call_logs = []
                 if valid_phone:
@@ -1563,7 +1603,6 @@ def export_leads():
                 })
 
             except Exception as item_err:
-                # Never let one bad lead take down the whole export
                 skipped += 1
                 print(f"[export] Skipping row due to error: {item_err}")
                 continue
@@ -1742,20 +1781,6 @@ def delete_wp_template(id):
         return jsonify({"error": str(e)}), 500
 
 
-# -----------------------------------------------------------------
-# FIX: this used to be `db = client["NishaHomesData"]`, which
-# silently REASSIGNED the global `db` used by every other route in
-# this file (including /api/export-leads). That meant every route
-# below this point - and, more importantly, every route ABOVE it that
-# ran after this module finished loading - was querying whatever
-# database "NishaHomesData" is, instead of the one configured via
-# DB_NAME in your .env. This is almost certainly why exports (and
-# other reads) sometimes silently returned nothing.
-#
-# We now use dedicated variable names so /update-lead keeps working
-# exactly as before, without touching the shared `db` / `collection`
-# names used everywhere else.
-# -----------------------------------------------------------------
 update_lead_db = client["NishaHomesData"]
 update_lead_collection = update_lead_db["endData"]
 
@@ -2078,11 +2103,6 @@ def image_to_text():
     return jsonify({'text': text})
 
 # Endpoint 2: Video -> Audio (returns HTML player)
-# NOTE: this route calls extract_audio_from_video(), which comes from a
-# commented-out import ("#from video_to_audio import extract_audio_from_video")
-# at the top of the file. It is a syntax-valid function, but will raise a
-# NameError at request time unless that import is restored. Left as-is
-# structurally since re-enabling it is a behavior change, not a syntax fix.
 @app.route('/video-to-audio', methods=['POST'])
 def video_to_audio():
     if 'file' not in request.files:
@@ -2116,9 +2136,6 @@ def get_audio():
     path = request.args.get('path')
     return send_file(path, mimetype='audio/mpeg')
 
-# NOTE: this route uses cv2, which comes from a commented-out import
-# ("#import cv2") at the top of the file. It is syntax-valid but will raise
-# a NameError at request time unless that import is restored.
 @app.route('/video-to-frames', methods=['POST'])
 def video_to_frames():
     if 'file' not in request.files:
@@ -2178,10 +2195,6 @@ def video_to_frames():
 
 #project
 
-# REPLACED: now supports partner-scoped visibility.
-# - admin / emp -> sees every project (all partners + their own uploads)
-# - partner     -> sees ONLY their own projects (matched on employee_number)
-# - no session  -> public read (e.g. marketing site), sees everything
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
@@ -2198,13 +2211,6 @@ def get_projects():
 
         projects = list(projects_collection.find(query).sort("createdAt", -1))
 
-        # FIX: wrap response in {success, data} instead of returning a bare
-        # array. Both inventory_dash.html (`allProjects = d.data || []`)
-        # and admin.html's Send-Property modal (`spProjects = d.data || []`)
-        # read `.data` off the response — a bare array made `.data`
-        # always undefined, so listings never rendered no matter their
-        # status. This was the only bug; the query/filter logic above was
-        # already correct.
         return jsonify({
             "success": True,
             "data": [serialize_doc(p) for p in projects]
@@ -2300,7 +2306,6 @@ def add_requirement():
         submitted_by_number = session.get("employee_number")
         submitted_by_name = session.get("employee_name")
     else:
-        # staff can attribute this to a partner, or keep it as their own
         submitted_by_number = data.get("onBehalfNumber") or session.get("employee_number")
         submitted_by_name = data.get("onBehalfName") or session.get("employee_name")
 
@@ -2579,11 +2584,6 @@ def inventory_dashboard_stats():
 
 # =============================
 # AI: SHARED GENERATE-PROPERTY ENDPOINT
-# Used by BOTH the partner "Add Inventory" form and the admin
-# "Add Project" form. Runs OCR on any uploaded photos + text/OCR
-# extraction on an optional PDF, then sends the combined text to
-# Mistral and returns suggested field values for the frontend to
-# autofill into the relevant form.
 # =============================
 @app.route("/api/ai/generate-property", methods=["POST"])
 def ai_generate_property():
@@ -2638,10 +2638,7 @@ def ai_generate_property():
 
 
 # -------------------------------
-# REPLACED: POST /api/projects/upload
-# Now uploads image/video straight to Cloudinary instead of local disk,
-# and tags the resulting document with who uploaded it so partners only
-# ever see/manage their own inventory.
+# POST /api/projects/upload
 # -------------------------------
 @app.route("/api/projects/upload", methods=["POST"])
 def upload_project():
@@ -2690,8 +2687,6 @@ def upload_project():
             pdf_url = pdf_upload.get("secure_url")
 
         # Save in DB
-        # partner uploads start "pending" and need admin approval.
-        # admin/emp uploads are auto-approved since staff added them directly.
         project_data = {
             "name": name,
             "location": location,
@@ -2730,8 +2725,6 @@ def upload_project():
 
 # -------------------------------
 # NEW: PARTNER "Add Inventory" upload
-# Full detailed listing (Image 1 form) — image gallery, video, optional
-# PDF brochure. Same projects_collection, tagged type="inventory".
 # -------------------------------
 @app.route("/api/projects/upload-inventory", methods=["POST"])
 def upload_inventory():
@@ -2768,9 +2761,9 @@ def upload_inventory():
         inventory_data = {
             "listingBasis": f("listingBasis", ""),
             "dealType": f("dealType", ""),
-            "category": f("propertyType", ""),        # keeps compatibility with existing "category" field used elsewhere
-            "name": f("propertyTitle", ""),            # keeps compatibility with existing "name" field
-            "location": f("locality", ""),              # keeps compatibility with existing "location" field
+            "category": f("propertyType", ""),
+            "name": f("propertyTitle", ""),
+            "location": f("locality", ""),
             "configuration": f("configuration", ""),
             "furnishing": f("furnishing", ""),
             "areaUnit": f("areaUnit", "sqft"),
@@ -2781,7 +2774,7 @@ def upload_inventory():
             "facing": f("facing", ""),
             "parking": f("parking", ""),
             "possession": f("possession", ""),
-            "budget": f("price", ""),                    # keeps compatibility with existing "budget" field
+            "budget": f("price", ""),
             "landingPageLink": f("landingPageLink", ""),
             "mapLink": f("mapLink", ""),
             "quickNotes": f("quickNotes", ""),
@@ -3081,10 +3074,6 @@ def get_lead_by_number():
 def toggle_ai():
     """
     Toggles whether AI is disabled for a lead.
-    - If the lead is NOT in the DAI collection -> insert it (AI disabled).
-    - If the lead IS in the DAI collection -> remove it (AI re-enabled).
-    Keyed primarily by leadId (Mongo _id of the lead doc, as a string),
-    with Phone Number / Lead Name stored alongside for reference/debugging.
     """
     try:
         data = request.json or {}
@@ -3099,7 +3088,6 @@ def toggle_ai():
         existing = dai_collection.find_one({"leadId": lead_id})
 
         if existing:
-            # Currently disabled -> remove -> AI re-enabled
             dai_collection.delete_one({"leadId": lead_id})
             return jsonify({
                 "success": True,
@@ -3107,8 +3095,7 @@ def toggle_ai():
                 "message": "AI re-enabled for this lead"
             })
         else:
-            # Currently enabled -> insert -> AI disabled
-            normalized_phone = normalize_number(phone)  # strips '+', spaces, @s.whatsapp.net etc.
+            normalized_phone = normalize_number(phone)
             if normalized_phone and not normalized_phone.startswith("91"):
                 normalized_phone = "91" + normalized_phone
 
