@@ -297,7 +297,7 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
   <div class="topbar-right">
     <button class="topbar-btn" id="openAddModalBtn">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      <span>Add Listing</span>
+      <span id="openAddModalBtnLabel">Add Listing</span>
     </button>
     {% if role in ('admin','emp') %}
     <a href="/{{ 'admin' if role=='admin' else 'emp' }}" class="topbar-logout">← Dashboard</a>
@@ -459,6 +459,65 @@ textarea,input,select{font-family:'DM Sans',sans-serif}
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════
+     MANAGE PROJECT MODAL — ADMIN "Add a New Project" form
+     Saves to same projects_collection with kind="project"
+═══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="projectV2Modal">
+  <div class="modal wide">
+    <button class="modal-close" id="closeProjectV2Modal">✕</button>
+    <h2>Add a New Project</h2>
+
+    <button type="button" class="ai-btn" id="pv2AiBtn">✨ Fill with AI (photos / brochure PDF)</button>
+
+    <form id="projectV2Form">
+      <div class="form-group"><label class="form-label">Project name</label><input class="form-input" id="pv2_name" placeholder="e.g. Pine Valley Residency" required></div>
+      <div class="form-group"><label class="form-label">Location</label><input class="form-input" id="pv2_location" placeholder="e.g. Solan, Himachal Pradesh" required></div>
+
+      <div class="form-row2">
+        <div class="form-group">
+          <label class="form-label">Property type</label>
+          <select class="form-select" id="pv2_propertyType">
+            <option>Apartment</option><option>Villa</option><option>Plot</option>
+            <option>Independent House</option><option>Commercial</option><option>Farmhouse</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Possession</label>
+          <select class="form-select" id="pv2_possession">
+            <option>New launch</option><option>Ready to move</option><option>Under construction</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row2">
+        <div class="form-group"><label class="form-label">Configuration</label><input class="form-input" id="pv2_configuration" placeholder="e.g. Studio / 1 BHK / 2 BHK"></div>
+        <div class="form-group"><label class="form-label">Starting price</label><input class="form-input" id="pv2_startingPrice" placeholder="e.g. 70 L onwards"></div>
+      </div>
+
+      <div class="form-group"><label class="form-label">Project note</label><textarea class="form-textarea" id="pv2_description" placeholder="RERA-registered new-launch project..."></textarea></div>
+      <div class="form-group"><label class="form-label">Video links (one per line)</label><textarea class="form-textarea" id="pv2_videoLinks" placeholder="https://drive...&#10;https://youtu.be..."></textarea></div>
+
+      <div class="section-heading-sm">Photos</div>
+      <div class="file-drop" id="pv2PhotosDropZone">+ Upload project photos</div>
+      <input type="file" id="pv2_photos" accept="image/*" multiple style="display:none">
+      <div class="file-chip-row" id="pv2_photosChips"></div>
+
+      <div class="section-heading-sm">Videos</div>
+      <div class="file-drop" id="pv2VideosDropZone">+ Upload project video</div>
+      <input type="file" id="pv2_videos" accept="video/*" multiple style="display:none">
+      <div class="file-chip-row" id="pv2_videosChips"></div>
+
+      <div class="section-heading-sm">Brochure / PDF (optional)</div>
+      <div class="file-drop" id="pv2PdfDropZone">📄 Click to choose a PDF</div>
+      <input type="file" id="pv2_pdf" accept="application/pdf" style="display:none">
+      <div class="file-chip-row" id="pv2_pdfChip"></div>
+
+      <button type="submit" class="submit-btn" id="pv2_submitBtn">Add project</button>
+    </form>
+  </div>
+</div>
+
 <!-- STAGE UPDATE MODAL -->
 <div class="modal-overlay" id="stageModal">
   <div class="modal">
@@ -549,6 +608,7 @@ let allRequirements = [];
 let allPartners = [];
 let settingsData = {};
 let currentCategory = 'all';
+let projCurrentCategory = 'all';
 let reqStatusFilter = 'new';
 let state = { tab: 'inventory' };
 
@@ -565,6 +625,7 @@ function tabDefs(){
   let t = [{id:'inventory', label:'Inventory'}, {id:'requirements', label:'Requirements', badge: allRequirements.filter(r=>r.status==='new').length}];
   if(ROLE === 'partner') t.push({id:'broadcasts', label:'Broadcasts', badge: myPendingBroadcasts().length});
   if(IS_STAFF){
+    t.push({id:'projects', label:'Projects', badge: allProjects.filter(p=>p.kind==='project').length});
     t.push({id:'dashboard', label:'Dashboard'});
   }
   if(IS_ADMIN){
@@ -591,6 +652,7 @@ function switchTab(){
   if(state.tab==='inventory'){ c.innerHTML = inventoryTabHTML(); bindInventoryTab(); }
   else if(state.tab==='requirements'){ c.innerHTML = requirementsTabHTML(); bindRequirementsTab(); }
   else if(state.tab==='broadcasts'){ c.innerHTML = broadcastsTabHTML(); bindBroadcastsTab(); }
+  else if(state.tab==='projects'){ c.innerHTML = projectsTabHTML(); bindProjectsTab(); }
   else if(state.tab==='dashboard'){ c.innerHTML = `<div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>`; loadDashboard(); }
   else if(state.tab==='partners'){ c.innerHTML = `<div class="empty-state"><div class="loader" style="margin:0 auto"></div></div>`; loadPartnersTab(); }
   else if(state.tab==='settings'){ c.innerHTML = settingsTabHTML(); bindSettingsTab(); }
@@ -605,6 +667,7 @@ async function loadProjects(){
     allProjects = (d.data || []).sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
     buildStats();
     if(state.tab==='inventory'){ document.getElementById('tabContent').innerHTML = inventoryTabHTML(); bindInventoryTab(); }
+    if(state.tab==='projects'){ document.getElementById('tabContent').innerHTML = projectsTabHTML(); bindProjectsTab(); }
   }catch(e){
     console.error(e);
   }finally{
@@ -612,13 +675,15 @@ async function loadProjects(){
   }
 }
 function buildStats(){
-  document.getElementById('statTotal').textContent = allProjects.length;
-  document.getElementById('statImages').textContent = allProjects.filter(p=>p.type==='image').length;
-  document.getElementById('statVideos').textContent = allProjects.filter(p=>p.type==='video').length;
-  document.getElementById('statCategories').textContent = new Set(allProjects.map(p=>p.category).filter(Boolean)).size;
+  const invOnly = allProjects.filter(p=>p.kind!=='project');
+  document.getElementById('statTotal').textContent = invOnly.length;
+  document.getElementById('statImages').textContent = invOnly.filter(p=>p.type==='image').length;
+  document.getElementById('statVideos').textContent = invOnly.filter(p=>p.type==='video').length;
+  document.getElementById('statCategories').textContent = new Set(invOnly.map(p=>p.category).filter(Boolean)).size;
 }
 function inventoryTabHTML(){
-  const cats = Array.from(new Set(allProjects.map(p=>p.category).filter(Boolean)));
+  const invOnly = allProjects.filter(p=>p.kind!=='project');
+  const cats = Array.from(new Set(invOnly.map(p=>p.category).filter(Boolean)));
   let html = `<div class="page-header"><div>
       <div class="page-title">${IS_STAFF ? 'All Partner Inventory' : 'My Inventory'}</div>
       <div class="page-subtitle" id="pageSubtitle">Loading listings…</div></div></div>`;
@@ -639,12 +704,12 @@ function bindInventoryTab(){
   document.querySelectorAll('#categoryChips [data-cat]').forEach(chip=>{
     chip.addEventListener('click', ()=>{ currentCategory = chip.dataset.cat; document.getElementById('tabContent').innerHTML = inventoryTabHTML(); bindInventoryTab(); renderInventoryGrid(); });
   });
-  document.getElementById('openAddModalBtn').onclick = openAddModal;
   renderInventoryGrid();
 }
 function renderInventoryGrid(){
   const q = (document.getElementById('searchInput')?.value||'').toLowerCase();
   const filtered = allProjects.filter(p=>{
+    if(p.kind === 'project') return false; // projects live in their own tab
     if(currentCategory!=='all' && p.category!==currentCategory) return false;
     if(!q) return true;
     return (p.name||'').toLowerCase().includes(q) || (p.location||'').toLowerCase().includes(q);
@@ -653,6 +718,9 @@ function renderInventoryGrid(){
   const grid = document.getElementById('projectsGrid'); if(!grid) return;
   if(filtered.length===0){ grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏗️</div><h3>No listings yet</h3><p>Click "Add Listing" to create your first one</p></div>`; return; }
   grid.innerHTML = filtered.map(projectCardHTML).join('');
+  bindProjectCardActions();
+}
+function bindProjectCardActions(){
   document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click', ()=>openEditModal(JSON.parse(b.dataset.edit))));
   document.querySelectorAll('[data-del-proj]').forEach(b=>b.addEventListener('click', ()=>deleteProject(b.dataset.delProj)));
   document.querySelectorAll('[data-approve]').forEach(b=>b.addEventListener('click', ()=>approveProject(b.dataset.approve)));
@@ -670,11 +738,12 @@ function projectCardHTML(p){
   const status = p.status || 'approved';
   const isPending = status === 'pending';
   const stage = p.stage || (status==='approved' ? 'Approved' : '');
+  const isProjectKind = p.kind === 'project';
   return `
   <div class="project-card">
     <div class="pc-media">
       ${mediaTag}
-      <span class="pc-cat-badge">${esc(p.category||'—')}</span>
+      <span class="pc-cat-badge">${esc(p.category||p.propertyType||'—')}</span>
       <span class="pc-type-badge">${isVideo?'🎥 Video':'🖼 Image'}</span>
       <span class="pc-status-badge ${isPending?'pending':'approved'}">${isPending?'⏳ Pending':'✅ Approved'}</span>
       ${(!isPending && stage) ? `<span class="pc-stage-badge">${esc(stage)}</span>` : ''}
@@ -684,7 +753,7 @@ function projectCardHTML(p){
       <div class="pc-location">📍 ${esc(p.location)}</div>
       <div class="pc-desc">${esc(p.description)}</div>
       <div class="pc-footer">
-        <div class="pc-budget">${esc(p.budget)}</div>
+        <div class="pc-budget">${esc(p.budget || p.startingPrice || '')}</div>
         ${IS_STAFF ? `<div class="pc-owner">${esc(p.ownerName || 'Unassigned')}</div>` : ''}
       </div>
       ${p.pdfUrl ? `<a href="${esc(p.pdfUrl)}" target="_blank" class="pc-pdf-link">📄 View brochure</a>` : ''}
@@ -694,26 +763,27 @@ function projectCardHTML(p){
       ${IS_ADMIN && !isPending ? `<button class="pc-action-btn" data-unapprove="${p._id}">↩️ Unapprove</button>` : ''}
       ${IS_STAFF && !isPending ? `<button class="pc-action-btn stage-btn" data-stage="${p._id}" data-stage-current="${esc(stage)}">📊 Stage</button>` : ''}
       ${!isPending ? `<button class="pc-action-btn" data-share-proj="${p._id}">📤 Share</button>` : ''}
-      ${canManage ? `<button class="pc-action-btn" data-edit='${JSON.stringify(p).replace(/'/g,"&#39;")}'>✏️ Edit</button>` : ''}
+      ${canManage && !isProjectKind ? `<button class="pc-action-btn" data-edit='${JSON.stringify(p).replace(/'/g,"&#39;")}'>✏️ Edit</button>` : ''}
       ${canManage ? `<button class="pc-action-btn danger" data-del-proj="${p._id}">🗑 Delete</button>` : ''}
     </div>
   </div>`;
 }
 function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
-  const lines = [`🏡 ${p.name}`, `📍 ${p.location}`, `💰 ${p.budget}`, '', p.description||'', ''];
+  const lines = [`🏡 ${p.name}`, `📍 ${p.location}`, `💰 ${p.budget||p.startingPrice||''}`, '', p.description||'', ''];
   if(settingsData.corporate) lines.push(`Nisha Homes: ${settingsData.corporate}`);
   const target = settingsData.corporate || '';
   window.open(waLink(target, lines.join('\n')), '_blank');
 }
 
-/* ===== "Add Listing" top-bar button routes by role ===== */
+/* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */
 function openAddModal(){
   if(IS_PARTNER){ openInventoryModal(); return; }
+  if(IS_ADMIN){ openProjectV2Modal(); return; }
   openAdminProjectModal();
 }
 
-/* ============ ADMIN/EMP SIMPLE PROJECT MODAL (existing) ============ */
+/* ============ ADMIN/EMP SIMPLE PROJECT MODAL (existing, used by EMP) ============ */
 const projectModal = document.getElementById('projectModal');
 const fileDropZone = document.getElementById('fileDropZone');
 const fileInput = document.getElementById('pMedia');
@@ -866,7 +936,7 @@ document.getElementById('stageSaveBtn').addEventListener('click', async ()=>{
   finally{ hideLoader(); }
 });
 
-/* ============ PARTNER DETAILED "ADD PROPERTY" MODAL (new) ============ */
+/* ============ PARTNER DETAILED "ADD PROPERTY" MODAL ============ */
 const inventoryModal = document.getElementById('inventoryModal');
 function openInventoryModal(){
   document.getElementById('inventoryForm').reset();
@@ -952,6 +1022,127 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
   }catch(e){ console.error(e); toast('Upload failed'); }
   finally{ btn.disabled = false; btn.textContent = 'Send to the desk'; }
 });
+
+/* ============ MANAGE PROJECT MODAL (admin) ============ */
+const projectV2Modal = document.getElementById('projectV2Modal');
+function openProjectV2Modal(){
+  document.getElementById('projectV2Form').reset();
+  document.getElementById('pv2_photosChips').innerHTML = '';
+  document.getElementById('pv2_videosChips').innerHTML = '';
+  document.getElementById('pv2_pdfChip').innerHTML = '';
+  document.getElementById('pv2PhotosDropZone').classList.remove('has-file');
+  document.getElementById('pv2VideosDropZone').classList.remove('has-file');
+  document.getElementById('pv2PdfDropZone').classList.remove('has-file');
+  projectV2Modal.classList.add('active');
+}
+document.getElementById('closeProjectV2Modal').addEventListener('click', ()=>projectV2Modal.classList.remove('active'));
+projectV2Modal.addEventListener('click', e=>{ if(e.target.id==='projectV2Modal') projectV2Modal.classList.remove('active'); });
+
+bindFileDropToInput('pv2PhotosDropZone','pv2_photos','pv2_photosChips');
+bindFileDropToInput('pv2VideosDropZone','pv2_videos','pv2_videosChips');
+bindFileDropToInput('pv2PdfDropZone','pv2_pdf','pv2_pdfChip');
+
+document.getElementById('pv2AiBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('pv2AiBtn');
+  const photos = document.getElementById('pv2_photos').files;
+  const pdf = document.getElementById('pv2_pdf').files[0];
+  if(!photos.length && !pdf){ toast('Upload at least one photo or a brochure PDF first, then generate'); return; }
+
+  btn.disabled = true; btn.textContent = '✨ Reading photos & PDF…';
+  const fd = new FormData();
+  fd.append('form_type', 'project');
+  Array.from(photos).forEach(p=>fd.append('images', p));
+  if(pdf) fd.append('pdf', pdf);
+
+  try{
+    const res = await fetch(`${BASE}/ai/generate-property`, { method:'POST', body: fd, credentials:'include' });
+    const d = await res.json();
+    if(!d.success){ toast(d.message || 'AI generation failed'); return; }
+    const v = d.data || {};
+    if(v.name) document.getElementById('pv2_name').value = v.name;
+    if(v.location) document.getElementById('pv2_location').value = v.location;
+    if(v.propertyType) document.getElementById('pv2_propertyType').value = v.propertyType;
+    if(v.possession) document.getElementById('pv2_possession').value = v.possession;
+    if(v.configuration) document.getElementById('pv2_configuration').value = v.configuration;
+    if(v.startingPrice) document.getElementById('pv2_startingPrice').value = v.startingPrice;
+    if(v.description) document.getElementById('pv2_description').value = v.description;
+  }catch(e){ console.error(e); toast('AI generation failed'); }
+  finally{ btn.disabled = false; btn.textContent = '✨ Fill with AI (photos / brochure PDF)'; }
+});
+
+document.getElementById('projectV2Form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('pv2_submitBtn');
+  btn.disabled = true; btn.textContent = 'Adding…';
+
+  const fd = new FormData();
+  fd.append('name', document.getElementById('pv2_name').value);
+  fd.append('location', document.getElementById('pv2_location').value);
+  fd.append('propertyType', document.getElementById('pv2_propertyType').value);
+  fd.append('possession', document.getElementById('pv2_possession').value);
+  fd.append('configuration', document.getElementById('pv2_configuration').value);
+  fd.append('startingPrice', document.getElementById('pv2_startingPrice').value);
+  fd.append('description', document.getElementById('pv2_description').value);
+  fd.append('videoLinks', document.getElementById('pv2_videoLinks').value);
+  Array.from(document.getElementById('pv2_photos').files).forEach(f=>fd.append('photos', f));
+  Array.from(document.getElementById('pv2_videos').files).forEach(f=>fd.append('videos', f));
+  const pdf = document.getElementById('pv2_pdf').files[0];
+  if(pdf) fd.append('pdf', pdf);
+
+  try{
+    const res = await fetch(`${BASE}/projects/upload-project`, { method:'POST', body: fd, credentials:'include' });
+    const d = await res.json();
+    if(d.status !== 'success'){ toast(d.message || 'Failed to add project'); return; }
+    toast('Project added ✅');
+    projectV2Modal.classList.remove('active');
+    await loadProjects();
+    if(state.tab !== 'projects'){ state.tab = 'projects'; }
+    switchTab();
+  }catch(e){ console.error(e); toast('Failed to add project'); }
+  finally{ btn.disabled = false; btn.textContent = 'Add project'; }
+});
+
+/* ===================== PROJECTS TAB (kind === "project") ===================== */
+function projectsTabHTML(){
+  const projOnly = allProjects.filter(p=>p.kind==='project');
+  const cats = Array.from(new Set(projOnly.map(p=>p.propertyType || p.category).filter(Boolean)));
+  let html = `<div class="page-header"><div>
+      <div class="page-title">Projects</div>
+      <div class="page-subtitle" id="projPageSubtitle">Loading projects…</div></div></div>`;
+  html += `<div class="filter-bar">
+    <div class="filter-search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" class="filter-search" id="projSearchInput" placeholder="Search project name, location…" autocomplete="off">
+    </div>
+    <div class="filter-chips" id="projCategoryChips">
+      <button class="filter-chip ${projCurrentCategory==='all'?'active':''}" data-pcat="all">All</button>
+      ${cats.map(c=>`<button class="filter-chip ${projCurrentCategory===c?'active':''}" data-pcat="${esc(c)}">${esc(c)}</button>`).join('')}
+    </div></div>`;
+  html += `<div class="projects-grid" id="projectsGridV2"></div>`;
+  return html;
+}
+function bindProjectsTab(){
+  document.getElementById('projSearchInput').addEventListener('input', renderProjectsGridV2);
+  document.querySelectorAll('#projCategoryChips [data-pcat]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ projCurrentCategory = chip.dataset.pcat; document.getElementById('tabContent').innerHTML = projectsTabHTML(); bindProjectsTab(); renderProjectsGridV2(); });
+  });
+  renderProjectsGridV2();
+}
+function renderProjectsGridV2(){
+  const q = (document.getElementById('projSearchInput')?.value||'').toLowerCase();
+  const filtered = allProjects.filter(p=>{
+    if(p.kind !== 'project') return false;
+    const cat = p.propertyType || p.category;
+    if(projCurrentCategory!=='all' && cat!==projCurrentCategory) return false;
+    if(!q) return true;
+    return (p.name||'').toLowerCase().includes(q) || (p.location||'').toLowerCase().includes(q);
+  });
+  const sub = document.getElementById('projPageSubtitle'); if(sub) sub.textContent = `${filtered.length} project${filtered.length!==1?'s':''}`;
+  const grid = document.getElementById('projectsGridV2'); if(!grid) return;
+  if(filtered.length===0){ grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏙️</div><h3>No projects yet</h3><p>Click "Manage Project" to add your first one</p></div>`; return; }
+  grid.innerHTML = filtered.map(projectCardHTML).join('');
+  bindProjectCardActions();
+}
 
 /* ===================== REQUIREMENTS TAB ===================== */
 async function loadRequirements(){
@@ -1385,6 +1576,12 @@ function bindSettingsTab(){
     }catch(e){ console.error(e); toast('Failed to save'); }
     finally{ hideLoader(); }
   });
+}
+
+/* ===================== TOPBAR "ADD" BUTTON ===================== */
+document.getElementById('openAddModalBtn').addEventListener('click', openAddModal);
+if(IS_ADMIN){
+  document.getElementById('openAddModalBtnLabel').textContent = 'Manage Project';
 }
 
 /* ===================== INIT ===================== */

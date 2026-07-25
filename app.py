@@ -2195,6 +2195,7 @@ def video_to_frames():
 
 #project
 
+
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     try:
@@ -2204,10 +2205,14 @@ def get_projects():
         if role == "partner":
             query = {"ownerNumber": session.get("employee_number")}
 
-        # ?status=approved / ?status=pending filter
         status_filter = request.args.get("status")
         if status_filter:
             query["status"] = status_filter
+
+        # NEW
+        kind_filter = request.args.get("kind")
+        if kind_filter:
+            query["kind"] = kind_filter
 
         projects = list(projects_collection.find(query).sort("createdAt", -1))
 
@@ -3149,6 +3154,89 @@ def remove_assign_to_from_leads():
     )
     print(f"[cleanup] matched: {result.matched_count}, modified: {result.modified_count}")
 
+
+
+# =============================
+# ADMIN: "Manage Project" — Add Project (multi-photo/video, AI-fillable)
+# Saves into the SAME projects_collection as inventory, tagged kind="project"
+# =============================
+# =============================
+# ADMIN: "Manage Project" — Add Project (multi-photo/video, AI-fillable)
+# Saves into the SAME projects_collection as inventory, tagged kind="project"
+# =============================
+@app.route("/api/projects/upload-project", methods=["POST"])
+def upload_project_v2():
+    try:
+        if not session.get("user_id"):
+            return jsonify({"status": "error", "message": "Login required"}), 401
+
+        f = request.form.get
+        required = ["name", "location", "propertyType"]
+        if not all(f(k) for k in required):
+            return jsonify({"status": "error", "message": "Project name, location and property type are required"}), 400
+
+        video_links_raw = f("videoLinks", "") or ""
+        video_links = [v.strip() for v in video_links_raw.splitlines() if v.strip()]
+
+        media_urls, media_public_ids = [], []
+        has_image, has_video = False, False
+
+        for file in request.files.getlist("photos"):
+            if not file or not file.filename:
+                continue
+            up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/projects")
+            media_urls.append(up.get("secure_url"))
+            media_public_ids.append(up.get("public_id"))
+            has_image = True
+
+        for file in request.files.getlist("videos"):
+            if not file or not file.filename:
+                continue
+            up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
+            media_urls.append(up.get("secure_url"))
+            media_public_ids.append(up.get("public_id"))
+            has_video = True
+
+        pdf_url = None
+        pdf_file = request.files.get("pdf")
+        if pdf_file and pdf_file.filename:
+            up = cloudinary.uploader.upload(pdf_file, resource_type="raw", folder="nishahomes/projects/docs")
+            pdf_url = up.get("secure_url")
+
+        starting_price = f("startingPrice", "")
+
+        project_data = {
+            "kind": "project",                     # distinguishes from partner "inventory" listings
+            "name": f("name", ""),
+            "location": f("location", ""),
+            "propertyType": f("propertyType", ""),
+            "category": f("propertyType", ""),     # kept for compatibility with existing card/filter code
+            "possession": f("possession", ""),
+            "configuration": f("configuration", ""),
+            "startingPrice": starting_price,
+            "budget": starting_price,              # kept for compatibility with existing card display
+            "description": f("description", ""),
+            "videoLinks": video_links,
+            "img": media_urls[0] if media_urls else None,
+            "mediaUrl": media_urls[0] if media_urls else None,
+            "mediaUrls": media_urls,
+            "mediaPublicIds": media_public_ids,
+            "type": "video" if (has_video and not has_image) else "image",
+            "pdfUrl": pdf_url,
+            "status": "approved",
+            "ownerNumber": session.get("employee_number"),
+            "ownerName": session.get("employee_name"),
+            "ownerRole": session.get("role"),
+            "createdAt": datetime.utcnow()
+        }
+
+        result = projects_collection.insert_one(project_data)
+        return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     #remove_assign_to_from_leads()
