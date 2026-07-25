@@ -1437,17 +1437,27 @@ def dashboard_followups():
                 if not fdate or fdate < today:
                     continue   # only today-forward, not overdue
 
+                def _clean(v, default="-"):
+                    # NEW: guards against pandas/CSV-imported NaN floats, which Python's
+                    # jsonify serializes as the literal token `NaN` — invalid JSON that
+                    # breaks JSON.parse() in the browser. None/empty also fall back safely.
+                    if v is None or v == "":
+                        return default
+                    if isinstance(v, float) and math.isnan(v):
+                        return default
+                    return v
+
                 entry = {
                     "id": str(lead["_id"]),
                     "collection": coll_name,
                     "leadType": lead_type,
-                    "name": lead.get("Lead Name") or lead.get("Name") or "Unknown",
+                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
                     "phone": phone,
-                    "assignedTo": lead.get("AssignTo", "Unassigned"),
-                    "nextCallDate": ed.get("Next Call Date", "-"),
-                    "nextFollowupTimeline": ed.get("Next Follow-up Timeline", "-"),
-                    "callStatus": ed.get("Call Status", "-"),
-                    "location": lead.get("Location Interested In") or lead.get("Property Location") or "-",
+                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                    "nextCallDate": _clean(ed.get("Next Call Date")),
+                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                    "callStatus": _clean(ed.get("Call Status")),
+                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
                 }
 
                 # CHANGED: bucket exclusively — same-day goes to "today", everything else in-week to "week"
