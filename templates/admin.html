@@ -259,59 +259,162 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 /* ═══════════════════════════
    DASHBOARD PAGE
 ═══════════════════════════ */
-.stats-row{
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  gap:14px;
-  margin-bottom:22px;
+.dash-section{margin-bottom:28px}
+.dash-section-head{
+  display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:14px;flex-wrap:wrap;gap:6px;
 }
-@media(min-width:600px){.stats-row{grid-template-columns:repeat(4,1fr)}}
+.dash-section-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.15rem;font-weight:800;
+  color:var(--primary);letter-spacing:-0.3px;
+  display:flex;align-items:center;gap:8px;
+}
+.dash-section-title::before{
+  content:'';width:4px;height:18px;
+  background:linear-gradient(180deg,var(--accent),var(--accent-light));
+  border-radius:3px;flex-shrink:0;
+}
+.dash-section-sub{font-size:0.78rem;color:var(--text-soft)}
 
-.stat-card{
+.dash-welcome{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:12px;margin-bottom:24px;
+}
+.dash-welcome h1{
+  font-family:'Playfair Display',serif;
+  font-size:1.6rem;font-weight:900;color:var(--primary);letter-spacing:-0.5px;
+}
+.dash-welcome p{font-size:0.85rem;color:var(--text-soft);margin-top:2px}
+.dash-date-pill{
+  padding:8px 16px;background:#fff;border:1.5px solid var(--border);
+  border-radius:var(--radius-pill);font-size:0.78rem;font-weight:600;
+  color:var(--text-soft);box-shadow:var(--sh-sm);white-space:nowrap;
+}
+
+/* KPI grid — primary lead-type metrics */
+.kpi-grid{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
+}
+@media(min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr)}}
+
+.kpi-card{
   background:var(--primary-deep);
   border-radius:var(--radius);
-  padding:18px 16px 16px;
+  padding:20px 18px 18px;
   position:relative;overflow:hidden;
   border:1px solid var(--border-dark);
   transition:var(--transition);
+  isolation:isolate;
 }
-.stat-card:hover{transform:translateY(-3px);box-shadow:var(--sh-lg)}
-.stat-card::after{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,var(--accent),var(--accent-light));
+.kpi-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg)}
+.kpi-card::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at top right,rgba(239,131,84,0.14),transparent 60%);
+  z-index:0;
 }
-.stat-card.green::after{background:linear-gradient(90deg,#10B981,#34d399)}
-.stat-card.blue::after{background:linear-gradient(90deg,#3B82F6,#60a5fa)}
-.stat-card.warm::after{background:linear-gradient(90deg,#F59E0B,#fbbf24)}
-
-.stat-label{
-  font-size:0.7rem;font-weight:600;
-  text-transform:uppercase;letter-spacing:0.8px;
+.kpi-card.green::before{background:radial-gradient(circle at top right,rgba(16,185,129,0.16),transparent 60%)}
+.kpi-card.blue::before{background:radial-gradient(circle at top right,rgba(59,130,246,0.16),transparent 60%)}
+.kpi-card.warm::before{background:radial-gradient(circle at top right,rgba(245,158,11,0.16),transparent 60%)}
+.kpi-top{display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1}
+.kpi-icon{
+  width:36px;height:36px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.05rem;flex-shrink:0;
+  background:rgba(255,255,255,0.08);
+}
+.kpi-label{
+  font-size:0.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.9px;
   color:rgba(255,255,255,0.45);
-  margin-bottom:8px;
+  margin-top:14px;position:relative;z-index:1;
 }
-.stat-value{
+.kpi-value{
   font-family:'Playfair Display',serif;
-  font-size:1.9rem;font-weight:900;
-  color:#fff;line-height:1;
-  margin-bottom:6px;
+  font-size:2rem;font-weight:900;
+  color:#fff;line-height:1.05;margin-top:5px;
+  position:relative;z-index:1;
 }
-.stat-change{
-  font-size:0.75rem;font-weight:500;
-  color:var(--success);
-  display:flex;align-items:center;gap:4px;
+.kpi-change{
+  font-size:0.74rem;font-weight:500;
+  color:rgba(255,255,255,0.5);
+  margin-top:6px;position:relative;z-index:1;
 }
-.stat-change.down{color:var(--hot)}
-.stat-icon{
-  position:absolute;top:16px;right:16px;
-  opacity:0.12;font-size:2rem;
+
+/* Pipeline health strip — compact secondary stats */
+.pipeline-strip{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
 }
+@media(min-width:640px){.pipeline-strip{grid-template-columns:repeat(4,1fr)}}
+
+.pipeline-card{
+  background:#fff;border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:14px 16px;
+  display:flex;align-items:center;gap:12px;
+  box-shadow:var(--sh-sm);transition:var(--transition);
+}
+.pipeline-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.pipeline-icon{
+  width:38px;height:38px;border-radius:10px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:1.1rem;
+}
+.pipeline-icon.blue{background:rgba(59,130,246,0.1)}
+.pipeline-icon.warm{background:rgba(245,158,11,0.1)}
+.pipeline-icon.green{background:rgba(16,185,129,0.1)}
+.pipeline-icon.gray{background:rgba(107,114,128,0.1)}
+.pipeline-info{min-width:0}
+.pipeline-value{font-size:1.3rem;font-weight:800;color:var(--primary);line-height:1.1}
+.pipeline-label{font-size:0.72rem;color:var(--text-soft);font-weight:600;margin-top:1px}
+
+/* Follow-up spotlight cards */
+.followup-grid{
+  display:grid;grid-template-columns:1fr;gap:14px;
+}
+@media(min-width:640px){.followup-grid{grid-template-columns:1fr 1fr}}
+
+.followup-card{
+  position:relative;overflow:hidden;
+  border-radius:var(--radius);
+  padding:22px 20px;
+  cursor:pointer;transition:var(--transition);
+  border:1px solid var(--border-dark);
+  background:linear-gradient(135deg,var(--primary-deep) 0%,var(--primary-mid) 100%);
+  isolation:isolate;
+}
+.followup-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg)}
+.followup-card::after{
+  content:'';position:absolute;width:120px;height:120px;
+  border-radius:50%;top:-40px;right:-30px;
+  background:rgba(239,131,84,0.18);z-index:0;
+}
+.followup-card.week::after{background:rgba(59,130,246,0.16)}
+.fc-row{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.fc-icon{
+  width:44px;height:44px;border-radius:12px;
+  background:rgba(255,255,255,0.1);
+  display:flex;align-items:center;justify-content:center;font-size:1.3rem;
+}
+.fc-arrow{
+  width:30px;height:30px;border-radius:50%;
+  background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.15);
+  display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,0.7);transition:var(--transition);
+}
+.followup-card:hover .fc-arrow{background:var(--accent);border-color:var(--accent);color:#fff;transform:translateX(3px)}
+.fc-label{
+  font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;
+  color:rgba(255,255,255,0.5);margin-top:18px;position:relative;z-index:1;
+}
+.fc-value{
+  font-family:'Playfair Display',serif;font-size:2.4rem;font-weight:900;
+  color:#fff;line-height:1;margin-top:4px;position:relative;z-index:1;
+}
+.fc-hint{font-size:0.76rem;color:rgba(255,255,255,0.4);margin-top:6px;position:relative;z-index:1}
 
 .charts-row{
   display:grid;
   grid-template-columns:1fr;
   gap:16px;
-  margin-bottom:22px;
 }
 @media(min-width:900px){.charts-row{grid-template-columns:2fr 1fr}}
 
@@ -326,6 +429,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   color:rgba(255,255,255,0.72);
   margin-bottom:16px;
   display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:8px;
 }
 .chart-period-select{
   background:rgba(255,255,255,0.08);
@@ -1087,62 +1191,145 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
   </header>
 
-  <!-- DASHBOARD PAGE -->
-  <div class="page active" id="dashboardPage">
-    <div class="content">
-      <div class="stats-row anim anim-1">
-        <div class="stat-card">
-          <div class="stat-label">Total Leads</div>
-          <div class="stat-value" id="dashTotalLeads">—</div>
-          <div class="stat-change" id="dashTotalChange">↑ Loading…</div>
-          <div class="stat-icon">🏠</div>
+  
+<!-- DASHBOARD PAGE -->
+<div class="page active" id="dashboardPage">
+  <div class="content">
+
+    <div class="dash-welcome anim anim-1">
+      <div>
+        <h1>Dashboard Overview</h1>
+        <p>Live snapshot of your leads, pipeline and team activity</p>
+      </div>
+      <div class="dash-date-pill" id="dashDatePill">—</div>
+    </div>
+
+    <!-- KPI: lead volume by type -->
+    <div class="dash-section anim anim-1">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-top">
+            <div class="kpi-icon">🏠</div>
+          </div>
+          <div class="kpi-label">Total Leads</div>
+          <div class="kpi-value" id="dashTotalLeads">—</div>
+          <div class="kpi-change" id="dashTotalChange">Loading…</div>
         </div>
-        <div class="stat-card green">
-          <div class="stat-label">Buying</div>
-          <div class="stat-value" id="dashBuying">—</div>
-          <div class="stat-change" id="dashBuyingChange">—</div>
-          <div class="stat-icon">🛒</div>
+        <div class="kpi-card green">
+          <div class="kpi-top">
+            <div class="kpi-icon">🛒</div>
+          </div>
+          <div class="kpi-label">Buying</div>
+          <div class="kpi-value" id="dashBuying">—</div>
+          <div class="kpi-change" id="dashBuyingChange">—</div>
         </div>
-        <div class="stat-card blue">
-          <div class="stat-label">Rental</div>
-          <div class="stat-value" id="dashRental">—</div>
-          <div class="stat-change" id="dashRentalChange">—</div>
-          <div class="stat-icon">🔑</div>
+        <div class="kpi-card blue">
+          <div class="kpi-top">
+            <div class="kpi-icon">🔑</div>
+          </div>
+          <div class="kpi-label">Rental</div>
+          <div class="kpi-value" id="dashRental">—</div>
+          <div class="kpi-change" id="dashRentalChange">—</div>
         </div>
-        <div class="stat-card warm">
-          <div class="stat-label">Selling</div>
-          <div class="stat-value" id="dashSelling">—</div>
-          <div class="stat-change" id="dashSellingChange">—</div>
-          <div class="stat-icon">📋</div>
+        <div class="kpi-card warm">
+          <div class="kpi-top">
+            <div class="kpi-icon">📋</div>
+          </div>
+          <div class="kpi-label">Selling</div>
+          <div class="kpi-value" id="dashSelling">—</div>
+          <div class="kpi-change" id="dashSellingChange">—</div>
         </div>
       </div>
+    </div>
 
-      
-
-        
+    <!-- Pipeline health -->
+    <div class="dash-section anim anim-2">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Pipeline Health</div>
+        <div class="dash-section-sub">Across all leads</div>
       </div>
+      <div class="pipeline-strip">
+        <div class="pipeline-card">
+          <div class="pipeline-icon blue">📅</div>
+          <div class="pipeline-info">
+            <div class="pipeline-value" id="dashFollowup">—</div>
+            <div class="pipeline-label">Follow-ups Due</div>
+          </div>
+        </div>
+        <div class="pipeline-card warm">
+          <div class="pipeline-icon warm">⏳</div>
+          <div class="pipeline-info">
+            <div class="pipeline-value" id="dashPending">—</div>
+            <div class="pipeline-label">Pending</div>
+          </div>
+        </div>
+        <div class="pipeline-card">
+          <div class="pipeline-icon green">✅</div>
+          <div class="pipeline-info">
+            <div class="pipeline-value" id="dashDone">—</div>
+            <div class="pipeline-label">Done</div>
+          </div>
+        </div>
+        <div class="pipeline-card">
+          <div class="pipeline-icon gray">📞</div>
+          <div class="pipeline-info">
+            <div class="pipeline-value" id="dashCallsToday">—</div>
+            <div class="pipeline-label">Calls Today</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-      <div class="stats-row anim anim-2" style="margin-bottom:22px;">
-  <div class="stat-card blue" style="cursor:pointer" onclick="openFollowupModal('today')">
-    <div class="stat-label">Follow-ups Today</div>
-    <div class="stat-value" id="dashFollowupToday">—</div>
-    <div class="stat-change">Tap to view all</div>
-    <div class="stat-icon">📅</div>
-  </div>
-  <div class="stat-card" style="cursor:pointer" onclick="openFollowupModal('week')">
-    <div class="stat-label">Follow-ups This Week</div>
-    <div class="stat-value" id="dashFollowupWeek">—</div>
-    <div class="stat-change">Tap to view all</div>
-    <div class="stat-icon">🗓</div>
-  </div>
-</div>
+    <!-- Follow-ups spotlight -->
+    <div class="dash-section anim anim-2">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Follow-ups</div>
+        <div class="dash-section-sub">Tap a card to view the list</div>
+      </div>
+      <div class="followup-grid">
+        <div class="followup-card today" onclick="openFollowupModal('today')">
+          <div class="fc-row">
+            <div class="fc-icon">📅</div>
+            <div class="fc-arrow">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <div class="fc-label">Follow-ups Today</div>
+          <div class="fc-value" id="dashFollowupToday">—</div>
+          <div class="fc-hint">Leads due for contact today</div>
+        </div>
+        <div class="followup-card week" onclick="openFollowupModal('week')">
+          <div class="fc-row">
+            <div class="fc-icon">🗓</div>
+            <div class="fc-arrow">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+          <div class="fc-label">Follow-ups This Week</div>
+          <div class="fc-value" id="dashFollowupWeek">—</div>
+          <div class="fc-hint">Leads scheduled Mon–Sun</div>
+        </div>
+      </div>
+    </div>
 
-      <div class="chart-card anim anim-2" style="margin-bottom:22px;">
+    <!-- Team activity -->
+    <div class="dash-section anim anim-2">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Team Activity</div>
+        <div class="dash-section-sub">Calls logged today</div>
+      </div>
+      <div class="chart-card">
         <div class="chart-card-title">Calls Today — By Team Member</div>
         <div id="dashCallsByEmployee" class="donut-wrap"></div>
       </div>
+    </div>
 
-      <div class="charts-row anim anim-2">
+    <!-- Charts -->
+    <div class="dash-section anim anim-2">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Trends</div>
+      </div>
+      <div class="charts-row">
         <div class="chart-card">
           <div class="chart-card-title">
             <span>Leads Over Time</span>
@@ -1166,8 +1353,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="charts-row anim anim-3">
+    <!-- Status + locations -->
+    <div class="dash-section anim anim-3">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Breakdown</div>
+      </div>
+      <div class="charts-row">
         <div class="chart-card">
           <div class="chart-card-title">Leads by Call Status</div>
           <div class="bar-chart" id="statusBarChart"></div>
@@ -1178,7 +1371,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         </div>
       </div>
     </div>
+
   </div>
+</div><!-- end dashboardPage -->
+
 
   <!-- LEADS PAGE -->
   <div class="page" id="leadsPage">
