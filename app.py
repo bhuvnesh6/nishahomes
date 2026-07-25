@@ -1458,6 +1458,13 @@ def dashboard_followups():
                     "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
                     "callStatus": _clean(ed.get("Call Status")),
                     "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                    # NEW: extra context for the follow-up popup
+                    "propertyType": _clean(lead.get("Property Type") or ed.get("Property Type")),
+                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                    "customerResponse": _clean(ed.get("Customer Response")),
+                    "interestLevel": _clean(ed.get("Interest Level")),
+                    "callerRemarks": _clean(ed.get("Caller Remarks")),
+                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
                 }
 
                 # CHANGED: bucket exclusively — same-day goes to "today", everything else in-week to "week"

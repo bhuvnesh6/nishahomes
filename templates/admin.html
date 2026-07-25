@@ -2817,19 +2817,53 @@ function openFollowupModal(which){
   if(!list.length){
     box.innerHTML = '<p style="color:rgba(255,255,255,0.5)">No follow-ups scheduled</p>';
   } else {
-    box.innerHTML = list.map(l => `
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="display:flex;justify-content:space-between;font-size:0.85rem">
+    box.innerHTML = list.map(l => {
+      const rawPhone = String(l.phone||'').replace(/[^0-9]/g,'');
+      const waMsg = encodeURIComponent(`Hi ${l.name||''}, this is a follow-up regarding your property requirement.`.trim());
+      return `
+      <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.08)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;font-size:0.9rem">
           <span style="color:#fff;font-weight:700">${escHtml(l.name)}</span>
-          <span style="color:var(--accent)">${escHtml(l.nextCallDate||'')}</span>
+          <span class="badge ${typeBadgeClass(l.leadType)}">${escHtml(getTypeLabel(l.leadType))}</span>
         </div>
+
+        <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:6px;line-height:1.6">
+          📞 +${escHtml(l.phone)}<br>
+          📍 ${escHtml(l.location)}${l.propertyType && l.propertyType!=='-' ? ' · 🏠 '+escHtml(l.propertyType) : ''}${l.budget && l.budget!=='-' ? ' · 💰 '+escHtml(l.budget) : ''}
+        </div>
+
         <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:4px">
-          📞 +${escHtml(l.phone)} · ${escHtml(getTypeLabel(l.leadType))} · 📍 ${escHtml(l.location)}
+          Assigned to: <strong style="color:rgba(255,255,255,0.85)">${escHtml(l.assignedTo)}</strong> · Status: ${escHtml(l.callStatus)}
+          ${l.interestLevel && l.interestLevel!=='-' ? ' · Interest: '+escHtml(l.interestLevel) : ''}
         </div>
-        <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:2px">
-          Assigned to: ${escHtml(l.assignedTo)} · Status: ${escHtml(l.callStatus)}
+
+        <div style="color:var(--accent);font-size:0.78rem;margin-top:4px;font-weight:600">
+          🔁 ${escHtml(l.nextFollowupTimeline||'-')} · 📅 Next Call: ${escHtml(l.nextCallDate||'-')}
+          ${l.callAttempts ? ' · '+l.callAttempts+' call'+(l.callAttempts>1?'s':'')+' so far' : ''}
         </div>
-      </div>`).join('');
+
+        ${l.customerResponse && l.customerResponse!=='-' ? `
+        <div style="color:rgba(255,255,255,0.55);font-size:0.76rem;margin-top:4px">
+          💬 Last response: ${escHtml(l.customerResponse)}
+        </div>` : ''}
+
+        ${l.callerRemarks && l.callerRemarks!=='-' ? `
+        <div style="color:rgba(255,255,255,0.55);font-size:0.76rem;margin-top:4px;font-style:italic">
+          "${escHtml(l.callerRemarks)}"
+        </div>` : ''}
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <a href="tel:${escHtml(l.phone)}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(16,185,129,0.12);border:1.5px solid #10B981;color:#34d399;font-size:0.8rem;font-weight:600;text-decoration:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 1h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.91 8.1a16 16 0 006 6l.61-.61a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 15.92z"/></svg>
+            Call
+          </a>
+          <a href="https://wa.me/${rawPhone}?text=${waMsg}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            WhatsApp
+          </a>
+        </div>
+      </div>`;
+    }).join('');
   }
   document.getElementById('followupModal').classList.add('active');
 }
