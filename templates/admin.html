@@ -2634,6 +2634,7 @@ async function loadDashboardFollowups(){
   }catch(e){ console.warn('followups load failed', e); }
 }
 
+
 function openFollowupModal(which){
   const list = which === 'today' ? followupData.todayLeads : followupData.weekLeads;
   document.getElementById('followupModalTitle').textContent =
@@ -2659,6 +2660,7 @@ function openFollowupModal(which){
   }
   document.getElementById('followupModal').classList.add('active');
 }
+
 function closeFollowupModal(){
   document.getElementById('followupModal').classList.remove('active');
 }

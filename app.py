@@ -1384,6 +1384,7 @@ def dashboard_followups():
         return jsonify({"success": False, "message": "Staff only"}), 403
 
     today = datetime.utcnow().date()
+    now = datetime.utcnow()
     week_start = today - timedelta(days=today.weekday())   # Monday
     week_end = week_start + timedelta(days=6)               # Sunday
 
@@ -1409,13 +1410,29 @@ def dashboard_followups():
     try:
         for lead_type, coll_name in collections.items():
             for lead in db[coll_name].find():
+                # NEW: only consider leads dated July 2026 -> now (same rule as filter_by_july_range)
+                lead_date = parse_lead_date(lead.get("Date"))
+                if not lead_date or lead_date < JULY_2026_START or lead_date > now:
+                    continue
+
+                # Verify via phone number against the Leads-family collection (this loop already
+                # scans the real lead docs, so a match here IS the phone-number verification)
                 phone = normalize_number(lead.get("Phone Number", ""))
                 if not phone:
                     continue
                 if not phone.startswith("91"):
                     phone = "91" + phone
 
-                ed = end_collection.find_one({"Number": phone}) or {}
+                ed = end_collection.find_one({"Number": phone})
+                if not ed:
+                    continue
+
+                # NEW: endData record itself must also fall in the July -> now window
+                ed_created = ed.get("lastUpdatedAt")
+                if isinstance(ed_created, datetime):
+                    if ed_created < JULY_2026_START or ed_created > now:
+                        continue
+
                 fdate = parse_followup_date(ed.get("Next Call Date"))
                 if not fdate or fdate < today:
                     continue   # only today-forward, not overdue
@@ -1427,13 +1444,16 @@ def dashboard_followups():
                     "name": lead.get("Lead Name") or lead.get("Name") or "Unknown",
                     "phone": phone,
                     "assignedTo": lead.get("AssignTo", "Unassigned"),
-                    "nextCallDate": ed.get("Next Call Date"),
+                    "nextCallDate": ed.get("Next Call Date", "-"),
+                    "nextFollowupTimeline": ed.get("Next Follow-up Timeline", "-"),
                     "callStatus": ed.get("Call Status", "-"),
                     "location": lead.get("Location Interested In") or lead.get("Property Location") or "-",
                 }
+
+                # CHANGED: bucket exclusively — same-day goes to "today", everything else in-week to "week"
                 if fdate == today:
                     today_list.append(entry)
-                if week_start <= fdate <= week_end:
+                elif week_start <= fdate <= week_end:
                     week_list.append(entry)
     except Exception as e:
         import traceback
@@ -1447,7 +1467,6 @@ def dashboard_followups():
         "todayLeads": today_list,
         "weekLeads": week_list
     }), 200
-
 
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
