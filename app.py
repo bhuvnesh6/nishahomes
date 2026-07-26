@@ -2832,6 +2832,7 @@ def upload_inventory():
             "createdAt": datetime.utcnow()
         }
 
+        embed_and_attach(inventory_data)
         result = projects_collection.insert_one(inventory_data)
         return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
 
@@ -2892,6 +2893,8 @@ def update_project(project_id):
             return jsonify({"status": "error", "message": "No fields to update"}), 400
 
         update_fields["lastUpdatedAt"] = datetime.utcnow()
+        merged_preview = {**project, **update_fields}
+        update_fields["embedding"] = get_embedding(build_inventory_embedding_text(merged_preview))
         projects_collection.update_one({"_id": ObjectId(project_id)}, {"$set": update_fields})
 
         updated = projects_collection.find_one({"_id": ObjectId(project_id)})
@@ -3266,6 +3269,7 @@ def upload_project_v2():
             "createdAt": datetime.utcnow()
         }
 
+        embed_and_attach(project_data)
         result = projects_collection.insert_one(project_data)
         return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
 
@@ -3273,6 +3277,144 @@ def upload_project_v2():
         import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+#embddings
+
+# =============================
+# VECTOR SEARCH / RAG - INVENTORY EMBEDDINGS
+# =============================
+MISTRAL_EMBED_URL = "https://api.mistral.ai/v1/embeddings"
+VECTOR_INDEX_NAME = "searchdata"  # must match your Atlas Search index name exactly
+
+
+def get_embedding(text: str):
+    """Returns a 1024-dim embedding vector for the given text using Mistral, or None on failure."""
+    if not text or not text.strip():
+        return None
+    if not MISTRAL_API_KEY:
+        print("[embed] MISTRAL_API_KEY not configured")
+        return None
+    try:
+        resp = requests.post(
+            MISTRAL_EMBED_URL,
+            headers={
+                "Authorization": f"Bearer {MISTRAL_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={"model": "mistral-embed", "input": [text[:8000]]},
+            timeout=30
+        )
+        resp.raise_for_status()
+        return resp.json()["data"][0]["embedding"]
+    except Exception as e:
+        print(f"[embed] failed: {e}")
+        return None
+
+
+def build_inventory_embedding_text(doc: dict) -> str:
+    """Flattens the fields that matter for semantic search into one text blob."""
+    parts = [
+        doc.get("name", ""),
+        doc.get("category", ""),
+        doc.get("propertyType", ""),
+        doc.get("location", ""),
+        doc.get("configuration", ""),
+        doc.get("furnishing", ""),
+        doc.get("possession", ""),
+        doc.get("dealType", ""),
+        doc.get("listingBasis", ""),
+        doc.get("budget", "") or doc.get("startingPrice", ""),
+        doc.get("description", ""),
+        doc.get("quickNotes", "")
+    ]
+    return " | ".join(str(p) for p in parts if p)
+
+
+def embed_and_attach(doc: dict) -> dict:
+    """Mutates doc in-place, adding an 'embedding' field. Returns doc for convenience."""
+    text = build_inventory_embedding_text(doc)
+    doc["embedding"] = get_embedding(text)
+    return doc
+
+
+def backfill_inventory_embeddings():
+    """ONE-TIME: embeds every existing project/inventory doc missing an 'embedding' field."""
+    docs = list(projects_collection.find({"embedding": {"$exists": False}}))
+    print(f"[backfill] {len(docs)} docs need embedding")
+    for d in docs:
+        text = build_inventory_embedding_text(d)
+        emb = get_embedding(text)
+        if emb:
+            projects_collection.update_one({"_id": d["_id"]}, {"$set": {"embedding": emb}})
+            print(f"[backfill] embedded: {d.get('name')}")
+        else:
+            print(f"[backfill] SKIPPED (no text/embed failed): {d.get('name')}")
+
+
+@app.route("/api/ai/backfill-embeddings", methods=["POST"])
+def api_backfill_embeddings():
+    """Manually trigger backfill via HTTP instead of editing __main__. Admin only."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    try:
+        backfill_inventory_embeddings()
+        return jsonify({"success": True, "message": "Backfill complete, check server logs"}), 200
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/ai/search-inventory", methods=["POST"])
+def search_inventory():
+    """
+    RAG search endpoint for the WhatsApp AI bot (n8n etc.) to call.
+    Body: { "query": "3bhk under 80 lakhs in Sidon", "limit": 5,
+            "propertyType": "Apartment", "dealType": "For Sale" }  <- filters optional
+    """
+    try:
+        data = request.json or {}
+        query_text = (data.get("query") or "").strip()
+        limit = int(data.get("limit", 5))
+
+        if not query_text:
+            return jsonify({"success": False, "message": "query is required"}), 400
+
+        query_vector = get_embedding(query_text)
+        if not query_vector:
+            return jsonify({"success": False, "message": "Could not embed query"}), 500
+
+        match_filter = {"status": "approved"}
+        if data.get("propertyType"):
+            match_filter["category"] = data["propertyType"]
+        if data.get("dealType"):
+            match_filter["dealType"] = data["dealType"]
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": VECTOR_INDEX_NAME,
+                    "path": "embedding",
+                    "queryVector": query_vector,
+                    "numCandidates": 100,
+                    "limit": limit,
+                    "filter": match_filter
+                }
+            },
+            {
+                "$project": {
+                    "embedding": 0,
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        results = list(projects_collection.aggregate(pipeline))
+        return jsonify({"success": True, "data": [serialize_doc(r) for r in results]}), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 if __name__ == "__main__":
     #remove_assign_to_from_leads()
