@@ -34,6 +34,9 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
+# NEW: branding overlay for images
+from PIL import Image, ImageDraw, ImageFont
+
 # Load env
 load_dotenv()
 
@@ -314,6 +317,72 @@ def call_mistral_generate(extracted_text, schema):
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
     return json.loads(content)
+
+
+# =============================
+# NEW: BRANDING OVERLAY (images only)
+# =============================
+FONT_DIR    = os.path.join(os.path.dirname(__file__), "fonts")   # place .ttf files here
+FONT_BOLD   = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
+FONT_REG    = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+BRAND_ORANGE = (237, 128, 73)
+BRAND_NAVY_A = (16, 19, 28, 215)
+
+def _font(path, size):
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
+        return ImageFont.load_default()
+
+def build_branded_image(image_bytes, fields):
+    """Returns branded JPEG bytes (BytesIO) with the Nisha Homes header/footer bars."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    W, H = img.size
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    top_h = max(60, int(H * 0.07))
+    draw.rectangle([0, 0, W, top_h], fill=BRAND_ORANGE)
+    f_brand = _font(FONT_BOLD, int(top_h * 0.42))
+    f_tag   = _font(FONT_REG, int(top_h * 0.28))
+    draw.text((24, top_h * 0.22), "NISHA HOMES", font=f_brand, fill="white")
+    tag = "Trusted Real Estate Advisor"
+    draw.text((W - draw.textlength(tag, font=f_tag) - 24, top_h * 0.32), tag, font=f_tag, fill="white")
+
+    deal = fields.get("dealType") or "For Sale"
+    f_pill = _font(FONT_BOLD, int(top_h * 0.34))
+    pill_w = draw.textlength(deal, font=f_pill) + 28
+    pill_h = int(top_h * 0.62)
+    py = top_h + 18
+    draw.rounded_rectangle([24, py, 24 + pill_w, py + pill_h], radius=pill_h // 2,
+                            outline=BRAND_ORANGE, width=2, fill=(255, 255, 255, 235))
+    draw.text((38, py + pill_h * 0.18), deal, font=f_pill, fill=BRAND_ORANGE)
+
+    panel_h = int(H * 0.30)
+    panel_top = H - panel_h
+    strip = img.crop((0, panel_top, W, H)).convert("RGBA")
+    strip = Image.alpha_composite(strip, Image.new("RGBA", (W, panel_h), BRAND_NAVY_A))
+    img.paste(strip.convert("RGB"), (0, panel_top))
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    f_title = _font(FONT_BOLD, int(panel_h * 0.20))
+    f_meta  = _font(FONT_REG, int(panel_h * 0.13))
+    f_price = _font(FONT_BOLD, int(panel_h * 0.18))
+
+    y = panel_top + int(panel_h * 0.10)
+    draw.text((28, y), (fields.get("propertyTitle") or "")[:46], font=f_title, fill="white")
+    y += int(panel_h * 0.24)
+    draw.text((28, y), "📍 " + (fields.get("locality") or "")[:60], font=f_meta, fill=(220, 220, 225))
+    y += int(panel_h * 0.20)
+    draw.text((28, y), fields.get("price") or "", font=f_price, fill=BRAND_ORANGE)
+    y += int(panel_h * 0.24)
+    sub = " · ".join(filter(None, [fields.get("configuration"),
+                                    fields.get("superArea") and f'{fields["superArea"]} sqft']))
+    draw.text((28, y), sub, font=f_meta, fill=(220, 220, 225))
+
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=90)
+    out.seek(0)
+    return out
 
 
 @app.route("/")
@@ -2563,6 +2632,54 @@ def save_settings_api():
 
 
 # =============================
+# NEW: WHATSAPP SHARE TEXT BUILDER
+# =============================
+@app.route("/api/projects/share-text/<project_id>", methods=["GET"])
+def project_share_text(project_id):
+    try:
+        p = projects_collection.find_one({"_id": ObjectId(project_id)})
+        if not p:
+            return jsonify({"success": False, "message": "Not found"}), 404
+        s = settings_collection.find_one({"_id": "global"}) or {}
+        return jsonify({"success": True, "text": build_whatsapp_share_text(p, s)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def build_whatsapp_share_text(p, settings):
+    L = []
+    L.append(p.get("name") or p.get("propertyTitle") or "")
+    L.append(f"📍 {p.get('location') or p.get('locality') or ''}")
+    L.append(f"💰 {p.get('budget') or p.get('startingPrice') or ''}")
+    if p.get("configuration"): L.append(f"🛏️ {p['configuration']}")
+    area = []
+    if p.get("superArea"):  area.append(f"{p['superArea']} sq.ft built-up")
+    if p.get("carpetArea"): area.append(f"carpet {p['carpetArea']} sq.ft")
+    if area: L.append("📐 " + " · ".join(area))
+    if p.get("furnishing"): L.append(f"🛋️ {p['furnishing']}")
+    if p.get("possession"): L.append(f"🏗️ {p['possession']}")
+    if p.get("facing"):     L.append(f"🧭 {p['facing']}-facing")
+    if p.get("floor"):      L.append(f"🏢 Floor {p['floor']}")
+    if p.get("bathrooms"):  L.append(f"🛁 {p['bathrooms']} bathrooms")
+    if p.get("parking"):    L.append(f"🅿️ {p['parking']} parking")
+    L.append("─" * 20)
+    if p.get("description"): L.append(p["description"])
+    L.append("─" * 20)
+    L.append("📅 Schedule Your Private Site Visit")
+    L.append("🏡 Request Complete Property Details")
+    if p.get("landingPageLink"): L.append(f"🔗 {p['landingPageLink']}")
+    L.append("━" * 16)
+    L.append("🏡 Nisha Homes")
+    L.append("Your Trusted Real Estate Advisor")
+    if settings.get("corporate"):
+        L.append(f"💬 Nisha Homes Main Office\nhttps://wa.me/{settings['corporate']}")
+    if settings.get("agent"):
+        L.append(f"👤 {settings.get('advisorName') or 'Property Advisor'}\nhttps://wa.me/{settings['agent']}")
+    L.append("━" * 16)
+    return "\n".join(L)
+
+
+# =============================
 # COORDINATOR DASHBOARD STATS
 # =============================
 @app.route("/api/inventory-dashboard-stats", methods=["GET"])
@@ -2648,6 +2765,24 @@ def ai_generate_property():
                     combined_text.append(txt)
             except Exception as img_err:
                 print(f"[ai-generate] image OCR failed: {img_err}")
+            finally:
+                os.remove(tmp.name)
+
+        # NEW: reference screenshot(s) — OCR'd for context only, NEVER uploaded/saved
+        # to Cloudinary or Mongo. Purely used to extract extra text for Mistral.
+        for f in request.files.getlist("screenshot"):
+            if not f or not f.filename:
+                continue
+            ext = os.path.splitext(f.filename)[-1] or ".png"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+            tmp.close()
+            f.save(tmp.name)
+            try:
+                txt = extract_text_from_image(tmp.name)
+                if txt:
+                    combined_text.append(txt)
+            except Exception as scr_err:
+                print(f"[ai-generate] screenshot OCR failed: {scr_err}")
             finally:
                 os.remove(tmp.name)
 
@@ -2765,7 +2900,8 @@ def upload_project():
 
 
 # -------------------------------
-# NEW: PARTNER "Add Inventory" upload
+# PARTNER "Add Inventory" upload
+# (also used by admin/emp via the same modal — branding + screenshot-OCR aware)
 # -------------------------------
 @app.route("/api/projects/upload-inventory", methods=["POST"])
 def upload_inventory():
@@ -2778,14 +2914,27 @@ def upload_inventory():
         if not all(f(k) for k in required):
             return jsonify({"status": "error", "message": "Property type, title, locality and price are required"}), 400
 
+        # NEW: branding toggle + fields used to render the overlay onto photos
+        branding = request.form.get("branding") == "true"
+        brand_fields = {
+            "dealType": f("dealType", ""), "propertyTitle": f("propertyTitle", ""),
+            "locality": f("locality", ""), "price": f("price", ""),
+            "configuration": f("configuration", ""), "superArea": f("superArea", "")
+        }
+
         media_urls, media_public_ids = [], []
         for file in request.files.getlist("photos"):
             if not file or not file.filename:
                 continue
-            up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/inventory")
+            if branding:
+                branded = build_branded_image(file.read(), brand_fields)
+                up = cloudinary.uploader.upload(branded, resource_type="image", folder="nishahomes/inventory")
+            else:
+                up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/inventory")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
 
+        # Videos are uploaded as-is — no branding overlay applied to video
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
@@ -3198,10 +3347,7 @@ def remove_assign_to_from_leads():
 # =============================
 # ADMIN: "Manage Project" — Add Project (multi-photo/video, AI-fillable)
 # Saves into the SAME projects_collection as inventory, tagged kind="project"
-# =============================
-# =============================
-# ADMIN: "Manage Project" — Add Project (multi-photo/video, AI-fillable)
-# Saves into the SAME projects_collection as inventory, tagged kind="project"
+# Branding + screenshot-OCR aware, same as upload_inventory
 # =============================
 @app.route("/api/projects/upload-project", methods=["POST"])
 def upload_project_v2():
@@ -3217,17 +3363,30 @@ def upload_project_v2():
         video_links_raw = f("videoLinks", "") or ""
         video_links = [v.strip() for v in video_links_raw.splitlines() if v.strip()]
 
+        # NEW: branding toggle + fields used to render the overlay onto photos
+        branding = request.form.get("branding") == "true"
+        brand_fields = {
+            "dealType": "New Launch", "propertyTitle": f("name", ""),
+            "locality": f("location", ""), "price": f("startingPrice", ""),
+            "configuration": f("configuration", ""), "superArea": ""
+        }
+
         media_urls, media_public_ids = [], []
         has_image, has_video = False, False
 
         for file in request.files.getlist("photos"):
             if not file or not file.filename:
                 continue
-            up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/projects")
+            if branding:
+                branded = build_branded_image(file.read(), brand_fields)
+                up = cloudinary.uploader.upload(branded, resource_type="image", folder="nishahomes/projects")
+            else:
+                up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/projects")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
             has_image = True
 
+        # Videos are uploaded as-is — no branding overlay applied to video
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue

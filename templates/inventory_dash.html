@@ -424,9 +424,12 @@ textarea,input,select{font-family:var(--font-body)}
   <span class="topbar-role-badge" id="roleBadge">{{ role|upper }}</span>
   <div class="topbar-right">
     <button class="topbar-btn" id="openAddModalBtn">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      <span id="openAddModalBtnLabel">Add Listing</span>
-    </button>
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+  <span id="openAddModalBtnLabel">Add Listing</span>
+</button>
+<button class="topbar-btn" id="openAddProjectBtn" style="display:none;background:linear-gradient(135deg,#2E6BA6,#1F4C73)">
+  + Project
+</button>
     {% if role in ('admin','emp') %}
     <a href="/{{ 'admin' if role=='admin' else 'emp' }}" class="topbar-logout">← Dashboard</a>
     {% endif %}
@@ -577,10 +580,26 @@ textarea,input,select{font-family:var(--font-body)}
       <input type="file" id="inv_videos" accept="video/*" multiple style="display:none">
       <div class="file-chip-row" id="inv_videosChips"></div>
 
+
+      <!-- inventoryModal -->
+<div class="section-heading-sm">Reference screenshot (optional — used only to auto-fill fields, never saved)</div>
+<div class="file-drop" id="invScreenshotDropZone">📋 Click to choose a screenshot</div>
+<input type="file" id="inv_screenshot" accept="image/*" multiple style="display:none">
+<div class="file-chip-row" id="inv_screenshotChips"></div>
+
       <div class="section-heading-sm">Brochure / PDF (optional)</div>
       <div class="file-drop" id="invPdfDropZone">📄 Click to choose a PDF</div>
       <input type="file" id="inv_pdf" accept="application/pdf" style="display:none">
       <div class="file-chip-row" id="inv_pdfChip"></div>
+
+
+      <!-- inventoryModal -->
+<div class="form-group" id="inv_brandingWrap" style="display:none">
+  <label style="display:flex;align-items:center;gap:9px;color:#fff;font-size:0.85rem;font-weight:600">
+    <input type="checkbox" id="inv_branding" style="width:18px;height:18px">
+    Add "Nisha Homes" branding overlay to photos &amp; videos
+  </label>
+</div>
 
       <button type="submit" class="submit-btn" id="inv_submitBtn">Send to the desk</button>
     </form>
@@ -636,11 +655,24 @@ textarea,input,select{font-family:var(--font-body)}
       <input type="file" id="pv2_videos" accept="video/*" multiple style="display:none">
       <div class="file-chip-row" id="pv2_videosChips"></div>
 
+      <!-- projectV2Modal -->
+<div class="section-heading-sm">Reference screenshot (optional — used only to auto-fill fields, never saved)</div>
+<div class="file-drop" id="pv2ScreenshotDropZone">📋 Click to choose a screenshot</div>
+<input type="file" id="pv2_screenshot" accept="image/*" multiple style="display:none">
+<div class="file-chip-row" id="pv2_screenshotChips"></div>
+
       <div class="section-heading-sm">Brochure / PDF (optional)</div>
       <div class="file-drop" id="pv2PdfDropZone">📄 Click to choose a PDF</div>
       <input type="file" id="pv2_pdf" accept="application/pdf" style="display:none">
       <div class="file-chip-row" id="pv2_pdfChip"></div>
 
+      <!-- projectV2Modal -->
+<div class="form-group" id="pv2_brandingWrap" style="display:none">
+  <label style="display:flex;align-items:center;gap:9px;color:#fff;font-size:0.85rem;font-weight:600">
+    <input type="checkbox" id="pv2_branding" style="width:18px;height:18px">
+    Add "Nisha Homes" branding overlay to photos &amp; videos
+  </label>
+</div>
       <button type="submit" class="submit-btn" id="pv2_submitBtn">Add project</button>
     </form>
   </div>
@@ -896,12 +928,41 @@ function projectCardHTML(p){
     </div>
   </div>`;
 }
-function shareListingWA(id){
+async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
-  const lines = [`🏡 ${p.name}`, `📍 ${p.location}`, `💰 ${p.budget||p.startingPrice||''}`, '', p.description||'', ''];
-  if(settingsData.corporate) lines.push(`Nisha Homes: ${settingsData.corporate}`);
-  const target = settingsData.corporate || '';
-  window.open(waLink(target, lines.join('\n')), '_blank');
+
+  let text = '';
+  try{
+    const res = await fetch(`${BASE}/projects/share-text/${id}`, { credentials:'include' });
+    const d = await res.json();
+    text = d.success ? d.text : '';
+  }catch(e){ console.error(e); }
+  if(!text){
+    text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
+  }
+
+  const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
+
+  // Try to attach real files via the native share sheet (mobile only)
+  const files = [];
+  if(navigator.canShare){
+    for(const url of mediaUrls){
+      try{
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        files.push(new File([blob], url.split('/').pop().split('?')[0], { type: blob.type }));
+      }catch(e){ console.warn('Could not fetch media for share:', url, e); }
+    }
+  }
+
+  if(navigator.share && files.length && navigator.canShare({ files })){
+    try{ await navigator.share({ files, text, title: p.name }); return; }
+    catch(e){ console.warn('Share sheet cancelled/unsupported, falling back', e); }
+  }
+
+  // Desktop / unsupported fallback: text-only wa.me link with media as links
+  const withLinks = text + (mediaUrls.length ? '\n\n' + mediaUrls.map(u=>`📎 ${u}`).join('\n') : '');
+  window.open(`https://wa.me/?text=${encodeURIComponent(withLinks)}`, '_blank');
 }
 
 /* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */
@@ -1089,19 +1150,21 @@ function bindFileDropToInput(dropId, inputId, chipRowId){
 bindFileDropToInput('invPhotosDropZone','inv_photos','inv_photosChips');
 bindFileDropToInput('invVideosDropZone','inv_videos','inv_videosChips');
 bindFileDropToInput('invPdfDropZone','inv_pdf','inv_pdfChip');
-
+bindFileDropToInput('invScreenshotDropZone','inv_screenshot','inv_screenshotChips');
+bindFileDropToInput('pv2ScreenshotDropZone','pv2_screenshot','pv2_screenshotChips');
 /* AI generate — partner detailed form */
 document.getElementById('invAiBtn').addEventListener('click', async ()=>{
   const btn = document.getElementById('invAiBtn');
   const photos = document.getElementById('inv_photos').files;
   const pdf = document.getElementById('inv_pdf').files[0];
   if(!photos.length && !pdf){ toast('Upload at least one photo or a PDF first, then generate'); return; }
-
+  
   btn.disabled = true; btn.textContent = '✨ Reading photos & PDF…';
   const fd = new FormData();
   fd.append('form_type', 'inventory');
   Array.from(photos).forEach(p=>fd.append('images', p));
   if(pdf) fd.append('pdf', pdf);
+  Array.from(document.getElementById('inv_screenshot').files).forEach(s=>fd.append('screenshot', s));
 
   try{
     const res = await fetch(`${BASE}/ai/generate-property`, { method:'POST', body: fd, credentials:'include' });
@@ -1134,6 +1197,7 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
     'price','landingPageLink','mapLink','quickNotes','description'];
   fields.forEach(f=>fd.append(f, document.getElementById('inv_'+f).value));
   fd.append('areaUnit','sqft');
+  fd.append('branding', document.getElementById('inv_branding').checked ? 'true' : 'false');
 
   Array.from(document.getElementById('inv_photos').files).forEach(f=>fd.append('photos', f));
   Array.from(document.getElementById('inv_videos').files).forEach(f=>fd.append('videos', f));
@@ -1707,9 +1771,17 @@ function bindSettingsTab(){
 }
 
 /* ===================== TOPBAR "ADD" BUTTON ===================== */
-document.getElementById('openAddModalBtn').addEventListener('click', openAddModal);
 if(IS_ADMIN){
-  document.getElementById('openAddModalBtnLabel').textContent = 'Manage Project';
+  document.getElementById('openAddModalBtnLabel').textContent = 'Add Listing';
+  document.getElementById('openAddModalBtn').addEventListener('click', openInventoryModal); // reuse partner's detailed form
+  document.getElementById('openAddProjectBtn').style.display = 'inline-flex';
+  document.getElementById('openAddProjectBtn').addEventListener('click', openProjectV2Modal);
+  
+  document.getElementById('inv_brandingWrap').style.display = 'block';
+  document.getElementById('pv2_brandingWrap').style.display = 'block';
+
+} else {
+  document.getElementById('openAddModalBtn').addEventListener('click', openAddModal);
 }
 
 /* ===================== INIT ===================== */
