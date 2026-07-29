@@ -955,19 +955,29 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
 
-    // 2. Fetch every photo/video/pdf as a real File so it rides along in the share sheet
+    // 2. Fetch every photo/video/pdf as a real File so it rides along in the share sheet.
+    // Fetch in PARALLEL (not one-by-one) and cap total wait time — navigator.share()
+    // only works while the click's user-gesture is still "live", so we must not stall.
     const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
-    const files = [];
-    for(const url of mediaUrls){
-      try{
-        const resp = await fetch(url);
-        if(!resp.ok) continue;
-        const blob = await resp.blob();
-        const filename = url.split('/').pop().split('?')[0] || 'file';
-        files.push(new File([blob], filename, { type: blob.type || 'application/octet-stream' }));
-      }catch(e){
-        console.warn('Could not fetch media for share:', url, e);
-      }
+    const fetchOne = async (url) => {
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error('bad response');
+      const blob = await resp.blob();
+      const filename = url.split('/').pop().split('?')[0] || 'file';
+      return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+    };
+    const timeout = (ms) => new Promise((_, rej) => setTimeout(()=>rej(new Error('timeout')), ms));
+
+    let files = [];
+    try{
+      const results = await Promise.race([
+        Promise.allSettled(mediaUrls.map(fetchOne)),
+        timeout(3500) // if media isn't ready in 3.5s, give up on files and share text only
+      ]);
+      files = results.filter(r=>r.status==='fulfilled').map(r=>r.value);
+    }catch(e){
+      console.warn('Media fetch for share timed out — falling back to text-only share', e);
+      files = [];
     }
 
     // 3. Build the share payload — prefer files+text, degrade to text-only if files can't attach
@@ -990,6 +1000,7 @@ async function shareListingWA(id){
     if(btn){ btn.disabled = false; btn.innerHTML = originalLabel; }
   }
 }
+
 
 /* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */
 function openAddModal(){
