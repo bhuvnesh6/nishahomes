@@ -928,6 +928,8 @@ function projectCardHTML(p){
     </div>
   </div>`;
 }
+
+
 async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
 
@@ -943,24 +945,30 @@ async function shareListingWA(id){
 
   const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
 
-  // Try to attach real files via the native share sheet (mobile only)
-  const files = [];
-  if(navigator.canShare){
-    for(const url of mediaUrls){
+  // ---- Native OS share sheet: user picks the app (WhatsApp etc.), then picks a contact ----
+  if(navigator.share){
+    let files = [];
+    if(navigator.canShare && mediaUrls.length){
       try{
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        files.push(new File([blob], url.split('/').pop().split('?')[0], { type: blob.type }));
-      }catch(e){ console.warn('Could not fetch media for share:', url, e); }
+        const fetched = await Promise.all(mediaUrls.map(async url=>{
+          const resp = await fetch(url);
+          const blob = await resp.blob();
+          return new File([blob], url.split('/').pop().split('?')[0], { type: blob.type });
+        }));
+        if(navigator.canShare({ files: fetched })) files = fetched;
+      }catch(e){ console.warn('Could not attach media to share sheet, sharing text only:', e); }
+    }
+    try{
+      if(files.length) await navigator.share({ files, text, title: p.name });
+      else await navigator.share({ text, title: p.name });
+      return; // share sheet handled it — done
+    }catch(e){
+      if(e.name === 'AbortError') return; // user cancelled the share sheet, don't fall back
+      console.warn('navigator.share failed, falling back to wa.me link', e);
     }
   }
 
-  if(navigator.share && files.length && navigator.canShare({ files })){
-    try{ await navigator.share({ files, text, title: p.name }); return; }
-    catch(e){ console.warn('Share sheet cancelled/unsupported, falling back', e); }
-  }
-
-  // Desktop / unsupported fallback: text-only wa.me link with media as links
+  // ---- Desktop / unsupported-browser fallback: opens WhatsApp Web/desktop directly ----
   const withLinks = text + (mediaUrls.length ? '\n\n' + mediaUrls.map(u=>`📎 ${u}`).join('\n') : '');
   window.open(`https://wa.me/?text=${encodeURIComponent(withLinks)}`, '_blank');
 }

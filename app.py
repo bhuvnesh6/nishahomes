@@ -334,55 +334,86 @@ def _font(path, size):
     except Exception:
         return ImageFont.load_default()
 
+
 def build_branded_image(image_bytes, fields):
-    """Returns branded JPEG bytes (BytesIO) with the Nisha Homes header/footer bars."""
+    """Returns branded JPEG bytes (BytesIO) with a professional Nisha Homes header/footer."""
+    import textwrap
+
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     W, H = img.size
+    scale = min(W, H)
     draw = ImageDraw.Draw(img, "RGBA")
 
-    top_h = max(60, int(H * 0.07))
+    # ---- TOP BAR ----
+    top_h = max(int(H * 0.10), int(scale * 0.12))
     draw.rectangle([0, 0, W, top_h], fill=BRAND_ORANGE)
-    f_brand = _font(FONT_BOLD, int(top_h * 0.42))
-    f_tag   = _font(FONT_REG, int(top_h * 0.28))
-    draw.text((24, top_h * 0.22), "NISHA HOMES", font=f_brand, fill="white")
+
+    f_brand = _font(FONT_BOLD, int(top_h * 0.46))
+    f_tag   = _font(FONT_REG, int(top_h * 0.24))
+
+    draw.text((int(W * 0.03), top_h * 0.14), "NISHA HOMES", font=f_brand, fill="white",
+               stroke_width=1, stroke_fill=(0, 0, 0, 60))
     tag = "Trusted Real Estate Advisor"
-    draw.text((W - draw.textlength(tag, font=f_tag) - 24, top_h * 0.32), tag, font=f_tag, fill="white")
+    tag_w = draw.textlength(tag, font=f_tag)
+    draw.text((W - tag_w - int(W * 0.03), top_h * 0.40), tag, font=f_tag, fill="white")
 
-    deal = fields.get("dealType") or "For Sale"
-    f_pill = _font(FONT_BOLD, int(top_h * 0.34))
-    pill_w = draw.textlength(deal, font=f_pill) + 28
-    pill_h = int(top_h * 0.62)
-    py = top_h + 18
-    draw.rounded_rectangle([24, py, 24 + pill_w, py + pill_h], radius=pill_h // 2,
-                            outline=BRAND_ORANGE, width=2, fill=(255, 255, 255, 235))
-    draw.text((38, py + pill_h * 0.18), deal, font=f_pill, fill=BRAND_ORANGE)
+    # ---- DEAL TYPE PILL ----
+    deal = (fields.get("dealType") or "For Sale").upper()
+    f_pill = _font(FONT_BOLD, int(top_h * 0.30))
+    pill_pad_x = int(top_h * 0.28)
+    pill_w = draw.textlength(deal, font=f_pill) + pill_pad_x * 2
+    pill_h = int(top_h * 0.60)
+    py = top_h + int(top_h * 0.22)
+    px = int(W * 0.03)
+    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2,
+                            fill=(255, 255, 255, 240))
+    draw.text((px + pill_pad_x, py + pill_h * 0.16), deal, font=f_pill, fill=BRAND_ORANGE)
 
-    panel_h = int(H * 0.30)
+    # ---- BOTTOM INFO PANEL (gradient for legibility over any photo) ----
+    panel_h = int(H * 0.34)
     panel_top = H - panel_h
-    strip = img.crop((0, panel_top, W, H)).convert("RGBA")
-    strip = Image.alpha_composite(strip, Image.new("RGBA", (W, panel_h), BRAND_NAVY_A))
-    img.paste(strip.convert("RGB"), (0, panel_top))
+    overlay = Image.new("RGBA", (W, panel_h), (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    for yy in range(panel_h):
+        alpha = int(60 + (200 - 60) * (yy / panel_h))
+        odraw.line([(0, yy), (W, yy)], fill=(16, 19, 28, alpha))
+    blended = Image.alpha_composite(img.crop((0, panel_top, W, H)).convert("RGBA"), overlay)
+    img.paste(blended.convert("RGB"), (0, panel_top))
     draw = ImageDraw.Draw(img, "RGBA")
 
-    f_title = _font(FONT_BOLD, int(panel_h * 0.20))
-    f_meta  = _font(FONT_REG, int(panel_h * 0.13))
-    f_price = _font(FONT_BOLD, int(panel_h * 0.18))
+    pad_x = int(W * 0.04)
+    f_title = _font(FONT_BOLD, int(panel_h * 0.155))
+    f_meta  = _font(FONT_REG, int(panel_h * 0.095))
+    f_price = _font(FONT_BOLD, int(panel_h * 0.145))
+
+    # Wrap the title across up to 2 lines instead of hard-truncating it
+    title = fields.get("propertyTitle") or ""
+    max_chars = max(10, int(W / (f_title.size * 0.55)))
+    wrapped = textwrap.wrap(title, width=max_chars)[:2]
 
     y = panel_top + int(panel_h * 0.10)
-    draw.text((28, y), (fields.get("propertyTitle") or "")[:46], font=f_title, fill="white")
-    y += int(panel_h * 0.24)
-    draw.text((28, y), "📍 " + (fields.get("locality") or "")[:60], font=f_meta, fill=(220, 220, 225))
-    y += int(panel_h * 0.20)
-    draw.text((28, y), fields.get("price") or "", font=f_price, fill=BRAND_ORANGE)
-    y += int(panel_h * 0.24)
+    for line in wrapped:
+        draw.text((pad_x, y), line, font=f_title, fill="white",
+                   stroke_width=1, stroke_fill=(0, 0, 0, 90))
+        y += int(f_title.size * 1.18)
+
+    y += int(panel_h * 0.03)
+    draw.text((pad_x, y), "📍 " + (fields.get("locality") or ""), font=f_meta, fill=(225, 225, 230))
+    y += int(f_meta.size * 1.5)
+
+    draw.text((pad_x, y), fields.get("price") or "", font=f_price, fill=BRAND_ORANGE)
+    y += int(f_price.size * 1.4)
+
     sub = " · ".join(filter(None, [fields.get("configuration"),
-                                    fields.get("superArea") and f'{fields["superArea"]} sqft']))
-    draw.text((28, y), sub, font=f_meta, fill=(220, 220, 225))
+                                    fields.get("superArea") and f'{fields["superArea"]} sq.ft']))
+    if sub:
+        draw.text((pad_x, y), sub, font=f_meta, fill=(225, 225, 230))
 
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=90)
+    img.save(out, format="JPEG", quality=92)
     out.seek(0)
     return out
+
 
 
 @app.route("/")
@@ -835,7 +866,70 @@ def remove_team_member(number):
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
+
+
+@app.route("/api/reset-team-password/<number>", methods=["POST"])
+def reset_team_password(number):
+    """
+    Regenerates a plaintext password for an existing team member
+    (covers older records created before/without a password field,
+    or whenever an admin wants to issue a fresh one).
+    """
+    try:
+        if session.get("role") != "admin":
+            return jsonify({"success": False, "message": "Admin only"}), 403
+
+        number = str(number).strip()
+        number = number.replace("+", "")
+        number = "".join(filter(str.isdigit, number))
+        if not number:
+            return jsonify({"success": False, "message": "Invalid number"}), 400
+        number = int(number)
+
+        collection = db["teamAssign"]
+        member = collection.find_one({"Employee number": number})
+        if not member:
+            return jsonify({"success": False, "message": "Team member not found"}), 404
+
+        name = member.get("Employee name", "user")
+        clean_name = name.lower().replace(" ", "")
+        rand_digits = random.randint(100, 9999)
+        new_password = f"{clean_name}@{rand_digits}"
+
+        collection.update_one(
+            {"_id": member["_id"]},
+            {"$set": {"password": new_password}}
+        )
+
+        # Notify via the same webhook used on creation (best-effort, won't break the response)
+        try:
+            requests.post(
+                "https://n8n.phishnix.site/webhook/recevingdataofteammember",
+                json={
+                    "name": name,
+                    "number": number,
+                    "password": new_password,
+                    "login_url": "https://api.phishnix.site",
+                    "message": f"Hi {name}, your password has been reset"
+                },
+                timeout=5
+            )
+        except Exception as webhook_error:
+            print("Webhook failed:", webhook_error)
+
+        return jsonify({
+            "success": True,
+            "message": "Password reset successfully",
+            "password": new_password
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
 #post apis
+
 
 
 def normalize_number(number):
