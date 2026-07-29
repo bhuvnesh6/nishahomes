@@ -933,44 +933,62 @@ function projectCardHTML(p){
 async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
 
-  let text = '';
+  // Native share isn't available at all on this browser/device
+  if(!navigator.share){
+    toast('Sharing isn\'t supported on this browser. Please open this page on a mobile device (Chrome/Safari) to share.');
+    return;
+  }
+
+  const btn = document.querySelector(`[data-share-proj="${id}"]`);
+  const originalLabel = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Preparing…'; }
+
   try{
-    const res = await fetch(`${BASE}/projects/share-text/${id}`, { credentials:'include' });
-    const d = await res.json();
-    text = d.success ? d.text : '';
-  }catch(e){ console.error(e); }
-  if(!text){
-    text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
-  }
-
-  const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
-
-  // ---- Native OS share sheet: user picks the app (WhatsApp etc.), then picks a contact ----
-  if(navigator.share){
-    let files = [];
-    if(navigator.canShare && mediaUrls.length){
-      try{
-        const fetched = await Promise.all(mediaUrls.map(async url=>{
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          return new File([blob], url.split('/').pop().split('?')[0], { type: blob.type });
-        }));
-        if(navigator.canShare({ files: fetched })) files = fetched;
-      }catch(e){ console.warn('Could not attach media to share sheet, sharing text only:', e); }
-    }
+    // 1. Get the formatted share text from the backend
+    let text = '';
     try{
-      if(files.length) await navigator.share({ files, text, title: p.name });
-      else await navigator.share({ text, title: p.name });
-      return; // share sheet handled it — done
-    }catch(e){
-      if(e.name === 'AbortError') return; // user cancelled the share sheet, don't fall back
-      console.warn('navigator.share failed, falling back to wa.me link', e);
+      const res = await fetch(`${BASE}/projects/share-text/${id}`, { credentials:'include' });
+      const d = await res.json();
+      text = d.success ? d.text : '';
+    }catch(e){ console.error(e); }
+    if(!text){
+      text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
-  }
 
-  // ---- Desktop / unsupported-browser fallback: opens WhatsApp Web/desktop directly ----
-  const withLinks = text + (mediaUrls.length ? '\n\n' + mediaUrls.map(u=>`📎 ${u}`).join('\n') : '');
-  window.open(`https://wa.me/?text=${encodeURIComponent(withLinks)}`, '_blank');
+    // 2. Fetch every photo/video/pdf as a real File so it rides along in the share sheet
+    const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
+    const files = [];
+    for(const url of mediaUrls){
+      try{
+        const resp = await fetch(url);
+        if(!resp.ok) continue;
+        const blob = await resp.blob();
+        const filename = url.split('/').pop().split('?')[0] || 'file';
+        files.push(new File([blob], filename, { type: blob.type || 'application/octet-stream' }));
+      }catch(e){
+        console.warn('Could not fetch media for share:', url, e);
+      }
+    }
+
+    // 3. Build the share payload — prefer files+text, degrade to text-only if files can't attach
+    let shareData = { title: p.name, text };
+    if(files.length && navigator.canShare && navigator.canShare({ files })){
+      shareData = { title: p.name, text, files };
+    }
+
+    await navigator.share(shareData);
+    // Share sheet opened successfully — the OS/user handles the rest (pick WhatsApp, Threads, SMS, etc.)
+
+  }catch(e){
+    if(e.name === 'AbortError'){
+      // User closed the share sheet themselves — not an error, do nothing
+    } else {
+      console.error('Share failed:', e);
+      toast('Could not open the share sheet. Please try again.');
+    }
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = originalLabel; }
+  }
 }
 
 /* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */

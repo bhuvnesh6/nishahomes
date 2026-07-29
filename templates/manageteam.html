@@ -808,18 +808,35 @@
       </select>
     </div>
 
-    <div class="modal-field">
-      <label class="modal-label">Password</label>
-      <div class="modal-input-wrap">
-        <input id="credsPassword" type="text" readonly />
-      </div>
-    </div>
-    <button class="modal-cancel-btn" style="width:100%;margin-bottom:10px" onclick="copyCredField('credsPassword')">📋 Copy Password</button>
-    <button class="modal-cancel-btn" style="width:100%;margin-bottom:18px" onclick="resetPassword(credsCurrentPhone, true)">🔄 Reset Password</button>
-
+    
     <div class="modal-actions">
       <button class="modal-add-btn" onclick="submitTask()">Add Task</button>
       <button class="modal-cancel-btn" onclick="closeTaskModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password Modal -->
+<div class="modal hidden" id="credsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-icon">🔑</div>
+      <div>
+        <h3 id="credsName">Password</h3>
+        <div class="modal-sub" id="credsPhoneLabel"></div>
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label class="modal-label">Password</label>
+      <div class="modal-input-wrap">
+        <input id="credsPassword" type="text" readonly style="font-weight:600;letter-spacing:0.5px" />
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-add-btn" onclick="shareCredsWA()">💬 Send on WhatsApp</button>
+      <button class="modal-cancel-btn" onclick="closeCredsModal()">Close</button>
     </div>
   </div>
 </div>
@@ -1219,7 +1236,7 @@ function shareCredsWA() {
   window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
 }
 
-document.getElementById('credsModal').addEventListener('click', e => {
+document.getElementById('credsModal')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) closeCredsModal();
 });
 </script>
