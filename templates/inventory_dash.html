@@ -929,7 +929,6 @@ function projectCardHTML(p){
   </div>`;
 }
 
-
 async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
 
@@ -955,10 +954,9 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
 
-    // 2. Fetch every photo/video/pdf as a real File so it rides along in the share sheet.
-    // Fetch in PARALLEL (not one-by-one) and cap total wait time — navigator.share()
-    // only works while the click's user-gesture is still "live", so we must not stall.
-    const mediaUrls = [...(p.mediaUrls || []), p.pdfUrl].filter(Boolean);
+    // 2. Fetch only photos/videos as real Files — PDF is skipped, it's rarely needed
+    // in the share sheet and just adds fetch time/weight.
+    const mediaUrls = [...(p.mediaUrls || [])].filter(Boolean); // no pdfUrl here
     const fetchOne = async (url) => {
       const resp = await fetch(url);
       if(!resp.ok) throw new Error('bad response');
