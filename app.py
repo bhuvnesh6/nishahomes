@@ -322,95 +322,178 @@ def call_mistral_generate(extracted_text, schema):
 # =============================
 # NEW: BRANDING OVERLAY (images only)
 # =============================
-FONT_DIR    = os.path.join(os.path.dirname(__file__), "fonts")   # place .ttf files here
-FONT_BOLD   = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
-FONT_REG    = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+# Replace these near the top of app.py
+FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+FONT_BOLD = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
+FONT_REG  = os.path.join(FONT_DIR, "DejaVuSans.ttf")
 BRAND_ORANGE = (237, 128, 73)
-BRAND_NAVY_A = (16, 19, 28, 215)
+BRAND_NAVY_SOLID = (16, 19, 28)   # solid, not the old semi-transparent tuple
 
-def _font(path, size):
+_SYSTEM_FONT_FALLBACKS = {
+    "bold": [
+        FONT_BOLD,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ],
+    "regular": [
+        FONT_REG,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ],
+}
+
+def _font(weight, size):
+    """Robust font loader. Tries your bundled fonts, then common Linux
+    system fonts, and only as an absolute last resort falls back to PIL's
+    built-in font — kept at a REQUESTED size instead of the old tiny
+    default, which is what made your text invisible."""
+    for path in _SYSTEM_FONT_FALLBACKS.get(weight, []):
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
     try:
-        return ImageFont.truetype(path, size)
-    except Exception:
+        return ImageFont.load_default(size=size)   # Pillow >= 10.1
+    except TypeError:
         return ImageFont.load_default()
 
 
+def _format_price_display(price_str):
+    """Formats price for the big headline. Pure numbers get comma
+    grouping + ₹; free-text prices (e.g. '85 Lakhs') are shown as-is
+    with a ₹ prefix if missing."""
+    if not price_str:
+        return ""
+    s = str(price_str).strip()
+    cleaned = re.sub(r"[^\d]", "", s)
+    if cleaned and cleaned == s.replace(",", ""):
+        return f"₹{int(cleaned):,}"
+    return s if s.startswith("₹") else f"₹{s}"
+
+
+def _indian_price_words(price_str):
+    """Pure numeric prices get a '2 Crore 12 Lakh' style breakdown line,
+    like your reference image. Free-text prices return None (line skipped)."""
+    if not price_str:
+        return None
+    cleaned = re.sub(r"[^\d]", "", str(price_str))
+    if not cleaned or not cleaned.isdigit() or int(cleaned) < 100000:
+        return None
+    n = int(cleaned)
+    crore, rem = divmod(n, 10000000)
+    lakh, _ = divmod(rem, 100000)
+    parts = []
+    if crore: parts.append(f"{crore} Crore")
+    if lakh: parts.append(f"{lakh} Lakh")
+    return " ".join(parts) or None
+
+
 def build_branded_image(image_bytes, fields):
-    """Returns branded JPEG bytes (BytesIO) with a professional Nisha Homes header/footer."""
+    """
+    Returns branded JPEG bytes styled after the reference design:
+    orange top bar -> the ORIGINAL, UNCROPPED photo -> a solid navy info
+    panel appended below the photo (title / location / price / config) ->
+    divider -> contact bar. Nothing is ever drawn on top of the photo
+    itself except the small "For Sale" pill, so the property photo is
+    never obscured.
+    """
     import textwrap
 
+    CONTACT_NUMBER = "+91 73035 15710"   # fixed branding contact number
+
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    # Normalize width so font sizing is consistent regardless of source resolution
+    TARGET_W = 1080
+    if img.width != TARGET_W:
+        new_h = int(img.height * (TARGET_W / img.width))
+        img = img.resize((TARGET_W, new_h), Image.LANCZOS)
     W, H = img.size
-    scale = min(W, H)
-    draw = ImageDraw.Draw(img, "RGBA")
 
-    # ---- TOP BAR ----
-    top_h = max(int(H * 0.10), int(scale * 0.12))
-    draw.rectangle([0, 0, W, top_h], fill=BRAND_ORANGE)
+    top_bar_h = int(W * 0.095)
+    panel_h   = int(W * 0.40)
+    contact_h = int(W * 0.11)
+    total_H = top_bar_h + H + panel_h + contact_h
 
-    f_brand = _font(FONT_BOLD, int(top_h * 0.46))
-    f_tag   = _font(FONT_REG, int(top_h * 0.24))
+    canvas = Image.new("RGB", (W, total_H), BRAND_NAVY_SOLID)
+    canvas.paste(img, (0, top_bar_h))
+    draw = ImageDraw.Draw(canvas, "RGBA")
 
-    draw.text((int(W * 0.03), top_h * 0.14), "NISHA HOMES", font=f_brand, fill="white",
-               stroke_width=1, stroke_fill=(0, 0, 0, 60))
+    # ---------- TOP BAR ----------
+    draw.rectangle([0, 0, W, top_bar_h], fill=BRAND_ORANGE)
+    f_brand = _font("bold", int(top_bar_h * 0.42))
+    f_tag   = _font("regular", int(top_bar_h * 0.24))
+    draw.text((int(W * 0.035), top_bar_h * 0.28), "NISHA HOMES", font=f_brand, fill="white")
     tag = "Trusted Real Estate Advisor"
     tag_w = draw.textlength(tag, font=f_tag)
-    draw.text((W - tag_w - int(W * 0.03), top_h * 0.40), tag, font=f_tag, fill="white")
+    draw.text((W - tag_w - int(W * 0.035), top_bar_h * 0.40), tag, font=f_tag, fill="white")
 
-    # ---- DEAL TYPE PILL ----
+    # ---------- DEAL-TYPE PILL ----------
     deal = (fields.get("dealType") or "For Sale").upper()
-    f_pill = _font(FONT_BOLD, int(top_h * 0.30))
-    pill_pad_x = int(top_h * 0.28)
+    f_pill = _font("bold", int(W * 0.032))
+    pill_pad_x = int(W * 0.03)
+    pill_h = int(W * 0.06)
     pill_w = draw.textlength(deal, font=f_pill) + pill_pad_x * 2
-    pill_h = int(top_h * 0.60)
-    py = top_h + int(top_h * 0.22)
-    px = int(W * 0.03)
-    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2,
-                            fill=(255, 255, 255, 240))
-    draw.text((px + pill_pad_x, py + pill_h * 0.16), deal, font=f_pill, fill=BRAND_ORANGE)
+    px, py = int(W * 0.035), top_bar_h + int(W * 0.03)
+    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2, fill=(255, 255, 255, 245))
+    draw.text((px + pill_pad_x, py + pill_h * 0.20), deal, font=f_pill, fill=BRAND_ORANGE)
 
-    # ---- BOTTOM INFO PANEL (gradient for legibility over any photo) ----
-    panel_h = int(H * 0.34)
-    panel_top = H - panel_h
-    overlay = Image.new("RGBA", (W, panel_h), (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    for yy in range(panel_h):
-        alpha = int(60 + (200 - 60) * (yy / panel_h))
-        odraw.line([(0, yy), (W, yy)], fill=(16, 19, 28, alpha))
-    blended = Image.alpha_composite(img.crop((0, panel_top, W, H)).convert("RGBA"), overlay)
-    img.paste(blended.convert("RGB"), (0, panel_top))
-    draw = ImageDraw.Draw(img, "RGBA")
+    # ---------- INFO PANEL (solid navy, BELOW the photo) ----------
+    panel_top = top_bar_h + H
+    draw.rectangle([0, panel_top, W, panel_top + panel_h], fill=BRAND_NAVY_SOLID)
 
-    pad_x = int(W * 0.04)
-    f_title = _font(FONT_BOLD, int(panel_h * 0.155))
-    f_meta  = _font(FONT_REG, int(panel_h * 0.095))
-    f_price = _font(FONT_BOLD, int(panel_h * 0.145))
-
-    # Wrap the title across up to 2 lines instead of hard-truncating it
-    title = fields.get("propertyTitle") or ""
-    max_chars = max(10, int(W / (f_title.size * 0.55)))
-    wrapped = textwrap.wrap(title, width=max_chars)[:2]
-
+    pad_x = int(W * 0.045)
     y = panel_top + int(panel_h * 0.10)
-    for line in wrapped:
-        draw.text((pad_x, y), line, font=f_title, fill="white",
-                   stroke_width=1, stroke_fill=(0, 0, 0, 90))
-        y += int(f_title.size * 1.18)
 
-    y += int(panel_h * 0.03)
-    draw.text((pad_x, y), "📍 " + (fields.get("locality") or ""), font=f_meta, fill=(225, 225, 230))
-    y += int(f_meta.size * 1.5)
+    f_title = _font("bold", int(W * 0.052))
+    title = fields.get("propertyTitle") or ""
+    max_chars = max(10, int(W / (f_title.size * 0.52)))
+    for line in textwrap.wrap(title, width=max_chars)[:2]:
+        draw.text((pad_x, y), line, font=f_title, fill="white")
+        y += int(f_title.size * 1.22)
 
-    draw.text((pad_x, y), fields.get("price") or "", font=f_price, fill=BRAND_ORANGE)
-    y += int(f_price.size * 1.4)
+    y += int(panel_h * 0.025)
+    f_meta = _font("regular", int(W * 0.030))
+    draw.text((pad_x, y), "📍 " + (fields.get("locality") or ""), font=f_meta, fill=(210, 214, 224))
+    y += int(f_meta.size * 1.6)
 
-    sub = " · ".join(filter(None, [fields.get("configuration"),
-                                    fields.get("superArea") and f'{fields["superArea"]} sq.ft']))
+    f_price = _font("bold", int(W * 0.062))
+    draw.text((pad_x, y), _format_price_display(fields.get("price")), font=f_price, fill=BRAND_ORANGE)
+    y += int(f_price.size * 1.05)
+
+    words = _indian_price_words(fields.get("price"))
+    if words:
+        f_words = _font("regular", int(W * 0.026))
+        draw.text((pad_x, y), f"({words})", font=f_words, fill=(180, 186, 198))
+        y += int(f_words.size * 1.5)
+    else:
+        y += int(W * 0.01)
+
+    sub = " · ".join(filter(None, [
+        fields.get("configuration"),
+        fields.get("superArea") and f'{fields["superArea"]} sq.ft'
+    ]))
     if sub:
-        draw.text((pad_x, y), sub, font=f_meta, fill=(225, 225, 230))
+        draw.text((pad_x, y), sub, font=f_meta, fill=(210, 214, 224))
+
+    # ---------- DIVIDER + CONTACT BAR ----------
+    divider_y = panel_top + panel_h
+    draw.line([(pad_x, divider_y - 1), (W - pad_x, divider_y - 1)], fill=(255, 255, 255, 40), width=2)
+    draw.rectangle([0, divider_y, W, divider_y + contact_h], fill=BRAND_NAVY_SOLID)
+
+    icon_r = int(contact_h * 0.30)
+    icon_cx, icon_cy = pad_x + icon_r, divider_y + contact_h // 2
+    draw.ellipse([icon_cx - icon_r, icon_cy - icon_r, icon_cx + icon_r, icon_cy + icon_r], fill=BRAND_ORANGE)
+    f_icon = _font("bold", int(icon_r * 1.1))
+    icon_glyph = "\u260E"  # ☎ — if this doesn't render on your server's fonts, swap for "Call:"
+    iw = draw.textlength(icon_glyph, font=f_icon)
+    draw.text((icon_cx - iw / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
+
+    f_contact = _font("bold", int(W * 0.042))
+    draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), CONTACT_NUMBER, font=f_contact, fill="white")
 
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=92)
+    canvas.save(out, format="JPEG", quality=92)
     out.seek(0)
     return out
 
@@ -2759,19 +2842,21 @@ def build_whatsapp_share_text(p, settings):
     L.append("─" * 20)
     if p.get("description"): L.append(p["description"])
     L.append("─" * 20)
+
+    # Fixed CTA + contact block
     L.append("📅 Schedule Your Private Site Visit")
     L.append("🏡 Request Complete Property Details")
-    if p.get("landingPageLink"): L.append(f"🔗 {p['landingPageLink']}")
+    L.append("🔗 View for exclusive listings: https://www.squareyards.com/agent/nisha/492906")
     L.append("━" * 16)
     L.append("🏡 Nisha Homes")
     L.append("Your Trusted Real Estate Advisor")
-    if settings.get("corporate"):
-        L.append(f"💬 Nisha Homes Main Office\nhttps://wa.me/{settings['corporate']}")
-    if settings.get("agent"):
-        L.append(f"👤 {settings.get('advisorName') or 'Property Advisor'}\nhttps://wa.me/{settings['agent']}")
+    L.append("💬 Nisha Homes Main Office")
+    L.append("https://wa.me/917303515710")
+    L.append("👤 Business Coordinator")
+    L.append("https://wa.me/918130505710")
     L.append("━" * 16)
-    return "\n".join(L)
 
+    return "\n".join(L)
 
 # =============================
 # COORDINATOR DASHBOARD STATS
