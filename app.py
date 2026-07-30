@@ -3915,6 +3915,90 @@ def search_inventory():
         import traceback; traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+# =============================
+# CAMPAIGN BUILDER (OpenAI-backed, no Mongo)
+# =============================
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+
+@app.route("/campaign-builder")
+def campaign_builder_page():
+    if not session.get("user_id"):
+        return redirect("/")
+    # file must live at: templates/campaign-builder.html
+    return render_template("campaign-builder.html")
+
+
+@app.route("/api/ai/campaign", methods=["POST"])
+def ai_campaign():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    if not OPENAI_API_KEY:
+        return jsonify({"success": False, "message": "OPENAI_API_KEY not set in .env"}), 500
+
+    resp = None
+    try:
+        data = request.json or {}
+        system_prompt = data.get("system", "")
+        user_prompt = data.get("prompt", "")
+        max_tokens = int(data.get("max_tokens", 4000))
+        temperature = float(data.get("temperature", 0.7))
+        image = data.get("image")  # optional: {"media_type": "...", "data": "<base64>"}
+
+        if not user_prompt:
+            return jsonify({"success": False, "message": "prompt is required"}), 400
+
+        user_content = []
+        if image and image.get("data"):
+            user_content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.get('media_type', 'image/png')};base64,{image['data']}"
+                }
+            })
+        user_content.append({"type": "text", "text": user_prompt})
+
+        payload = {
+            "model": data.get("model") or "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        resp = requests.post(
+            OPENAI_API_URL,
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=90
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        text = result["choices"][0]["message"]["content"]
+
+        return jsonify({"success": True, "text": text})
+
+    except requests.exceptions.HTTPError as e:
+        try:
+            err_body = resp.json() if resp is not None else {}
+        except Exception:
+            err_body = {}
+        msg = (err_body.get("error") or {}).get("message") or str(e)
+        status = resp.status_code if resp is not None else 500
+        return jsonify({"success": False, "message": msg}), status
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 if __name__ == "__main__":
     #remove_assign_to_from_leads()
     app.run(host="0.0.0.0", port=8000)

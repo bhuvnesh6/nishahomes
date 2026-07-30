@@ -859,8 +859,11 @@ function show(id){
 
 /* ============================ setup ============================ */
 function keyBadge(){
-  el('keydot').classList.toggle('on', !!S.key);
-  el('keytext').textContent = S.key ? 'Connected' : 'No key';
+  var m=mode(), d=el('keydot'), t=el('keytext');
+  d.classList.toggle('on', m!=='offline');
+  d.style.background = m==='offline' ? '#E0A23C' : '';
+  t.textContent = m==='offline' ? 'Offline mode active'
+    : (m==='hybrid' ? 'Hybrid · Server AI' : 'AI · Server AI');
 }
 /* ============================ brief ============================ */
 var BFIELDS=['pName','pType','pDeal','pPrice','pSize','pLoc','pSeg','pBudget','pUsp','pAud','pUrl'];
@@ -940,46 +943,40 @@ function sysPrompt(){
   'Follow the client rules given in the brief exactly.';
 }
 
-function callClaude(userText, sysText, maxTokens, attach){
-  if(!S.key) return Promise.reject(new Error('Add your API key in the Setup tab first.'));
-  var content=[];
-  if(attach){
-    if(attach.kind==='pdf'){
-      content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:attach.data}});
-    } else {
-      content.push({type:'image',source:{type:'base64',media_type:attach.media_type,data:attach.data}});
-    }
+/* ---------------------------------------------------------------
+   REPLACED: callAI now talks to our own Flask backend
+   (/api/ai/campaign), which holds the OpenAI key server-side.
+   Nothing is sent directly from the browser to any AI provider.
+--------------------------------------------------------------- */
+function callAI(userText, sysText, maxTokens, attach){
+  var body = {
+    prompt: userText,
+    system: sysText || sysPrompt(),
+    max_tokens: maxTokens || S.ai.max || 4000,
+    temperature: Number(S.ai.temp) || 0.7
+  };
+  if(attach && attach.kind === 'image'){
+    body.image = { media_type: attach.media_type, data: attach.data };
   }
-  content.push({type:'text',text:userText});
-  return fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{
-      'content-type':'application/json',
-      'x-api-key':S.key,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({
-      model:S.model||'claude-sonnet-4-6',
-      max_tokens:maxTokens||4000,
-      system:sysText||sysPrompt(),
-      messages:[{role:'user',content:content}]
-    })
+  var t0 = Date.now();
+  return fetch('/api/ai/campaign', {
+    method: 'POST',
+    headers: {'content-type':'application/json'},
+    body: JSON.stringify(body)
   }).then(function(r){
     return r.json().then(function(d){
-      if(!r.ok){
-        var m=(d&&d.error&&d.error.message)||('Request failed ('+r.status+')');
-        if(r.status===401) m='That API key was rejected. Check it in Setup.';
-        if(r.status===429) m='Rate limited or out of credit. Wait a minute or top up at console.anthropic.com.';
-        throw new Error(m);
+      if(!r.ok || !d.success){
+        throw new Error(d.message || ('Request failed ('+r.status+')'));
       }
-      return (d.content||[]).map(function(c){return c.type==='text'?c.text:'';}).join('\n').trim();
+      logUsage('openai', 'gpt-4o-mini', {in: estTokens(userText+sysText), out: estTokens(d.text)}, Date.now()-t0);
+      return (d.text||'').trim();
     });
   }).catch(function(e){
-    if(e instanceof TypeError) throw new Error('Could not reach the API. Check your internet connection.');
+    if(e instanceof TypeError) throw new Error('Could not reach the server. Check your connection.');
     throw e;
   });
 }
+
 function parseJSON(txt){
   var t=txt.replace(/```json/gi,'').replace(/```/g,'').trim();
   var a=t.indexOf('{'), b=t.lastIndexOf('}');
@@ -1212,32 +1209,11 @@ var M={
    '(7) "Risks" as cards. (8) "Decision rules" as list — the numbers that trigger scale up, change or stop.\n'+SCHEMA; }}
 };
 
-/* ============================ runner ============================ */
+/* ============================ runner (base helpers) ============================ */
 function bindRuns(){
   Array.prototype.forEach.call(document.querySelectorAll('[data-run]'),function(btn){
     btn.onclick=function(){ run(btn.dataset.run, btn); };
   });
-}
-function run(id, btn){
-  var m=M[id]; if(!m) return;
-  if(!S.key){ show('setup'); toast('Add your API key first'); return; }
-  var box=el('out-'+id); if(!box) return;
-  var oldLabel=btn?btn.innerHTML:'';
-  if(btn){ btn.disabled=true; btn.innerHTML='<i class="spinner"></i> Working…'; }
-  box.innerHTML='<div class="working"><i class="spinner"></i>Claude is thinking. This takes 20–60 seconds for the long ones.</div>';
-  var attach = m.attach ? (m.attachSrc?m.attachSrc():creative) : null;
-  callClaude(m.prompt(), sysPrompt(), m.tokens, attach)
-    .then(function(txt){
-      var json=parseJSON(txt);
-      S.outputs[id]={json:json,at:Date.now(),label:m.label};
-      S.history.unshift({id:id,label:m.label,title:json.title||m.label,at:Date.now()});
-      S.history=S.history.slice(0,60);
-      save();
-      render(box,json,id);
-      renderHistory();
-    })
-    .catch(function(e){ box.innerHTML='<div class="note bad">'+esc(e.message)+'</div>'; })
-    .finally(function(){ if(btn){ btn.disabled=false; btn.innerHTML=oldLabel; } });
 }
 
 /* ============================ renderer ============================ */
@@ -1593,7 +1569,7 @@ var PROVIDERS={
  openai:{name:'OpenAI (ChatGPT)',kind:'oai',base:'https://api.openai.com/v1/chat/completions',
    models:['gpt-5.1','gpt-5-mini','gpt-4.1','gpt-4o-mini'],def:'gpt-5.1',vision:true,
    keyUrl:'platform.openai.com → API keys',consumer:'ChatGPT Plus (the chatgpt.com subscription)',
-   note:'Will NOT work here — OpenAI blocks direct calls from a browser. It needs a backend/proxy (Bhuvnesh). Use Anthropic Claude, Google Gemini or OpenRouter in this app instead.'},
+   note:'Handled through this app\u2019s own server now — no browser-side key needed.'},
  gemini:{name:'Google Gemini',kind:'gemini',base:'https://generativelanguage.googleapis.com/v1beta/models',
    models:['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash'],def:'gemini-2.5-flash',vision:true,
    keyUrl:'aistudio.google.com → Get API key',consumer:'Gemini Advanced (the Google One AI subscription)',
@@ -1634,7 +1610,15 @@ function P(){ return PROVIDERS[S.ai.provider]||PROVIDERS.claude; }
 function activeKey(p){ return (S.ai.keys||{})[p||S.ai.provider]||''; }
 function activeModel(p){ p=p||S.ai.provider; return (S.ai.models||{})[p]||PROVIDERS[p].def; }
 function activeBase(p){ p=p||S.ai.provider; return (S.ai.bases||{})[p]||PROVIDERS[p].base; }
-function aiReady(p){ p=p||S.ai.provider; return PROVIDERS[p].local ? true : !!activeKey(p); }
+
+/* ---------------------------------------------------------------
+   REPLACED: the key now lives server-side (in .env on the Flask
+   server), so the app is always "ready" from the browser's point
+   of view. The server itself will error out if OPENAI_API_KEY is
+   missing, and that error surfaces normally through callAI().
+--------------------------------------------------------------- */
+function aiReady(p){ return true; }
+
 function mode(){ if(S.ai.mode==='offline'||S.ai.pref==='none') return 'offline';
                  if(!aiReady()) return 'offline'; return S.ai.mode; }
 function rateFor(m){ if(P().local) return [0,0]; return S.ai.rates[m]||RATES[m]||RATES['default']; }
@@ -1642,100 +1626,9 @@ function estTokens(t){ return Math.ceil((t||'').length/3.6); }
 function inr(u){ return u*(Number(S.ai.fx)||88); }
 function money(x){ return '₹'+(x<1?x.toFixed(2):x.toFixed(x<10?2:0)); }
 
-/* ---- badge ---- */
-function keyBadge(){
-  var m=mode(), d=el('keydot'), t=el('keytext');
-  d.classList.toggle('on', m!=='offline');
-  d.style.background = m==='offline' ? '#E0A23C' : '';
-  t.textContent = m==='offline' ? 'Offline mode active'
-    : (m==='hybrid' ? 'Hybrid · '+P().name.split(' ')[0] : 'AI · '+P().name.split(' ')[0]);
-}
-
-/* ---- AI calls ---- */
+/* ---- usage / error logging ---- */
 function hash(s){ var h=5381,i=s.length; while(i) h=(h*33)^s.charCodeAt(--i); return (h>>>0).toString(36); }
 
-function callAI(userText, sysText, maxTokens, attach, provider){
-  var p=provider||S.ai.provider, cfg=PROVIDERS[p], t0=Date.now();
-  var mdl=activeModel(p), base=activeBase(p), key=activeKey(p);
-  if(!cfg.local && !key) return Promise.reject(new Error('No API key saved for '+cfg.name+'. Add one in AI settings, or switch to Offline mode.'));
-  var maxT=maxTokens||S.ai.max||4000, temp=Number(S.ai.temp);
-  var headers={'content-type':'application/json'}, url=base, body;
-
-  if(cfg.kind==='claude'){
-    headers['x-api-key']=key; headers['anthropic-version']='2023-06-01';
-    headers['anthropic-dangerous-direct-browser-access']='true';
-    var c=[];
-    if(attach) c.push(attach.kind==='pdf'
-      ?{type:'document',source:{type:'base64',media_type:'application/pdf',data:attach.data}}
-      :{type:'image',source:{type:'base64',media_type:attach.media_type,data:attach.data}});
-    c.push({type:'text',text:userText});
-    body={model:mdl,max_tokens:maxT,temperature:temp,system:sysText,messages:[{role:'user',content:c}]};
-  } else if(cfg.kind==='oai'){
-    if(key) headers['authorization']='Bearer '+key;
-    var uc=[{type:'text',text:userText}];
-    if(attach&&attach.kind==='image') uc.unshift({type:'image_url',image_url:{url:'data:'+attach.media_type+';base64,'+attach.data}});
-    body={model:mdl,max_tokens:maxT,temperature:temp,
-      messages:[{role:'system',content:sysText},{role:'user',content:attach&&attach.kind==='image'?uc:userText}]};
-  } else if(cfg.kind==='gemini'){
-    url=base+'/'+mdl+':generateContent?key='+encodeURIComponent(key);
-    var parts=[];
-    if(attach) parts.push({inline_data:{mime_type:attach.media_type,data:attach.data}});
-    parts.push({text:userText});
-    body={contents:[{role:'user',parts:parts}],
-      systemInstruction:{parts:[{text:sysText}]},
-      generationConfig:{temperature:temp,maxOutputTokens:maxT}};
-  } else if(cfg.kind==='ollama'){
-    body={model:mdl,stream:false,options:{temperature:temp,num_predict:maxT},
-      messages:[{role:'system',content:sysText},{role:'user',content:userText}]};
-    if(attach&&attach.kind==='image') body.messages[1].images=[attach.data];
-  }
-
-  return fetch(url,{method:'POST',headers:headers,body:JSON.stringify(body)})
-   .then(function(r){ return r.text().then(function(tx){
-      var d={}; try{ d=JSON.parse(tx); }catch(e){}
-      if(!r.ok){
-        var msg=(d.error&&(d.error.message||d.error))||tx.slice(0,200)||('Request failed ('+r.status+')');
-        if(r.status===401||r.status===403) msg='Key rejected by '+cfg.name+'. Check it in AI settings.';
-        if(r.status===404) msg='Model "'+mdl+'" not found on '+cfg.name+'. Try another model name.';
-        if(r.status===429) msg='Rate limited or out of credit on '+cfg.name+'.';
-        throw new Error(msg);
-      }
-      var out='', usage={in:0,out:0};
-      if(cfg.kind==='claude'){
-        out=(d.content||[]).map(function(c){return c.type==='text'?c.text:'';}).join('\n');
-        if(d.usage){ usage={in:d.usage.input_tokens||0,out:d.usage.output_tokens||0}; }
-      } else if(cfg.kind==='oai'){
-        out=((d.choices||[])[0]||{}).message ? d.choices[0].message.content : '';
-        if(d.usage){ usage={in:d.usage.prompt_tokens||0,out:d.usage.completion_tokens||0}; }
-      } else if(cfg.kind==='gemini'){
-        out=(((d.candidates||[])[0]||{}).content||{}).parts ? d.candidates[0].content.parts.map(function(x){return x.text||'';}).join('') : '';
-        if(d.usageMetadata){ usage={in:d.usageMetadata.promptTokenCount||0,out:d.usageMetadata.candidatesTokenCount||0}; }
-      } else if(cfg.kind==='ollama'){
-        out=(d.message&&d.message.content)||'';
-        usage={in:d.prompt_eval_count||0,out:d.eval_count||0};
-      }
-      if(!usage.in) usage.in=estTokens(userText+sysText);
-      if(!usage.out) usage.out=estTokens(out);
-      logUsage(p,mdl,usage,Date.now()-t0);
-      return (out||'').trim();
-   });})
-   .catch(function(e){
-      var msg=e.message||String(e);
-      if(e instanceof TypeError){
-        if(cfg.local){
-          msg='Could not reach '+cfg.name+' at '+base+'. Is it running, and is CORS allowed? See the Learn tab.';
-        } else if(p==='openai'){
-          msg='OpenAI (ChatGPT) can\u2019t be used directly from a browser — it blocks browser calls for security. Switch the provider to Anthropic Claude, Google Gemini or OpenRouter in AI settings. (Offline mode still works.)';
-        } else if(p==='grok'){
-          msg='Grok refused a direct browser call. Switch to Anthropic Claude, Google Gemini or OpenRouter in AI settings. (Offline mode still works.)';
-        } else {
-          msg=cfg.name+' refused a direct browser call, or you are offline. Try Anthropic Claude, Google Gemini or OpenRouter.';
-        }
-      }
-      logError(p,msg);
-      throw new Error(msg);
-   });
-}
 function logUsage(p,m,u,ms){
   var r=rateFor(m), cost=inr((u.in/1e6)*r[0]+(u.out/1e6)*r[1]);
   S.ai.usage.unshift({p:p,m:m,i:u.in,o:u.out,c:cost,ms:ms,at:Date.now()});
@@ -1750,11 +1643,7 @@ function callClaude(userText,sysText,maxTokens,attach){ return callAI(userText,s
 
 function callWithBackup(userText,sysText,maxTokens,attach){
   return callAI(userText,sysText,maxTokens,attach).catch(function(e){
-    var b=S.ai.backup;
-    if(b && b!==S.ai.provider && aiReady(b)){
-      toast('Main provider failed — trying '+PROVIDERS[b].name);
-      return callAI(userText,sysText,maxTokens,attach,b);
-    }
+    logError(S.ai.provider, e.message);
     throw e;
   });
 }
@@ -2249,7 +2138,7 @@ OFF.gmb=function(){
 /* ==================== runner with modes ==================== */
 function lockedMsg(id){
   return '<div class="note warn"><b>Needs AI.</b> This one reads images, judges quality or writes original text, so it cannot run on built-in rules. '+
-   'Switch to Hybrid or AI mode in the <b>AI settings</b> tab and connect any provider — Gemini has a free tier if you want to try it at no cost.</div>';
+   'Switch to Hybrid or AI mode in the <b>AI settings</b> tab — the app is already connected to the server AI.</div>';
 }
 function run(id, btn){
   var m=M[id], box=el('out-'+id); if(!box) return;
@@ -2271,7 +2160,7 @@ function afterRender(box,id,doc){
   tag.className='tag'; tag.style.alignSelf='center';
   tag.textContent='Built offline — no API cost';
   row.appendChild(tag);
-  if(M[id] && aiReady() && mode()!=='offline'){
+  if(M[id] && mode()!=='offline'){
     var b=document.createElement('button');
     b.className='btn sm'; b.textContent='Improve with AI';
     b.onclick=function(){ aiRun(id,b,doc); };
@@ -2284,7 +2173,7 @@ function aiRun(id,btn,draft){
   var prompt=m.prompt();
   if(draft) prompt+='\n\nA rule-based draft already exists. Your job is to IMPROVE it — sharpen it for this specific property, correct anything wrong, and add what is missing. Do not simply repeat it.\n\nDRAFT:\n'+toPlain(draft);
   var sys=sysPrompt(), tok=m.tokens||S.ai.max;
-  var ck=hash(S.ai.provider+activeModel()+prompt);
+  var ck=hash('server'+prompt);
   if(S.ai.cache[ck]){
     var cached=JSON.parse(S.ai.cache[ck]);
     S.outputs[id]={json:cached,at:Date.now(),label:m.label}; save();
@@ -2295,12 +2184,12 @@ function aiRun(id,btn,draft){
       f.onclick=function(){ delete S.ai.cache[ck]; save(); aiRun(id,btn,draft); }; r.appendChild(f); }
     return;
   }
-  var rt=rateFor(activeModel());
+  var rt=rateFor('gpt-4o-mini');
   var est=inr(estTokens(prompt+sys)/1e6*rt[0] + tok*0.6/1e6*rt[1]);
-  if(est>(Number(S.ai.warn)||5) && !confirm('This request is estimated at about '+money(est)+' on '+P().name+'.\n\nRun it?')) return;
+  if(est>(Number(S.ai.warn)||5) && !confirm('This request is estimated at about '+money(est)+'.\n\nRun it?')) return;
   var old=btn?btn.innerHTML:'';
   if(btn){ btn.disabled=true; btn.innerHTML='<i class="spinner"></i> Working…'; }
-  box.innerHTML='<div class="working"><i class="spinner"></i>'+P().name+' is working. Estimated cost '+money(est)+'.</div>';
+  box.innerHTML='<div class="working"><i class="spinner"></i>Working on the server. Estimated cost '+money(est)+'.</div>';
   callWithBackup(prompt,sys,tok, m.attach ? (m.attachSrc?m.attachSrc():creative) : null)
    .then(function(txt){
       var j=parseJSON(txt);
@@ -2520,115 +2409,51 @@ function renderPlay(){
 
 /* ==================== learning centre ==================== */
 var BASICS=[
- ['What is an API key, in plain language',
-  'An API key is a password that lets one app talk to another app on your behalf. When you paste an AI company\'s key into this tool, '+
-  'you are telling them: requests arriving with this password are mine, bill them to my account. It is not a login, and it is not a subscription. '+
-  'Anyone holding the key can spend your credit, so treat it like a card number.'],
- ['Why does this app need one?',
-  'This app runs entirely in your browser. There is no server of ours in between. When you press a button that needs AI, your browser talks '+
-  'straight to the AI company using your key. That is why nothing you type is stored anywhere except your own phone or laptop — and why you '+
-  'pay the AI company directly instead of paying us a monthly fee.'],
- ['A website subscription is NOT API access',
-  'This catches almost everybody. Claude Pro lets you use Claude on claude.ai. It does not give you API credit. The API is a separate '+
-  'developer product with a separate balance, billed by usage. Exactly the same applies to ChatGPT Plus versus the OpenAI API, Gemini Advanced '+
-  'versus the Gemini API, and X Premium versus the Grok API. If you already pay for the website subscription, you still need to add a small '+
-  'API balance separately — usually ₹500 lasts a long time here.'],
+ ['How the AI is powered',
+  'This app now calls AI through this server\'s own backend. There is no key to paste, nothing to test, and nothing leaves your browser except your prompts, which the server forwards to OpenAI on your behalf.'],
  ['What is a token?',
-  'AI companies charge by the token, which is roughly three-quarters of a word. A long ad-copy generation might use 2,000 tokens in and '+
-  '6,000 out. At current rates that is a rupee or three. The Calculators, Playbooks, Trainer, Templates and every offline generator in '+
-  'this app cost nothing at all, because no AI is involved.'],
- ['What is a prompt?',
-  'The instruction sent to the AI. This app writes the prompts for you — it packs in your brief, your business rules, the property details '+
-  'and a strict output format, which is why the answers come back structured instead of as an essay.'],
+  'AI is billed by the token, roughly three-quarters of a word. The Calculators, Playbooks, Trainer, Templates and every offline generator in this app cost nothing at all, because no AI is involved. Only "Improve with AI" buttons use the server AI.'],
  ['How to keep the cost tiny',
-  'Leave the app in Hybrid mode. It builds everything it can from built-in rules for free, and only calls AI when you press "Improve with AI". '+
-  'Answers are saved, so pressing the same button twice costs nothing the second time. Pick a cheap model — Gemini Flash or Claude Haiku — '+
-  'for routine work and save the expensive one for strategy.'],
+  'Leave the app in Hybrid mode. It builds everything it can from built-in rules for free, and only calls AI when you press "Improve with AI". Answers are saved, so pressing the same button twice costs nothing the second time.'],
  ['Is any of this shared with anyone?',
-  'Your key, your brief and every generated answer live in this browser only. Nothing is uploaded to us. If you clear your browser data '+
-  'without taking a backup from the Export tab, it is gone. The AI company does see whatever you send them when you use AI mode.']
+  'Your brief and generated answers live in this browser (localStorage) except when you explicitly run an AI step, in which case the prompt is sent to the server, which forwards it to OpenAI to generate the answer.']
 ];
 var TROUBLE=[
- ['Key rejected / 401 / 403','The key is wrong, was deleted, or belongs to a different provider. Generate a fresh one and paste it again — watch for a space at the start or end.'],
- ['Rate limited / 429','Either you are out of credit, or you sent too many requests too quickly. Check the balance on the provider\'s billing page first — this is nearly always an empty balance.'],
- ['Model not found / 404','Model names change every few months. Open the provider\'s model list and paste the current name into the Model field in AI settings.'],
- ['Nothing happens / network error','Either you are offline, or that provider refuses direct browser calls. Try Claude, Gemini or OpenRouter, which all allow it.'],
- ['Local AI will not connect','Ollama and LM Studio must be running on the same computer, and must be told to accept requests from this page. See the local AI section above.'],
- ['The answer came back as one block of text','The AI ignored the format instruction. Press the button again, or lower the creativity setting to 0.5 in AI settings.'],
- ['Everything disappeared','Browser data was cleared. Restore the JSON backup from the Export tab. Take a backup monthly.']
-];
-var LOCALAI=[
- ['Ollama',[
-  'What it is: free software that runs an AI model on your own computer. No key, no bill, nothing leaves your machine.',
-  'You need: a laptop or desktop, ideally 16 GB RAM. This will not work from a phone.',
-  'Install: download from ollama.com and run the installer.',
-  'Get a model: open a terminal and run "ollama pull llama3.1". Around 5 GB.',
-  'Allow this page to reach it: Ollama blocks other pages by default. Set the environment variable OLLAMA_ORIGINS to * and restart Ollama. On Windows this is done in System environment variables; on Mac, launchctl setenv OLLAMA_ORIGINS "*".',
-  'Connect: in AI settings pick Ollama, leave the server address as http://localhost:11434/api/chat, set the model to llama3.1, and press Test connection.',
-  'Good for: unlimited free copywriting drafts and private data.',
-  'Limits: noticeably weaker than Claude or Gemini on strategy, cannot read your brochure images, and slow on a laptop.']],
- ['LM Studio',[
-  'What it is: the same idea as Ollama but with a normal window-and-buttons interface instead of a terminal.',
-  'Install: download from lmstudio.ai.',
-  'Get a model: search for a model inside the app and download it.',
-  'Start the server: go to the Developer / Local Server tab, load your model, tick Enable CORS, and press Start.',
-  'Connect: in AI settings pick LM Studio, keep http://localhost:1234/v1/chat/completions, and press Test connection.',
-  'Good for: trying local AI without touching a terminal.',
-  'Limits: same as Ollama — weaker output, no image reading, and the computer must stay awake.']]
+ ['"OPENAI_API_KEY not set" error','The server does not have a key configured. Add OPENAI_API_KEY to the .env file on the server and restart it.'],
+ ['Rate limited / 429','The server\'s OpenAI account is out of credit or hit a rate limit. Check the OpenAI billing dashboard.'],
+ ['Nothing happens / network error','The browser could not reach the Flask server. Check your connection or that the server is running.'],
+ ['The answer came back as one block of text','The AI ignored the format instruction. Press the button again.'],
+ ['Everything disappeared','Browser data was cleared. Restore the JSON backup from the Export tab if you took one.']
 ];
 function renderLearn(){
   el('learnBasics').innerHTML='<div class="eyebrow">The basics</div><h3>Read this once</h3>'+
    BASICS.map(function(b){
      return '<details class="acc"><summary>'+esc(b[0])+'</summary><div class="inner"><p>'+esc(b[1])+'</p></div></details>';
    }).join('');
-  el('learnWizards').innerHTML=Object.keys(PROVIDERS).map(function(k){
-    var p=PROVIDERS[k];
-    var steps = p.local
-     ? ['Install the software on a computer (see the local AI section below).','Download a model inside it.','Start its local server.','Pick '+p.name+' in AI settings.','Press Test connection.','Choose the model you downloaded.','Start using it — no key, no cost.']
-     : ['Go to '+p.keyUrl.split(' → ')[0]+' and create an account.','Add a small balance — ₹500 to ₹1,000 goes a long way.','Open '+p.keyUrl+' and create a new key.','Copy it immediately. Most providers never show it again.','Open the AI settings tab here, pick '+p.name+', paste the key.','Press Test connection.','Pick a model and start.'];
-    return '<details class="acc"><summary>'+esc(p.name)+'</summary><div class="inner">'+
-      '<p>'+esc(p.note)+'</p>'+
-      (p.consumer!=='none'?'<div class="note warn">'+esc(p.consumer)+' does <b>not</b> include API credit. The API is billed separately.</div>':'')+
-      '<ol>'+steps.map(function(s){return '<li>'+esc(s)+'</li>';}).join('')+'</ol>'+
-      '<p class="hint">Suggested model: '+esc(p.def)+'</p></div></details>';
-  }).join('');
-  el('learnLocal').innerHTML=LOCALAI.map(function(l){
-    return '<details class="acc"><summary>'+esc(l[0])+'</summary><div class="inner"><ol>'+
-      l[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol></div></details>';
-  }).join('')+'<div class="note warn">Local AI is the one part of this app that needs software installed on a computer and a setting changed. If that is not for you, Gemini has a free tier that needs nothing but a key.</div>';
+  el('learnWizards').innerHTML='<p class="hint">No setup needed on your end — the server already holds the API key.</p>';
+  el('learnLocal').innerHTML='<p class="hint">Local AI (Ollama / LM Studio) is not used in this deployment.</p>';
   el('learnTrouble').innerHTML=renderSection({heading:'Common problems',type:'table',
     table:{columns:['What you see','What to do'],rows:TROUBLE}});
 }
 
 /* ==================== AI settings ==================== */
 function fillProviderSelects(){
-  var a=el('aiProvider'), b=el('aiBackup');
-  a.innerHTML=''; b.innerHTML='<option value="">None</option>';
-  Object.keys(PROVIDERS).forEach(function(k){
-    var o=document.createElement('option'); o.value=k; o.textContent=PROVIDERS[k].name; a.appendChild(o);
-    var o2=o.cloneNode(true); b.appendChild(o2);
-  });
-  a.value=S.ai.provider; b.value=S.ai.backup||'';
+  var a=el('aiProvider'); if(!a) return;
+  a.innerHTML='<option value="server">Server AI (OpenAI, via this app)</option>';
+  a.value='server';
+  var b=el('aiBackup'); if(b) b.innerHTML='<option value="">None</option>';
 }
 function syncProviderFields(){
-  var p=P();
-  el('aiKey').value=activeKey();
-  el('aiKey').placeholder=p.local?'Not needed for local AI':'Paste the key here';
-  el('aiKey').disabled=!!p.local;
-  el('aiBase').value=activeBase();
-  el('baseWrap').style.display=(p.local||S.ai.provider==='openrouter')?'block':'none';
-  el('aiModel').value=activeModel();
-  el('modelList').innerHTML=p.models.map(function(m){return '<option value="'+esc(m)+'">';}).join('');
-  var r=rateFor(activeModel());
-  var blocked=(S.ai.provider==='openai'||S.ai.provider==='grok');
-  el('aiStatus').innerHTML='<div class="note'+(blocked?' bad':'')+'">'+esc(p.note)+'<br>Price guide: about '+money(inr(r[0]/1e6*1000))+
-    ' per 1,000 words in, '+money(inr(r[1]/1e6*1000))+' per 1,000 words out.</div>';
+  if(el('aiKey')){ el('aiKey').value=''; el('aiKey').placeholder='Not needed — handled by the server'; el('aiKey').disabled=true; }
+  if(el('baseWrap')) el('baseWrap').style.display='none';
+  if(el('aiModel')){ el('aiModel').value='gpt-4o-mini (server-side)'; el('aiModel').disabled=true; }
+  if(el('aiStatus')) el('aiStatus').innerHTML='<div class="note">This app calls OpenAI through its own server route (/api/ai/campaign). No key is needed in the browser.</div>';
 }
 function renderModeExplain(){
   var m=el('aiMode').value;
   var txt={
     hybrid:'The built-in engine does the work first — free and instant. Every result then gets an "Improve with AI" button, so you only spend when the draft is not good enough. Recommended.',
-    ai:'Every generator calls the AI directly. Best quality, highest cost.',
+    ai:'Every generator calls the server AI directly. Best quality, highest cost.',
     offline:'No AI at all. Calculators, wizards, structure, audiences, interests, locations, checklists, template ad copy, GMB packs, playbooks, scripts and training all still work. Creative analysis, scoring, auditing and original copywriting are switched off.'
   }[m];
   el('modeExplain').innerHTML=esc(txt);
@@ -2646,76 +2471,45 @@ function renderUsage(){
     {k:'Estimated spend',v:money(cost)},
     {k:'Average response time',v:ms?(ms/1000).toFixed(1)+' s':'—'},
     {k:'Saved answers stored',v:Object.keys(S.ai.cache||{}).length},
-    {k:'Provider',v:P().name+' · '+activeModel()}]})+
-    '<p class="hint">Estimates from the price list. Always check the provider\'s own billing page for the real figure.</p>';
+    {k:'Provider',v:'Server AI (OpenAI gpt-4o-mini)'}]})+
+    '<p class="hint">Estimates from the price list. Always check the OpenAI billing page for the real figure.</p>';
 }
 function renderErrors(){
   var n=el('errorBox'); if(!n) return;
   if(!(S.ai.errors||[]).length){ n.innerHTML='<p class="hint">No errors logged. </p>'; return; }
   n.innerHTML=S.ai.errors.map(function(e){
-    return '<div class="mini" style="margin-bottom:8px"><b>'+esc(PROVIDERS[e.p]?PROVIDERS[e.p].name:e.p)+'</b>'+
+    return '<div class="mini" style="margin-bottom:8px"><b>Server AI</b>'+
       '<p>'+esc(e.msg)+'</p><div class="tags"><span class="tag">'+new Date(e.at).toLocaleString()+'</span></div></div>';
   }).join('')+'<div class="btnrow no-print"><button class="btn ghost sm" id="clrErr">Clear log</button></div>';
   var c=el('clrErr'); if(c) c.onclick=function(){ S.ai.errors=[]; save(); renderErrors(); };
 }
 function renderRates(){
-  var n=el('ratesBox');
-  var keys=Object.keys(RATES).filter(function(k){return k!=='local';});
+  var n=el('ratesBox'); if(!n) return;
   n.innerHTML='<div class="divider"></div><div class="eyebrow">Price list (US$ per million tokens)</div>'+
-   '<p class="hint">Edit these when providers change their pricing. Used only to estimate cost.</p>'+
-   keys.map(function(k){
-     var r=S.ai.rates[k]||RATES[k];
-     return '<div class="grid2" style="margin-bottom:6px"><label class="f"><span>'+esc(k)+' — in</span>'+
-       '<input type="number" step="0.01" data-rate="'+esc(k)+'" data-i="0" value="'+r[0]+'"></label>'+
-       '<label class="f"><span>'+esc(k)+' — out</span>'+
-       '<input type="number" step="0.01" data-rate="'+esc(k)+'" data-i="1" value="'+r[1]+'"></label></div>';
-   }).join('');
-  Array.prototype.forEach.call(n.querySelectorAll('[data-rate]'),function(inp){
-    inp.onchange=function(){
-      var k=inp.dataset.rate, i=+inp.dataset.i;
-      S.ai.rates[k]=S.ai.rates[k]||RATES[k].slice();
-      S.ai.rates[k][i]=parseFloat(inp.value)||0; save(); renderUsage();
-    };
-  });
+   '<p class="hint">gpt-4o-mini in: '+RATES['gpt-4o-mini'][0]+' / out: '+RATES['gpt-4o-mini'][1]+'. Fixed — the app uses one server-side model.</p>';
 }
 function bindAI(){
   fillProviderSelects();
-  el('aiMode').value=S.ai.mode; el('aiTemp').value=S.ai.temp; el('aiMax').value=S.ai.max;
-  el('aiPref').value=S.ai.pref; el('aiFx').value=S.ai.fx; el('aiWarn').value=S.ai.warn;
+  el('aiMode').value=S.ai.mode; if(el('aiTemp')) el('aiTemp').value=S.ai.temp; if(el('aiMax')) el('aiMax').value=S.ai.max;
+  if(el('aiPref')) el('aiPref').value=S.ai.pref; if(el('aiFx')) el('aiFx').value=S.ai.fx; if(el('aiWarn')) el('aiWarn').value=S.ai.warn;
   syncProviderFields(); renderModeExplain(); renderUsage(); renderErrors();
 
   el('aiMode').onchange=function(){ S.ai.mode=el('aiMode').value; save(); renderModeExplain(); keyBadge(); };
-  el('aiProvider').onchange=function(){ S.ai.provider=el('aiProvider').value; save(); syncProviderFields(); keyBadge(); };
-  el('aiPref').onchange=function(){
-    S.ai.pref=el('aiPref').value;
-    if(S.ai.pref==='none'){ S.ai.mode='offline'; el('aiMode').value='offline'; renderModeExplain(); }
-    if(S.ai.pref==='local' && !P().local){ S.ai.provider='ollama'; el('aiProvider').value='ollama'; syncProviderFields(); }
-    if(S.ai.pref==='cost'){ S.ai.provider='gemini'; el('aiProvider').value='gemini'; S.ai.models.gemini='gemini-2.5-flash'; syncProviderFields(); }
-    if(S.ai.pref==='quality'){ S.ai.provider='claude'; el('aiProvider').value='claude'; S.ai.models.claude='claude-sonnet-4-6'; syncProviderFields(); }
-    if(S.ai.pref==='speed'){ S.ai.provider='claude'; el('aiProvider').value='claude'; S.ai.models.claude='claude-haiku-4-5'; syncProviderFields(); }
-    save(); keyBadge();
-  };
-  el('aiSave').onclick=function(){
-    S.ai.keys[S.ai.provider]=el('aiKey').value.trim();
-    S.ai.bases[S.ai.provider]=el('aiBase').value.trim()||PROVIDERS[S.ai.provider].base;
-    S.ai.models[S.ai.provider]=el('aiModel').value.trim()||PROVIDERS[S.ai.provider].def;
+  if(el('aiSave')) el('aiSave').onclick=function(){
     S.ai.temp=Math.min(1,Math.max(0,parseFloat(el('aiTemp').value)||0.7));
     S.ai.max=Math.max(500,parseInt(el('aiMax').value)||4000);
-    S.ai.backup=el('aiBackup').value; S.ai.fx=parseFloat(el('aiFx').value)||88;
+    S.ai.fx=parseFloat(el('aiFx').value)||88;
     S.ai.warn=parseFloat(el('aiWarn').value)||5;
-    save(); keyBadge(); syncProviderFields(); renderUsage(); toast('Saved');
+    save(); keyBadge(); renderUsage(); toast('Saved');
   };
-  el('aiForget').onclick=function(){
-    delete S.ai.keys[S.ai.provider]; el('aiKey').value=''; save(); keyBadge(); toast('Key removed');
-  };
-  el('aiTest').onclick=function(){
-    el('aiSave').onclick();
+  if(el('aiForget')) el('aiForget').style.display='none';
+  if(el('aiTest')) el('aiTest').onclick=function(){
     var b=el('aiTest'), old=b.innerHTML; b.disabled=true; b.innerHTML='<i class="spinner"></i> Testing…';
     var t0=Date.now();
     callAI('Reply with exactly: ready','You are a connection test.',60,null)
      .then(function(r){
-       el('aiStatus').innerHTML='<div class="note"><b>Connected.</b> '+esc(P().name)+' replied in '+
-         ((Date.now()-t0)/1000).toFixed(1)+' s using '+esc(activeModel())+'.</div>';
+       el('aiStatus').innerHTML='<div class="note"><b>Connected.</b> Server AI replied in '+
+         ((Date.now()-t0)/1000).toFixed(1)+' s.</div>';
      })
      .catch(function(e){
        el('aiStatus').innerHTML='<div class="note bad"><b>Not connected.</b> '+esc(e.message)+
@@ -2723,10 +2517,9 @@ function bindAI(){
      })
      .finally(function(){ b.disabled=false; b.innerHTML=old; keyBadge(); });
   };
-  el('aiClearCache').onclick=function(){ S.ai.cache={}; save(); renderUsage(); toast('Saved answers cleared'); };
-  el('aiResetUsage').onclick=function(){ S.ai.usage=[]; save(); renderUsage(); toast('Usage reset'); };
-  el('aiRates').onclick=function(){ renderRates(); };
-  el('aiModel').onchange=function(){ S.ai.models[S.ai.provider]=el('aiModel').value.trim(); save(); syncProviderFields(); };
+  if(el('aiClearCache')) el('aiClearCache').onclick=function(){ S.ai.cache={}; save(); renderUsage(); toast('Saved answers cleared'); };
+  if(el('aiResetUsage')) el('aiResetUsage').onclick=function(){ S.ai.usage=[]; save(); renderUsage(); toast('Usage reset'); };
+  if(el('aiRates')) el('aiRates').onclick=function(){ renderRates(); };
 }
 
 /* ==================== business tab (replaces old setup) ==================== */
