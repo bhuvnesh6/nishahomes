@@ -1837,8 +1837,20 @@ def dashboard_intent_leads():
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
 
+    def map_interest_to_bucket(level):
+        lvl = (level or "").strip().lower()
+        if lvl in ("very high", "high"):
+            return "Hot"
+        if lvl == "medium":
+            return "Warm"
+        if lvl == "cold":
+            return "Cold"
+        return None
+
     end_collection = db["endData"]
-    docs = list(end_collection.find({"AI Intent": {"$in": ["Hot", "Warm", "Cold"]}}))
+    docs = list(end_collection.find({
+        "Interest Level": {"$in": ["Very High", "High", "Medium", "Cold"]}
+    }))
 
     def _clean(v, default="-"):
         if v is None or v == "":
@@ -1849,10 +1861,10 @@ def dashboard_intent_leads():
 
     buckets = {"Hot": [], "Warm": [], "Cold": []}
     for d in docs:
-        intent = d.get("AI Intent")
-        if intent not in buckets:
+        bucket = map_interest_to_bucket(d.get("Interest Level"))
+        if bucket not in buckets:
             continue
-        buckets[intent].append({
+        buckets[bucket].append({
             "number": d.get("Number", ""),
             "name": _clean(d.get("Customer Name"), "Unknown"),
             "location": _clean(d.get("Location Interested In")),
@@ -1865,7 +1877,6 @@ def dashboard_intent_leads():
             "nextFollowupTimeline": _clean(d.get("Next Follow-up Timeline")),
             "nextCallDate": _clean(d.get("Next Call Date")),
             "callAttempts": d.get("Call_attempt") if isinstance(d.get("Call_attempt"), int) else 0,
-            "aiReason": _clean(d.get("AI Intent Reason")),
             "leadId": d.get("LeadId", ""),
             "type": d.get("LastLeadType", "buying") or "buying",
         })
@@ -1879,7 +1890,6 @@ def dashboard_intent_leads():
         "warmLeads": buckets["Warm"],
         "coldLeads": buckets["Cold"]
     }), 200
-
 
 
 @app.route("/api/delete-lead", methods=["DELETE"])

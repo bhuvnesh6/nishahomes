@@ -1,0 +1,2831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Campaign Builder Pro — Nisha Homes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#07172B;
+  --ink-2:#0C2440;
+  --ink-3:#123055;
+  --line:rgba(200,162,76,.22);
+  --line-soft:rgba(237,231,220,.12);
+  --gold:#C8A24C;
+  --gold-soft:#E3C782;
+  --cream:#EDE7DC;
+  --muted:#9AAEC4;
+  --good:#4FB286;
+  --warn:#E0A23C;
+  --bad:#D9695A;
+  --radius:14px;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1100px 600px at 12% -8%, #14375F 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #10294A 0%, transparent 55%),
+    var(--ink);
+  color:var(--cream);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;
+  font-size:15px;line-height:1.55;
+  -webkit-text-size-adjust:100%;
+  min-height:100vh;
+}
+h1,h2,h3{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;letter-spacing:.2px;margin:0}
+a{color:var(--gold-soft)}
+button,input,select,textarea{font-family:inherit;font-size:15px}
+
+/* ---------- shell ---------- */
+header.top{
+  position:sticky;top:0;z-index:40;
+  background:rgba(7,23,43,.92);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+  padding:10px 14px calc(env(safe-area-inset-top) * 0 + 10px);
+}
+.brandline{display:flex;align-items:center;gap:10px}
+.mark{
+  width:34px;height:34px;flex:0 0 34px;border-radius:9px;
+  background:linear-gradient(150deg,var(--gold) 0%,#8C6C25 100%);
+  color:#0A1B31;display:grid;place-items:center;
+  font-family:'Cormorant Garamond',serif;font-weight:700;font-size:18px;
+}
+.brandline h1{font-size:20px;line-height:1.1}
+.brandline .sub{color:var(--muted);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.keydot{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}
+.dot.on{background:var(--good)}
+
+nav.tabs{
+  display:flex;gap:6px;overflow-x:auto;padding:10px 12px 2px;
+  border-bottom:1px solid var(--line-soft);
+  position:sticky;top:56px;z-index:39;
+  background:rgba(7,23,43,.92);backdrop-filter:blur(10px);
+  scrollbar-width:none;
+}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs button{
+  white-space:nowrap;border:1px solid var(--line-soft);background:transparent;
+  color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:13px;font-weight:500;
+}
+nav.tabs button.active{background:var(--gold);border-color:var(--gold);color:#0A1B31;font-weight:600}
+
+main{padding:16px 14px 90px;max-width:900px;margin:0 auto}
+.view{display:none}
+.view.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- blocks ---------- */
+.card{
+  background:linear-gradient(180deg,rgba(18,48,85,.7),rgba(12,36,64,.7));
+  border:1px solid var(--line-soft);border-radius:var(--radius);
+  padding:16px;margin-bottom:14px;
+}
+.card.gold{border-color:var(--line)}
+.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:6px}
+.card h2{font-size:22px;margin-bottom:4px}
+.card h3{font-size:18px}
+.lede{color:var(--muted);font-size:13.5px;margin:4px 0 12px}
+.hint{color:var(--muted);font-size:12.5px;margin-top:8px}
+.divider{height:1px;background:var(--line-soft);margin:14px 0}
+
+label.f{display:block;margin:10px 0 0}
+label.f span{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500}
+input[type=text],input[type=number],input[type=password],select,textarea{
+  width:100%;background:rgba(7,23,43,.75);border:1px solid var(--line-soft);
+  color:var(--cream);border-radius:10px;padding:11px 12px;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,162,76,.14)}
+textarea{min-height:84px;resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.grid2{grid-template-columns:1fr}}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--gold);color:#0A1B31;border:none;border-radius:11px;
+  padding:12px 16px;font-weight:600;cursor:pointer;
+}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--cream);border:1px solid var(--line-soft)}
+.btn.ghost:hover{border-color:var(--gold)}
+.btn.sm{padding:8px 12px;font-size:13px;border-radius:9px}
+.btn.wide{width:100%;margin-top:12px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+.chiprow{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+.chip{
+  border:1px solid var(--line-soft);border-radius:999px;padding:6px 11px;font-size:12.5px;
+  color:var(--muted);cursor:pointer;background:transparent;
+}
+.chip.on{background:rgba(200,162,76,.16);border-color:var(--gold);color:var(--gold-soft)}
+
+.toggle{display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer}
+.toggle input{width:auto;accent-color:var(--gold);width:18px;height:18px}
+.toggle span{font-size:13.5px}
+
+.note{
+  border-left:3px solid var(--gold);background:rgba(200,162,76,.08);
+  padding:10px 12px;border-radius:0 10px 10px 0;font-size:13px;color:var(--cream);margin-top:12px
+}
+.note.warn{border-color:var(--warn);background:rgba(224,162,60,.09)}
+.note.bad{border-color:var(--bad);background:rgba(217,105,90,.1)}
+
+/* ---------- results ---------- */
+.result{margin-top:14px}
+.result h3{font-size:20px;margin-bottom:2px}
+.res-sec{margin-top:16px}
+.res-sec > h4{
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+  margin:0 0 8px;font-weight:600;font-family:Inter,sans-serif;
+}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
+.kv dt{color:var(--muted);font-size:12.5px}
+.kv dd{margin:0}
+ul.plain{margin:0;padding-left:18px}
+ul.plain li{margin-bottom:5px}
+ol.steps{margin:0;padding-left:20px}
+ol.steps li{margin-bottom:7px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line-soft);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:420px}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{color:var(--gold);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+tr:last-child td{border-bottom:none}
+.cards{display:grid;gap:10px}
+.mini{border:1px solid var(--line-soft);border-radius:11px;padding:12px;background:rgba(7,23,43,.4)}
+.mini b{display:block;margin-bottom:4px;font-size:14.5px}
+.mini p{margin:0;font-size:13.5px;color:#D8DFE8}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{font-size:11px;border:1px solid var(--line-soft);border-radius:999px;padding:3px 9px;color:var(--muted)}
+
+.score{margin-bottom:10px}
+.score .lab{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.score .lab b{font-variant-numeric:tabular-nums}
+.bar{height:7px;border-radius:99px;background:rgba(237,231,220,.1);overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-soft))}
+.score small{color:var(--muted);font-size:12px;display:block;margin-top:3px}
+
+.copyitem{
+  display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line-soft);
+  border-radius:10px;padding:10px 12px;margin-bottom:7px;background:rgba(7,23,43,.4)
+}
+.copyitem p{margin:0;flex:1;font-size:14px}
+.copyitem small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px}
+.copyitem button{
+  flex:0 0 auto;background:transparent;border:1px solid var(--line-soft);color:var(--muted);
+  border-radius:8px;padding:5px 9px;font-size:11.5px;cursor:pointer
+}
+.copyitem button:hover{border-color:var(--gold);color:var(--gold)}
+
+.spinner{
+  width:16px;height:16px;border-radius:50%;border:2px solid rgba(10,27,49,.35);
+  border-top-color:#0A1B31;animation:spin .7s linear infinite;display:inline-block
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.working{color:var(--muted);font-size:13px;margin-top:10px;display:flex;align-items:center;gap:8px}
+.working .spinner{border-color:rgba(237,231,220,.2);border-top-color:var(--gold)}
+
+/* ---------- wireframe mockups ---------- */
+.screen{
+  border:1px solid var(--line-soft);border-radius:12px;overflow:hidden;
+  background:#0A1F38;margin-top:10px;font-size:12.5px
+}
+.screen .bar-top{background:rgba(255,255,255,.05);padding:8px 11px;font-weight:600;font-size:12px;border-bottom:1px solid var(--line-soft)}
+.screen .body{padding:11px}
+.row-mock{
+  border:1px dashed rgba(237,231,220,.18);border-radius:8px;padding:9px 10px;margin-bottom:7px;color:var(--muted)
+}
+.row-mock.hot{border:1px solid var(--gold);background:rgba(200,162,76,.12);color:var(--cream)}
+.row-mock.hot b{color:var(--gold-soft)}
+.row-mock em{display:block;font-style:normal;color:var(--muted);font-size:11.5px;margin-top:3px}
+
+details.acc{border:1px solid var(--line-soft);border-radius:11px;margin-bottom:9px;overflow:hidden}
+details.acc summary{padding:12px 14px;cursor:pointer;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+details.acc summary::-webkit-details-marker{display:none}
+details.acc summary::after{content:'+';color:var(--gold);font-size:18px}
+details.acc[open] summary::after{content:'–'}
+details.acc .inner{padding:0 14px 14px;font-size:13.5px}
+details.acc .inner ol{padding-left:19px;margin:6px 0}
+details.acc .inner li{margin-bottom:6px}
+
+.histitem{border:1px solid var(--line-soft);border-radius:11px;padding:12px;margin-bottom:9px}
+.histitem .meta{color:var(--muted);font-size:11.5px;margin-bottom:5px}
+.histitem b{font-size:14.5px}
+
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+  background:var(--gold);color:#0A1B31;padding:10px 18px;border-radius:999px;
+  font-weight:600;font-size:13.5px;z-index:99;opacity:0;pointer-events:none;transition:opacity .2s
+}
+.toast.on{opacity:1}
+
+@media print{
+  body{background:#fff;color:#111}
+  header.top,nav.tabs,.btnrow,.btn,.no-print{display:none !important}
+  .view{display:none}
+  .view.on{display:block}
+  .card{border:1px solid #ccc;background:#fff;page-break-inside:avoid}
+  .res-sec > h4,.eyebrow,th{color:#8a6d1f}
+  .mini,.copyitem,.row-mock{background:#fff;border-color:#ddd}
+  .muted,.lede,.hint{color:#555}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brandline">
+    <div class="mark">N</div>
+    <div>
+      <h1>AI Campaign Builder Pro</h1>
+      <div class="sub">Nisha Homes · Meta · Google · GMB</div>
+    </div>
+    <div class="keydot"><span class="dot" id="keydot"></span><span id="keytext">No key</span></div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<main>
+
+<!-- ============ SETUP ============ -->
+<section class="view" id="v-setup">
+  <div class="card gold">
+    <div class="eyebrow">Where things live</div>
+    <h2>Business settings</h2>
+    <p class="lede">Your business details go here. The AI provider, keys and offline mode live in the <b>AI settings</b> tab.</p>
+    <div class="btnrow"><button class="btn ghost sm" data-go="ai">Open AI settings</button><button class="btn ghost sm" data-go="learn">I don't understand API keys</button></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Business defaults</div>
+    <h3>Your details</h3>
+    <p class="lede">Used in every ad, post and form the tool writes, so you never re-type them.</p>
+    <label class="f"><span>Business name</span><input type="text" id="bizName" placeholder="Nisha Homes"></label>
+    <div class="grid2">
+      <label class="f"><span>Contact number in ads</span><input type="text" id="bizPhone" placeholder="+91..."></label>
+      <label class="f"><span>WhatsApp number</span><input type="text" id="bizWa" placeholder="+91..."></label>
+    </div>
+    <label class="f"><span>Website / landing page</span><input type="text" id="bizSite" placeholder="https://nishahomes.com"></label>
+    <label class="f"><span>Cities you sell in</span><input type="text" id="bizCities" placeholder="South Delhi, Gurgaon, Noida, Ghaziabad, Faridabad"></label>
+    <label class="f"><span>Rules the AI must always follow</span><textarea id="bizRules" placeholder="Use Nisha Homes number only, never the builder's. Landmark-level areas only until site visit is confirmed. No fabricated prices. No guaranteed-return claims."></textarea></label>
+    <button class="btn wide" id="saveBiz">Save defaults</button>
+  </div>
+</section>
+
+<!-- ============ BRIEF ============ -->
+<section class="view" id="v-brief">
+  <div class="card gold">
+    <div class="eyebrow">Step 1</div>
+    <h2>The property brief</h2>
+    <p class="lede">Fill this once per property. Every other tab reads from it.</p>
+
+    <label class="f"><span>Property / project name</span><input type="text" id="pName" placeholder="Vasant Kunj 3BHK DDA resale"></label>
+    <div class="grid2">
+      <label class="f"><span>Property type</span>
+        <select id="pType">
+          <option>Apartment</option><option>Builder Floor</option><option>DDA Flat</option>
+          <option>Villa</option><option>Farmhouse</option><option>Plot</option>
+          <option>Office Space</option><option>Retail Shop</option><option>PG / Hostel</option>
+          <option>Co-living</option><option>Warehouse</option><option>Other</option>
+        </select>
+      </label>
+      <label class="f"><span>Deal type</span>
+        <select id="pDeal">
+          <option>Residential — Sale</option><option>Residential — Rent</option>
+          <option>Commercial — Sale</option><option>Commercial — Lease</option>
+          <option>Investment property</option><option>New launch</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid2">
+      <label class="f"><span>Price / rent</span><input type="text" id="pPrice" placeholder="₹4.65 Cr"></label>
+      <label class="f"><span>Size &amp; configuration</span><input type="text" id="pSize" placeholder="3BHK, 1450 sq ft"></label>
+    </div>
+    <label class="f"><span>Location (landmark level)</span><input type="text" id="pLoc" placeholder="Vasant Kunj, South Delhi"></label>
+    <div class="grid2">
+      <label class="f"><span>Segment</span>
+        <select id="pSeg"><option>Luxury</option><option>Premium</option><option>Mid-segment</option><option>Affordable</option></select>
+      </label>
+      <label class="f"><span>Daily ad budget (₹)</span><input type="number" id="pBudget" placeholder="1500"></label>
+    </div>
+    <label class="f"><span>Key selling points</span><textarea id="pUsp" placeholder="Corner unit, park facing, RERA registered, ready to move, metro 900 m, 2 covered parkings"></textarea></label>
+    <label class="f"><span>Who should this reach?</span><textarea id="pAud" placeholder="End users upgrading from 2BHK, NRI investors, business owners in South Delhi"></textarea></label>
+    <label class="f"><span>Landing page URL for this property (optional)</span><input type="text" id="pUrl" placeholder="https://..."></label>
+
+    <label class="toggle"><input type="checkbox" id="pCost"><span>Cost Saving Mode — force the cheapest structure that still brings quality leads</span></label>
+    <label class="toggle"><input type="checkbox" id="pQuality" checked><span>Lead quality first — prefer higher-intent, lower-spam formats over cheap volume</span></label>
+
+    <div class="btnrow">
+      <button class="btn" id="saveBrief">Save brief</button>
+      <button class="btn ghost sm" id="clearBrief">Clear</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Creative analysis</div>
+    <h3>Upload the creative</h3>
+    <p class="lede">Image, brochure PDF or a screenshot of your reel. The AI reads it and pulls out property type, audience, selling points and USP.</p>
+    <input type="file" id="creativeFile" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" style="margin-top:10px">
+    <div id="creativePreview"></div>
+    <button class="btn wide" data-run="analyse">Analyse creative</button>
+    <div id="out-analyse" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ STRATEGY ============ -->
+<section class="view" id="v-strategy">
+  <div class="card gold">
+    <div class="eyebrow">Step 2</div>
+    <h2>Which objective to run</h2>
+    <p class="lede">Recommends the objective, with expected CPL, conversion rate, lead quality score, ROI and difficulty.</p>
+    <button class="btn wide" data-run="objective">Recommend objective</button>
+    <div id="out-objective" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Step 3</div>
+    <h3>Lead format comparison</h3>
+    <p class="lede">WhatsApp vs instant forms vs higher-intent forms vs website vs calls vs conversions — spam probability, closing probability and cost, side by side.</p>
+    <button class="btn wide" data-run="leadquality">Compare lead formats</button>
+    <div id="out-leadquality" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ COMPETITORS ============ -->
+<section class="view" id="v-compete">
+  <div class="card gold">
+    <div class="eyebrow">Step 2b · Market research</div>
+    <h2>Learn from what's already winning</h2>
+    <p class="lede">Instead of guessing, look at the ads competitors are running for properties like yours — then build something sharper. Three simple steps, no marketing background needed.</p>
+    <ol class="steps">
+      <li><b>Find</b> — tap the buttons below to open the ads competitors are running near you.</li>
+      <li><b>Teardown</b> — paste one competitor ad (or a screenshot) and the app explains why it works and writes you a stronger version.</li>
+      <li><b>Angle</b> — get the one message most brokers in your area are missing, so you stand out.</li>
+    </ol>
+    <div class="note" style="margin-top:12px">A quick honest note: Facebook and Instagram keep likes, views and “save rates” private, so no tool — this one included — can secretly pull a rival's real numbers. What this tab does instead is take you straight to the public ads brokers are running, and turn any ad you find into a better one for you. That's the part that actually moves the needle.</div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Step 1 · Find</div>
+    <h3>Find competitor ads near you</h3>
+    <p class="lede">Type the area (or leave it — it fills from your Brief). Then tap “Open my research links.” Each button opens a public page in a new tab. Screenshot or copy any ad you like, and use it in Step 2.</p>
+    <label class="f"><span>Area / locality to research</span><input type="text" id="cLoc" placeholder="Vasant Kunj, South Delhi"></label>
+    <button class="btn wide" id="cLinksBtn">Open my research links</button>
+    <div id="cLinks"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Step 2 · Teardown</div>
+    <h3>Reverse-engineer a competitor ad</h3>
+    <p class="lede">Paste the competitor's caption or ad text below, and/or upload a screenshot of their post or reel. The app breaks down the hook, offer and call-to-action, tells you plainly why it works — then writes a stronger, original version for Nisha Homes using your Brief.</p>
+    <label class="f"><span>Paste the competitor's caption / ad text (optional if you upload a screenshot)</span><textarea id="rivalText" placeholder="Paste what the competitor wrote — the caption, the on-image text, the offer, the hashtags…"></textarea></label>
+    <label class="f"><span>Or upload a screenshot of their ad / reel (optional)</span>
+      <input type="file" id="rivalFile" accept="image/png,image/jpeg,image/webp,image/gif" style="margin-top:6px"></label>
+    <div id="rivalPreview"></div>
+    <button class="btn wide" id="doTeardown">Break it down &amp; beat it</button>
+    <div id="out-teardown" class="result"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Step 3 · Angle</div>
+    <h3>Find your winning angle</h3>
+    <p class="lede">Uses your Brief to show the messages most brokers in your segment overuse — and the under-used angle Nisha Homes should own, with three ready hooks.</p>
+    <button class="btn wide" data-run="angle">Find the gap I should own</button>
+    <div id="out-angle" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ META ============ -->
+<section class="view" id="v-meta">
+  <div class="card gold">
+    <div class="eyebrow">Step 4</div>
+    <h2>Meta campaign settings</h2>
+    <p class="lede">Every field you have to fill in Ads Manager, filled for you — names, budget, bidding, optimisation, attribution, placements, Advantage+ settings.</p>
+    <button class="btn wide" data-run="campaign">Build campaign settings</button>
+    <div id="out-campaign" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Step 5</div>
+    <h3>Audience builder</h3>
+    <button class="btn wide" data-run="audience">Build audiences</button>
+    <div id="out-audience" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Step 6</div>
+    <h3>Location builder</h3>
+    <button class="btn wide" data-run="location">Build location targeting</button>
+    <div id="out-location" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Step 7</div>
+    <h3>Interest engine</h3>
+    <p class="lede">100+ detailed-targeting interests grouped by category, with the ones to avoid.</p>
+    <button class="btn wide" data-run="interests">Generate interests</button>
+    <div id="out-interests" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ COPY ============ -->
+<section class="view" id="v-copy">
+  <div class="card gold">
+    <div class="eyebrow">Step 8</div>
+    <h2>Ad copy</h2>
+    <p class="lede">30 headlines, 30 primary texts, 20 CTAs, 20 descriptions, 10 hooks. Tap any line to copy it.</p>
+    <div class="chiprow" id="langChips">
+      <button class="chip on" data-lang="English">English</button>
+      <button class="chip" data-lang="Hindi">Hindi</button>
+      <button class="chip" data-lang="Hinglish">Hinglish</button>
+    </div>
+    <button class="btn wide" data-run="copy">Write the ad copy</button>
+    <div id="out-copy" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ CREATIVE SCORE ============ -->
+<section class="view" id="v-creative">
+  <div class="card gold">
+    <div class="eyebrow">Step 9</div>
+    <h2>Creative quality score</h2>
+    <p class="lede">Scores headline, image, branding, readability, trust, colours, fonts, CTA, offer and emotional appeal — then tells you what to fix. Upload the creative in the Brief tab first.</p>
+    <button class="btn wide" data-run="score">Score this creative</button>
+    <div id="out-score" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ GOOGLE ============ -->
+<section class="view" id="v-google">
+  <div class="card gold">
+    <div class="eyebrow">Step 11</div>
+    <h2>Google Ads builder</h2>
+    <p class="lede">Search, Display, Performance Max, Demand Gen, Call and YouTube — with keywords, negatives, RSA headlines, descriptions, assets, bidding and tracking.</p>
+    <label class="f"><span>Campaign type</span>
+      <select id="gType">
+        <option>Search</option><option>Performance Max</option><option>Display</option>
+        <option>Demand Gen</option><option>Call campaign</option><option>YouTube / Video</option>
+        <option>All types — compare</option>
+      </select>
+    </label>
+    <button class="btn wide" data-run="google">Build Google campaign</button>
+    <div id="out-google" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ GMB ============ -->
+<section class="view" id="v-gmb">
+  <div class="card gold">
+    <div class="eyebrow">Step 12</div>
+    <h2>Google Business Profile</h2>
+    <p class="lede">Offer posts, event posts, updates, SEO description, services, FAQs, review replies, photo captions and a weekly posting calendar.</p>
+    <button class="btn wide" data-run="gmb">Generate GMB content</button>
+    <div id="out-gmb" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ FORECAST ============ -->
+<section class="view" id="v-forecast">
+  <div class="card gold">
+    <div class="eyebrow">Step 13</div>
+    <h2>Campaign forecast</h2>
+    <p class="lede">Benchmark estimates for Delhi NCR real estate at your budget — reach, clicks, CTR, CPC, CPM, CPL, lead quality, spam %, calls, sales, ROI, confidence.</p>
+    <div class="note warn">These are AI estimates from market benchmarks, not Meta's live delivery numbers. Treat them as a planning range, not a promise.</div>
+    <button class="btn wide" data-run="forecast">Forecast results</button>
+    <div id="out-forecast" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Step 14</div>
+    <h3>Pre-launch checklist</h3>
+    <p class="lede">Pixel, Conversions API, domain verification, UTMs, landing page, mobile, WhatsApp link, thank-you page, call button, tracking, analytics.</p>
+    <button class="btn wide" data-run="checklist">Build checklist</button>
+    <div id="out-checklist" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ AUDITOR ============ -->
+<section class="view" id="v-auditor">
+  <div class="card gold">
+    <div class="eyebrow">Auditor &amp; optimiser</div>
+    <h2>Audit a running campaign</h2>
+    <p class="lede">Type in the numbers you can see in Ads Manager. You get a score out of 100, what is wasting money, and the exact changes to make.</p>
+    <div class="grid2">
+      <label class="f"><span>Days running</span><input type="number" id="aDays" placeholder="7"></label>
+      <label class="f"><span>Total spend (₹)</span><input type="number" id="aSpend" placeholder="12000"></label>
+      <label class="f"><span>Leads</span><input type="number" id="aLeads" placeholder="34"></label>
+      <label class="f"><span>Junk / unreachable leads</span><input type="number" id="aJunk" placeholder="19"></label>
+      <label class="f"><span>Impressions</span><input type="number" id="aImp" placeholder="180000"></label>
+      <label class="f"><span>Clicks</span><input type="number" id="aClicks" placeholder="2100"></label>
+      <label class="f"><span>Site visits booked</span><input type="number" id="aVisits" placeholder="3"></label>
+      <label class="f"><span>Deals closed</span><input type="number" id="aDeals" placeholder="0"></label>
+    </div>
+    <label class="f"><span>What you are running now</span><textarea id="aSetup" placeholder="Leads objective, instant form, Advantage+ audience, 25-65 all Delhi NCR, ₹1500/day, single image ad"></textarea></label>
+    <button class="btn wide" data-run="audit">Audit and fix</button>
+    <div id="out-audit" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ TRAINER ============ -->
+<section class="view" id="v-trainer">
+  <div class="card gold">
+    <div class="eyebrow">Step 10 &amp; 18</div>
+    <h2>Campaign trainer</h2>
+    <p class="lede">Screen-by-screen, what to click and why. Follow it with Ads Manager open beside this.</p>
+  </div>
+  <div class="card" id="trainerStatic"></div>
+  <div class="card">
+    <div class="eyebrow">Ask</div>
+    <h3>Stuck on a screen?</h3>
+    <label class="f"><span>Describe what you are seeing</span><textarea id="tQ" placeholder="Ads Manager is asking me to choose a performance goal and I don't know which one"></textarea></label>
+    <button class="btn wide" data-run="trainer">Explain it</button>
+    <div id="out-trainer" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ LIBRARY ============ -->
+<section class="view" id="v-library">
+  <div class="card gold">
+    <div class="eyebrow">Step 16</div>
+    <h2>Real estate expert mode</h2>
+    <p class="lede">Tap a template to load a proven starting brief, then edit it in the Brief tab.</p>
+    <div class="cards" id="templateList"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Best practices</div>
+    <h3>What works in Delhi NCR real estate</h3>
+    <div id="bestPractices"></div>
+  </div>
+</section>
+
+<!-- ============ HISTORY ============ -->
+<section class="view" id="v-history">
+  <div class="card gold">
+    <div class="eyebrow">Step 15</div>
+    <h2>Learning engine</h2>
+    <p class="lede">Log what each campaign actually delivered. The AI compares them and tells you what to repeat and what to drop.</p>
+    <div class="grid2">
+      <label class="f"><span>Campaign / property</span><input type="text" id="hName" placeholder="Vasant Kunj 3BHK — July"></label>
+      <label class="f"><span>Spend (₹)</span><input type="number" id="hSpend"></label>
+      <label class="f"><span>Leads</span><input type="number" id="hLeads"></label>
+      <label class="f"><span>Good leads</span><input type="number" id="hGood"></label>
+      <label class="f"><span>Site visits</span><input type="number" id="hVisits"></label>
+      <label class="f"><span>Deals closed</span><input type="number" id="hDeals"></label>
+    </div>
+    <label class="f"><span>Setup used (objective, audience, creative)</span><textarea id="hSetup"></textarea></label>
+    <button class="btn wide" id="addResult">Log this result</button>
+    <div class="divider"></div>
+    <div id="resultsList"></div>
+    <button class="btn ghost wide" data-run="learn">Compare all campaigns</button>
+    <div id="out-learn" class="result"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Saved work</div>
+    <h3>Everything generated</h3>
+    <div id="historyList"></div>
+  </div>
+</section>
+
+<!-- ============ EXPORT ============ -->
+<section class="view" id="v-export">
+  <div class="card gold">
+    <div class="eyebrow">Step 17</div>
+    <h2>Export centre</h2>
+    <p class="lede">Print or save as PDF, download tables as Excel-ready CSV, or back up everything.</p>
+    <div class="btnrow">
+      <button class="btn" id="exPrint">Print / save as PDF</button>
+      <button class="btn ghost" id="exCsv">Download all tables (CSV)</button>
+      <button class="btn ghost" id="exJson">Backup everything (JSON)</button>
+      <button class="btn ghost" id="exText">Copy full plan as text</button>
+    </div>
+    <div class="divider"></div>
+    <div class="eyebrow">Client-facing documents</div>
+    <div class="btnrow">
+      <button class="btn ghost sm" data-run="proposal">Client proposal</button>
+      <button class="btn ghost sm" data-run="brief_doc">Creative brief</button>
+      <button class="btn ghost sm" data-run="strategy_doc">Marketing strategy report</button>
+    </div>
+    <div id="out-proposal" class="result"></div>
+    <div id="out-brief_doc" class="result"></div>
+    <div id="out-strategy_doc" class="result"></div>
+  </div>
+  <div class="card no-print">
+    <div class="eyebrow">Restore</div>
+    <h3>Restore a backup</h3>
+    <input type="file" id="restoreFile" accept="application/json" style="margin-top:10px">
+    <p class="hint">Everything lives in this browser on this device. Back up before clearing browser data, and restore here on a new phone or laptop.</p>
+  </div>
+  <div id="printAll"></div>
+</section>
+
+
+<!-- ============ EXECUTION SHEET ============ -->
+<section class="view" id="v-exec">
+  <div class="card gold">
+    <div class="eyebrow">The deliverable</div>
+    <h2>Campaign Execution Sheet</h2>
+    <p class="lede">One ready-to-send sheet that pulls your whole plan together — objective, budget, audience, the final caption and CTA, lead-form questions, Google + GMB, the competitor angle and a launch checklist. Fill the Brief (and run the other tabs if you like — it uses their results), then generate. Copy it straight to WhatsApp or hand it to whoever runs your ads.</p>
+    <button class="btn wide" data-run="execution">Build the execution sheet</button>
+    <div id="out-execution" class="result"></div>
+  </div>
+</section>
+
+<!-- ============ CALCULATORS (offline) ============ -->
+<section class="view" id="v-tools">
+  <div class="card gold">
+    <div class="eyebrow">Works without AI</div>
+    <h2>Calculators</h2>
+    <p class="lede">Plain arithmetic on real benchmarks. No API key, no cost, instant.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Budget planner</div>
+    <h3>How much do I need to spend?</h3>
+    <div class="grid2">
+      <label class="f"><span>Deals you want to close</span><input type="number" id="cbDeals" value="1"></label>
+      <label class="f"><span>Property price bracket</span>
+        <select id="cbBracket">
+          <option value="rent">Rental / PG</option>
+          <option value="lt1">Under ₹1 Cr</option>
+          <option value="1to3" selected>₹1 Cr – ₹3 Cr</option>
+          <option value="3to7">₹3 Cr – ₹7 Cr</option>
+          <option value="gt7">Above ₹7 Cr</option>
+          <option value="comm">Commercial</option>
+        </select>
+      </label>
+      <label class="f"><span>Lead format</span>
+        <select id="cbFormat">
+          <option value="form">Instant form</option>
+          <option value="hiform" selected>Higher-intent form</option>
+          <option value="wa">WhatsApp</option>
+          <option value="site">Website form</option>
+          <option value="call">Call campaign</option>
+        </select>
+      </label>
+      <label class="f"><span>Your visit-to-deal rate (%)</span><input type="number" id="cbClose" value="12"></label>
+    </div>
+    <div id="cbOut" class="result"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">CPL</div>
+    <h3>Cost per lead — and per useful lead</h3>
+    <div class="grid2">
+      <label class="f"><span>Spend (₹)</span><input type="number" id="cpSpend" value="30000"></label>
+      <label class="f"><span>Leads received</span><input type="number" id="cpLeads" value="60"></label>
+      <label class="f"><span>Leads that answered the phone</span><input type="number" id="cpGood" value="22"></label>
+      <label class="f"><span>Site visits booked</span><input type="number" id="cpVisits" value="4"></label>
+    </div>
+    <div id="cpOut" class="result"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">ROI</div>
+    <h3>Did the campaign pay for itself?</h3>
+    <div class="grid2">
+      <label class="f"><span>Total ad spend (₹)</span><input type="number" id="roSpend" value="60000"></label>
+      <label class="f"><span>Deals closed</span><input type="number" id="roDeals" value="1"></label>
+      <label class="f"><span>Deal value (₹)</span><input type="number" id="roValue" value="25000000"></label>
+      <label class="f"><span>Your brokerage (%)</span><input type="number" id="roComm" value="2"></label>
+    </div>
+    <div id="roOut" class="result"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Reporting</div>
+    <h3>Dashboard</h3>
+    <p class="lede">Built from the campaign results you log in the History tab.</p>
+    <div id="dashOut"></div>
+  </div>
+</section>
+
+<!-- ============ PLAYBOOKS (offline) ============ -->
+<section class="view" id="v-play">
+  <div class="card gold">
+    <div class="eyebrow">Works without AI</div>
+    <h2>Playbooks &amp; scripts</h2>
+    <p class="lede">Written for Delhi NCR property. Use as-is or edit before sending to the team.</p>
+    <div class="btnrow"><button class="btn ghost sm" id="playPrint">Print all</button></div>
+  </div>
+  <div class="card" id="playbookBox"></div>
+  <div class="card">
+    <div class="eyebrow">Follow-up</div>
+    <h3>The 14-day follow-up calendar</h3>
+    <div id="followBox"></div>
+  </div>
+</section>
+
+<!-- ============ LEARN ============ -->
+<section class="view" id="v-learn">
+  <div class="card gold">
+    <div class="eyebrow">Start here</div>
+    <h2>Learning centre</h2>
+    <p class="lede">What an API key is, why the app asks for one, and how to keep the cost small. Plain language, no jargon.</p>
+  </div>
+  <div class="card" id="learnBasics"></div>
+  <div class="card">
+    <div class="eyebrow">Setup wizard</div>
+    <h3>Get a key, provider by provider</h3>
+    <div id="learnWizards"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Local AI</div>
+    <h3>Running AI on your own computer</h3>
+    <div id="learnLocal"></div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">When something breaks</div>
+    <h3>Errors and fixes</h3>
+    <div id="learnTrouble"></div>
+  </div>
+</section>
+
+<!-- ============ AI SETTINGS ============ -->
+<section class="view" id="v-ai">
+  <div class="card gold">
+    <div class="eyebrow">Engine</div>
+    <h2>AI settings</h2>
+    <p class="lede">The app is not tied to one AI company. Pick a provider, or run with no AI at all.</p>
+
+    <label class="f"><span>Operating mode</span>
+      <select id="aiMode">
+        <option value="hybrid">Hybrid — built-in engine first, AI only to improve it (recommended)</option>
+        <option value="ai">AI — use AI for everything</option>
+        <option value="offline">Offline — no AI, no cost, no key needed</option>
+      </select>
+    </label>
+    <div id="modeExplain" class="note"></div>
+
+    <div class="divider"></div>
+    <label class="f"><span>AI provider</span><select id="aiProvider"></select></label>
+    <label class="f"><span>API key</span><input type="password" id="aiKey" placeholder="Paste the key here" autocomplete="off"></label>
+    <label class="f" id="baseWrap"><span>Server address</span><input type="text" id="aiBase"></label>
+    <label class="f"><span>Model</span><input type="text" id="aiModel" list="modelList"><datalist id="modelList"></datalist></label>
+    <div class="grid2">
+      <label class="f"><span>Creativity (temperature)</span><input type="number" id="aiTemp" min="0" max="1" step="0.1" value="0.7"></label>
+      <label class="f"><span>Max response length (tokens)</span><input type="number" id="aiMax" value="4000"></label>
+    </div>
+    <label class="f"><span>Backup provider if the main one fails</span><select id="aiBackup"></select></label>
+    <label class="f"><span>When both could work, prefer</span>
+      <select id="aiPref">
+        <option value="cost">Lowest cost</option>
+        <option value="quality">Highest quality</option>
+        <option value="speed">Fastest response</option>
+        <option value="local">Local AI only</option>
+        <option value="none">Offline only</option>
+      </select>
+    </label>
+    <div class="btnrow">
+      <button class="btn" id="aiTest">Test connection</button>
+      <button class="btn ghost" id="aiSave">Save</button>
+      <button class="btn ghost sm" id="aiForget">Remove key</button>
+    </div>
+    <div id="aiStatus"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Cost</div>
+    <h3>Usage and spend</h3>
+    <div class="grid2">
+      <label class="f"><span>US$ to ₹ rate</span><input type="number" id="aiFx" value="88"></label>
+      <label class="f"><span>Warn me above (₹ per request)</span><input type="number" id="aiWarn" value="5"></label>
+    </div>
+    <div id="usageBox"></div>
+    <div class="btnrow">
+      <button class="btn ghost sm" id="aiRates">Edit price list</button>
+      <button class="btn ghost sm" id="aiClearCache">Clear saved answers</button>
+      <button class="btn ghost sm" id="aiResetUsage">Reset usage</button>
+    </div>
+    <div id="ratesBox"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Diagnostics</div>
+    <h3>Error log</h3>
+    <div id="errorBox"></div>
+  </div>
+</section>
+
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+"use strict";
+
+/* ============================ state ============================ */
+var KEY='acbp_v1';
+var S={ key:'', model:'claude-sonnet-4-6', biz:{}, brief:{}, lang:'English',
+        outputs:{}, history:[], results:[] };
+var creative=null; // {name, media_type, data, kind:'image'|'pdf'}
+var rival=null;    // competitor screenshot for the Competitors tab (kept separate from your own creative)
+
+function load(){
+  try{ var raw=localStorage.getItem(KEY); if(raw){ var o=JSON.parse(raw); for(var k in o){ S[k]=o[k]; } } }catch(e){}
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast('Storage full — export a backup and clear old items'); }
+}
+function toast(msg){
+  var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('on');},2200);
+}
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+/* ============================ tabs ============================ */
+var TABS=[
+ ['setup','Business'],['brief','Brief'],['strategy','Strategy'],['compete','Competitors'],['meta','Meta campaign'],
+ ['copy','Ad copy'],['creative','Creative score'],['google','Google Ads'],['gmb','GMB'],
+ ['forecast','Forecast'],['auditor','Auditor'],['exec','Execution Sheet'],['tools','Calculators'],['play','Playbooks'],
+ ['trainer','Trainer'],['library','Templates'],['history','History'],['learn','Learn'],
+ ['ai','AI settings'],['export','Export']
+];
+function buildTabs(){
+  var n=el('tabs'); n.innerHTML='';
+  TABS.forEach(function(t){
+    var b=document.createElement('button'); b.textContent=t[1]; b.dataset.v=t[0];
+    b.onclick=function(){ show(t[0]); };
+    n.appendChild(b);
+  });
+}
+function show(id){
+  TABS.forEach(function(t){
+    el('v-'+t[0]).classList.toggle('on', t[0]===id);
+  });
+  Array.prototype.forEach.call(el('tabs').children,function(b){ b.classList.toggle('active', b.dataset.v===id); });
+  window.scrollTo(0,0);
+}
+
+/* ============================ setup ============================ */
+function keyBadge(){
+  el('keydot').classList.toggle('on', !!S.key);
+  el('keytext').textContent = S.key ? 'Connected' : 'No key';
+}
+/* ============================ brief ============================ */
+var BFIELDS=['pName','pType','pDeal','pPrice','pSize','pLoc','pSeg','pBudget','pUsp','pAud','pUrl'];
+function bindBrief(){
+  BFIELDS.forEach(function(f){ if(S.brief[f]!=null) el(f).value=S.brief[f]; });
+  el('pCost').checked=!!S.brief.pCost;
+  el('pQuality').checked=S.brief.pQuality!==false;
+  el('saveBrief').onclick=function(){
+    BFIELDS.forEach(function(f){ S.brief[f]=el(f).value.trim(); });
+    S.brief.pCost=el('pCost').checked; S.brief.pQuality=el('pQuality').checked;
+    save(); toast('Brief saved');
+  };
+  el('clearBrief').onclick=function(){
+    if(!confirm('Clear the brief?')) return;
+    S.brief={}; BFIELDS.forEach(function(f){ el(f).value=''; }); save();
+  };
+  el('creativeFile').onchange=function(ev){
+    var f=ev.target.files[0]; if(!f) return;
+    if(f.size>4.5*1024*1024){ toast('File too large — keep it under 4.5 MB'); return; }
+    var r=new FileReader();
+    r.onload=function(){
+      creative={ name:f.name, media_type:f.type, data:r.result.split(',')[1],
+                 kind: f.type==='application/pdf'?'pdf':'image' };
+      var p=el('creativePreview');
+      p.innerHTML = creative.kind==='image'
+        ? '<img src="data:'+f.type+';base64,'+creative.data+'" style="max-width:100%;border-radius:11px;margin-top:11px;border:1px solid rgba(237,231,220,.12)">'
+        : '<div class="note" style="margin-top:11px">Loaded: '+esc(f.name)+'</div>';
+    };
+    r.readAsDataURL(f);
+  };
+}
+function briefText(){
+  var b=S.brief, z=S.biz;
+  var lines=[
+    'BUSINESS: '+(z.bizName||'Nisha Homes')+' — real estate consultancy, South Delhi.',
+    'Cities served: '+(z.bizCities||'Delhi NCR'),
+    'Contact number to use in ads: '+(z.bizPhone||'(not set)'),
+    'WhatsApp: '+(z.bizWa||'(not set)'),
+    'Website: '+(z.bizSite||'(not set)'),
+    '',
+    'PROPERTY: '+(b.pName||'(not named)'),
+    'Type: '+(b.pType||'-')+' | Deal: '+(b.pDeal||'-')+' | Segment: '+(b.pSeg||'-'),
+    'Price: '+(b.pPrice||'-')+' | Size: '+(b.pSize||'-'),
+    'Location: '+(b.pLoc||'-'),
+    'Daily budget: ₹'+(b.pBudget||'not set'),
+    'Selling points: '+(b.pUsp||'-'),
+    'Intended audience: '+(b.pAud||'-'),
+    'Landing page: '+(b.pUrl||z.bizSite||'none'),
+    ''
+  ];
+  if(b.pCost) lines.push('COST SAVING MODE IS ON: choose the structure with the lowest wasted spend. Flag anything that burns budget. Prefer fewer, tighter ad sets.');
+  if(b.pQuality!==false) lines.push('LEAD QUALITY FIRST: prefer higher-intent, lower-spam formats even if cost per lead is higher. Score every recommendation for spam risk.');
+  if(z.bizRules) lines.push('NON-NEGOTIABLE RULES: '+z.bizRules);
+  return lines.join('\n');
+}
+
+/* ============================ API ============================ */
+var SCHEMA = 'Return ONLY a JSON object, no markdown fences, no preamble. Shape:\n'+
+'{"title":"short title","summary":"2-4 sentence plain-English summary a non-marketer understands",'+
+'"sections":[{"heading":"section name","type":"kv|list|table|cards|steps|scores|copy|text",'+
+'"kv":[{"k":"label","v":"value"}],'+
+'"list":["point"],'+
+'"table":{"columns":["col"],"rows":[["cell"]]},'+
+'"cards":[{"title":"","body":"","tags":["",""]}],'+
+'"steps":["do this"],'+
+'"scores":[{"label":"","value":0,"note":""}],'+
+'"copy":[{"text":"the exact line to paste","note":"when to use it"}],'+
+'"text":"paragraph"}],'+
+'"actions":["what to do next"]}\n'+
+'Use only the keys matching the section type. Values must be specific and decision-ready — exact settings, exact numbers, exact wording. Never write placeholder text like "as needed" or "varies".';
+
+function sysPrompt(){
+  return 'You are a senior performance marketing strategist with 12 years running Meta (Facebook/Instagram), Google Ads and Google Business Profile campaigns for Indian real estate, mostly Delhi NCR. '+
+  'You know the current Ads Manager and Google Ads interfaces field by field, Indian property buyer behaviour, and realistic Delhi NCR benchmarks. '+
+  'You are talking to a property consultant who is not a marketer: be concrete, name exact settings and exact numbers, and explain the why in one plain line. '+
+  'All money in INR. Never invent prices, never promise guaranteed returns, never claim certainty about platform delivery numbers — label estimates as estimates. '+
+  'Follow the client rules given in the brief exactly.';
+}
+
+function callClaude(userText, sysText, maxTokens, attach){
+  if(!S.key) return Promise.reject(new Error('Add your API key in the Setup tab first.'));
+  var content=[];
+  if(attach){
+    if(attach.kind==='pdf'){
+      content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:attach.data}});
+    } else {
+      content.push({type:'image',source:{type:'base64',media_type:attach.media_type,data:attach.data}});
+    }
+  }
+  content.push({type:'text',text:userText});
+  return fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':S.key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:S.model||'claude-sonnet-4-6',
+      max_tokens:maxTokens||4000,
+      system:sysText||sysPrompt(),
+      messages:[{role:'user',content:content}]
+    })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if(!r.ok){
+        var m=(d&&d.error&&d.error.message)||('Request failed ('+r.status+')');
+        if(r.status===401) m='That API key was rejected. Check it in Setup.';
+        if(r.status===429) m='Rate limited or out of credit. Wait a minute or top up at console.anthropic.com.';
+        throw new Error(m);
+      }
+      return (d.content||[]).map(function(c){return c.type==='text'?c.text:'';}).join('\n').trim();
+    });
+  }).catch(function(e){
+    if(e instanceof TypeError) throw new Error('Could not reach the API. Check your internet connection.');
+    throw e;
+  });
+}
+function parseJSON(txt){
+  var t=txt.replace(/```json/gi,'').replace(/```/g,'').trim();
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0&&b>a) t=t.slice(a,b+1);
+  try{ return JSON.parse(t); }
+  catch(e){ return {title:'Result',summary:'',sections:[{heading:'Output',type:'text',text:txt}],actions:[]}; }
+}
+
+/* ============================ modules ============================ */
+function outputsDigest(){
+  var ids=['analyse','objective','leadquality','campaign','audience','location','interests','copy','score','google','gmb','forecast','teardown','angle'];
+  var out=[];
+  ids.forEach(function(id){
+    var o=S.outputs&&S.outputs[id];
+    if(o&&o.json&&o.json.summary){ out.push('— '+(o.label||id)+': '+o.json.summary); }
+  });
+  return out.length
+    ? 'ALREADY GENERATED IN THIS APP — stay consistent with these, do not contradict them:\n'+out.join('\n')
+    : 'No other tabs have been run yet — build the sheet from the brief and Delhi NCR benchmarks.';
+}
+var M={
+ analyse:{ tokens:3000, attach:true, label:'Creative analysis', prompt:function(){
+   return briefText()+'\n\nTASK: Analyse the property and the attached creative (if one is attached). Read the creative carefully — text on the image, quality of the photo, what it is actually selling.\n'+
+   'Return sections: (1) "What this is" as kv covering Property type, Residential/Commercial, Sale/Rental/Investment, Luxury or Affordable, Sub-type (builder floor / DDA flat / apartment / villa / farmhouse / PG / plot / office / retail), Location, Budget category. '+
+   '(2) "Who buys this" as cards — 3 to 4 buyer profiles with age, occupation, income level, what triggers them to act. '+
+   '(3) "Selling points" as list — rational selling points ranked strongest first. '+
+   '(4) "Emotional hooks" as list. '+
+   '(5) "Investment case" as kv — investment potential, expected rental yield range, ROI potential, resale demand — clearly marked as market estimates. '+
+   '(6) "Urgency factors" as list. '+
+   '(7) "USP in one line" as text. '+
+   '(8) "Gaps in this creative" as list — what is missing or weak for advertising.\n'+SCHEMA; }},
+
+ teardown:{ tokens:4000, attach:true, attachSrc:function(){ return rival; }, label:'Competitor teardown', prompt:function(){
+   var rt=(el('rivalText')&&el('rivalText').value.trim())||'';
+   return briefText()+'\n\nA competitor real-estate ad is provided'+(rt?' as pasted text below':'')+(rival?' and/or as an attached screenshot':'')+'. Study it as a real-estate marketing expert. Do NOT copy it — extract the pattern, then beat it.\n'+
+   (rt?('COMPETITOR AD TEXT:\n"""\n'+rt+'\n"""\n'):'')+
+   '\nLANGUAGE: write the analysis in plain English, but write the new Nisha Homes ad copy in '+S.lang+'. '+
+   (S.lang==='Hindi'?'Use natural spoken Delhi Hindi in Devanagari, not literary Hindi. ':'')+
+   (S.lang==='Hinglish'?'Use natural Delhi Hinglish in Roman script, the way property buyers actually talk. ':'')+'\n'+
+   'Return sections: '+
+   '(1) "What they are selling" as kv — Property type, Segment, Who it targets, Main promise. '+
+   '(2) "How the ad is built" as kv — Hook (first line), Emotion used, Offer, Urgency/scarcity, Trust signals, Call-to-action, Hashtag style. If a field is not in the ad, say "not used". '+
+   '(3) "Why it works" as list — the 3-4 things this ad does well, in plain language. '+
+   '(4) "Where it is weak" as list — gaps Nisha Homes can exploit. '+
+   '(5) "Your stronger version" as copy — 3 complete, original captions for Nisha Homes for THIS property (from the brief) that beat the competitor on hook and clarity, each with a note on where to use it (Reel / Facebook / WhatsApp). '+
+   '(6) "Better hook lines" as copy — 5 opening lines stronger than theirs. '+
+   '(7) "Reel script to out-do it" as steps — a 6-8 shot script with the on-screen words for each shot. '+
+   'If neither ad text nor screenshot was provided, say so in the summary and give a teardown checklist instead of inventing an ad.\n'+SCHEMA; }},
+
+ angle:{ tokens:3500, label:'Winning angle', prompt:function(){
+   return briefText()+'\n\nTASK: You are positioning Nisha Homes against every other broker advertising similar property in this micro-market. '+
+   '\nLANGUAGE: analysis in plain English; write the hooks in '+S.lang+'. '+
+   (S.lang==='Hinglish'?'Delhi Hinglish in Roman script for the hooks. ':'')+
+   (S.lang==='Hindi'?'Spoken Delhi Hindi in Devanagari for the hooks. ':'')+'\n'+
+   'Return sections: '+
+   '(1) "What everyone else says" as list — the 5-6 overused, me-too angles most brokers run for this segment and locality (e.g. "RERA approved", "prime location"), and why they blend in. '+
+   '(2) "The gap to own" as text — the single most powerful under-used angle for THIS specific property, in one plain paragraph, and who it speaks to. '+
+   '(3) "Three hooks that own it" as copy — 3 scroll-stopping opening lines built on that angle, each with a one-line note on the buyer it hits. '+
+   '(4) "Proof to show" as list — the concrete things to put in the ad so the angle is believed, not just claimed. '+
+   '(5) "Say this, not that" as table with columns "Tired line", "Sharper replacement". '+
+   'Be specific to the property in the brief, never generic.\n'+SCHEMA; }},
+
+ execution:{ tokens:5000, label:'Campaign Execution Sheet', prompt:function(){
+   return briefText()+'\n\n'+outputsDigest()+'\n\nTASK: Produce ONE implementation-ready Campaign Execution Sheet that a media buyer can run without asking a single question. Everything must be specific and decision-ready — exact numbers, exact settings, exact wording. No placeholders.\n'+
+   'LANGUAGE: labels and instructions in English; the final caption, headline, CTA and hashtags in '+S.lang+'. '+
+   (S.lang==='Hindi'?'Spoken Delhi Hindi in Devanagari for the copy lines. ':'')+
+   (S.lang==='Hinglish'?'Delhi Hinglish in Roman script for the copy lines. ':'')+'\n'+
+   'Sections: '+
+   '(1) "Campaign at a glance" as kv — Objective, Run as (Lead form / Website / WhatsApp / Calls / Conversion / Hybrid) with a one-line why, Platforms, Daily budget ₹, Total budget ₹, Duration, Expected CPL ₹, Expected leads per month. Mark rates as Delhi NCR estimates. '+
+   '(2) "Audience & targeting" as kv — Age range, Gender, Income level, Occupations, Locations with radius or pin, Top interests, Exclusions, Lookalikes, Placements, Bidding, Attribution window. '+
+   '(3) "Creative to run" as copy — the final headline, the final primary text / caption, the CTA button label, the hashtag set, and the SEO keywords — each a paste-ready line with a one-line note. '+
+   '(4) "Lead form questions" as list — the exact qualifying fields to cut junk leads. '+
+   '(5) "Landing page" as text — one clear recommendation for where to send the traffic. '+
+   '(6) "Google Ads quick setup" as kv — Campaign type, Keyword theme, Headline note, Budget split vs Meta. '+
+   '(7) "GMB this week" as list — 3 exact posts to publish. '+
+   '(8) "Competitor angle" as text — in one line, how this campaign beats what rivals are running. '+
+   '(9) "Launch checklist" as steps — everything to tick before going live. '+
+   '(10) "Send to the ads team" as copy — ONE WhatsApp-ready block that summarises the whole campaign to paste to whoever runs it. '+
+   '(11) "Final recommendation" as text — the single most important instruction for this campaign.\n'+SCHEMA; }},
+
+ objective:{ tokens:3500, label:'Objective recommendation', prompt:function(){
+   return briefText()+'\n\nTASK: Recommend the single best Meta campaign objective for this property, chosen from: Leads (instant form), Leads (website), Leads (WhatsApp), Leads (calls), Leads (messages), Traffic, Awareness, Reach, Engagement, Video views, Conversions, Sales, Catalogue sales, Store traffic.\n'+
+   'Sections: (1) "Recommended" as kv — Objective, Conversion location, Performance goal, Why in one plain sentence. '+
+   '(2) "What to expect" as kv — Expected CPL range in ₹, Expected form conversion rate, Lead quality score out of 10, Estimated ROI, Recommended daily budget in ₹, Difficulty level, Time to first lead. Mark all as estimates for Delhi NCR. '+
+   '(3) "Second and third choice" as table with columns Objective, When to switch to it, Expected CPL, Lead quality. '+
+   '(4) "Do not run" as list — objectives that waste money for this property and why.\n'+SCHEMA; }},
+
+ leadquality:{ tokens:4000, label:'Lead format comparison', prompt:function(){
+   return briefText()+'\n\nTASK: Compare lead capture formats for this property: WhatsApp campaign, Instant form (standard), Instant form (higher intent), Website form, Landing page form, Call campaign, Conversion campaign.\n'+
+   'Sections: (1) "Side by side" as table with columns: Format, Advantages, Disadvantages, Spam probability, Lead quality, Closing probability, Expected cost per lead (₹), Best suited property type. Give a realistic Delhi NCR number or percentage in every cell. '+
+   '(2) "Final recommendation" as text — one format, and exactly why for this property and budget. '+
+   '(3) "Form questions to ask" as list — the exact qualifying questions to put in the lead form to cut junk leads. '+
+   '(4) "Follow-up speed rule" as kv — how fast to call, how many attempts, over how many days.\n'+SCHEMA; }},
+
+ campaign:{ tokens:4500, label:'Campaign settings', prompt:function(){
+   return briefText()+'\n\nTASK: Give me every setting to enter in Meta Ads Manager, ready to copy.\n'+
+   'Sections: (1) "Campaign level" as kv — Campaign name (use a clear naming convention), Objective, Buying type, Special ad category (property ads in India: state whether the Housing category applies and what it restricts), Advantage campaign budget on/off, Daily budget ₹, Schedule/start, Bid strategy, Campaign spending limit. '+
+   '(2) "Ad set level" as kv — Ad set name, Conversion location, Performance goal, Optimisation goal, Attribution setting, Budget, Schedule and day-parting, Delivery type, Bid control if any. '+
+   '(3) "Placements" as kv — Advantage+ placements or manual, and if manual the exact placements to keep and to switch off. '+
+   '(4) "Ad level" as kv — Ad name, Format, Identity, Primary text slot, Headline slot, Description, Call to action button, Destination, Advantage+ creative toggles to keep on or off. '+
+   '(5) "Tracking" as kv — Pixel/dataset, events, UTM string ready to paste. '+
+   '(6) "Naming convention" as text so all future campaigns stay sortable.\n'+SCHEMA; }},
+
+ audience:{ tokens:4500, label:'Audiences', prompt:function(){
+   return briefText()+'\n\nTASK: Build the audiences for this property.\n'+
+   'Sections: (1) "Core audience" as kv — Age range, Gender, Languages, Detailed targeting to include, Detailed targeting to exclude, Estimated audience size for Delhi NCR. Note if the Housing special ad category limits any of this in India. '+
+   '(2) "Audience stack" as cards — 4 to 6 audiences to test, each with title, exact build instructions, and tags for expected quality. Cover: high-income professionals, business owners, doctors, lawyers, chartered accountants, government employees, IT professionals, entrepreneurs, builders/architects/interior designers, investors, NRI buyers where relevant. '+
+   '(3) "Custom audiences" as steps — exactly how to create each one in Ads Manager (website visitors, video viewers, page engagers, form openers who did not submit, past enquiry list upload). '+
+   '(4) "Lookalikes" as list — which source, which percentage, why. '+
+   '(5) "Exclusions" as list — who to exclude to stop wasting money.\n'+SCHEMA; }},
+
+ location:{ tokens:3500, label:'Location targeting', prompt:function(){
+   return briefText()+'\n\nTASK: Build location targeting for this property.\n'+
+   'Sections: (1) "Primary targeting" as kv — Method (radius / pin drop / city / district / pincode), Exact radius in km and why, Location option (People living here / recently here / travelling here) and why. '+
+   '(2) "Areas to include" as table with columns Area, Type (pin drop / radius / city), Radius, Why this area buys here. Cover the relevant Delhi NCR micro-markets — South Delhi, Gurgaon, Noida, Ghaziabad, Faridabad, Dwarka — only where they genuinely make sense. '+
+   '(3) "Areas to exclude" as list with the reason. '+
+   '(4) "NRI / outside NCR layer" as kv — whether to run it, which countries or cities, what budget share.\n'+SCHEMA; }},
+
+ interests:{ tokens:5000, label:'Interests', prompt:function(){
+   return briefText()+'\n\nTASK: Generate detailed-targeting interests that actually exist in Meta Ads Manager for India.\n'+
+   'Give at least 100 interests grouped into sections by category — use cards, one card per category, with the interests listed in the body separated by commas. Categories: Real Estate, Property Investment, Luxury Homes, Home Decor and Interiors, Mortgage and Home Loans, Finance and Wealth Management, Premium Automobiles, Luxury Lifestyle and Travel, Architecture and Construction, NRI and Overseas Indians, Retirement Planning, Business Owners and Entrepreneurs, High-value Shopping.\n'+
+   'Then a section "Highest intent — start here" as list with the 12 strongest for this specific property, and a section "Avoid these" as list with interests that pull junk leads in Indian real estate, with the reason.\n'+SCHEMA; }},
+
+ copy:{ tokens:8000, label:'Ad copy', prompt:function(){
+   return briefText()+'\n\nLANGUAGE: Write everything in '+S.lang+'. '+
+   (S.lang==='Hindi'?'Use natural Devanagari Hindi as spoken in Delhi, not literary Hindi. ':'')+
+   (S.lang==='Hinglish'?'Use natural Delhi Hinglish in Roman script, the way property buyers actually talk. ':'')+
+   '\n\nTASK: Write ad copy for this property. Every line must be usable as-is, mention something concrete about this property, and follow the client rules.\n'+
+   'Sections, all of type "copy": (1) "30 headlines" — max 40 characters each, note field says the angle. '+
+   '(2) "30 primary texts" — 2 to 4 lines each with a hook, the offer and a call to action; note field says the angle. '+
+   '(3) "20 call to action lines" — the closing line of the ad. '+
+   '(4) "20 descriptions" — one line each, under 30 words. '+
+   '(5) "10 hooks" — the first line that stops the scroll. '+
+   'Vary the angles: price, location, investment return, family, status, urgency, scarcity, question, social proof, problem-solution.\n'+SCHEMA; }},
+
+ score:{ tokens:3500, attach:true, label:'Creative score', prompt:function(){
+   return briefText()+'\n\nTASK: Score the attached creative for paid advertising. If nothing is attached, say so in the summary and score the property concept instead.\n'+
+   'Sections: (1) "Scores" of type scores — score each out of 100 with a one-line note: Headline, Thumbnail impact, Image quality, Video suitability, Branding, Readability on mobile, Trust signals, Colour use, Font choice, Call to action, Offer clarity, Emotional appeal. '+
+   '(2) "Overall" as kv — Total score out of 100, Verdict, Will it pass Meta review, Predicted CTR range. '+
+   '(3) "Fix these first" as steps — ranked, specific, doable changes. '+
+   '(4) "Rewrite the on-image text" as copy — 5 better versions of the text that should appear on the creative.\n'+SCHEMA; }},
+
+ google:{ tokens:6000, label:'Google Ads', prompt:function(){
+   var t=(el('gType')&&el('gType').value)||'Search';
+   return briefText()+'\n\nGOOGLE CAMPAIGN TYPE REQUESTED: '+t+'\n\nTASK: Build the Google Ads campaign.\n'+
+   'Sections: (1) "Campaign settings" as kv — Campaign name, Type, Goal, Networks, Locations and location option, Languages, Daily budget ₹, Bidding strategy and why, Target CPA if applicable, Ad rotation, Ad schedule. '+
+   '(2) "Ad groups" as table with columns Ad group, Theme, Match type strategy, Suggested CPC ₹. '+
+   '(3) "Keywords" as table with columns Keyword, Match type, Intent, Est. CPC ₹ — at least 30 keywords real Delhi NCR buyers type. '+
+   '(4) "Negative keywords" as list — at least 30, the ones that waste money in Indian real estate. '+
+   '(5) "Responsive search ad" as copy — 15 headlines under 30 characters and 4 descriptions under 90 characters, marked in the note field. '+
+   '(6) "Assets and extensions" as list — sitelinks, callouts, structured snippets, call, location, lead form, image assets, with the exact text to enter. '+
+   '(7) "Conversion tracking" as steps — what to set up before launch.\n'+SCHEMA; }},
+
+ gmb:{ tokens:6000, label:'GMB content', prompt:function(){
+   return briefText()+'\n\nTASK: Create a month of Google Business Profile content for this real estate consultancy, promoting this property.\n'+
+   'Sections: (1) "Business description" as copy — 3 versions of the 750-character SEO description with local keywords. '+
+   '(2) "Offer posts" as copy — 6 offer posts with headline, body under 1500 characters, and the button to choose. '+
+   '(3) "Event posts" as copy — 4 (site visit drives, open house). '+
+   '(4) "Business updates" as copy — 6 update posts. '+
+   '(5) "Services to list" as list — with a one-line description each. '+
+   '(6) "FAQs" as cards — 10 questions buyers ask, with answers. '+
+   '(7) "Review replies" as copy — 6 replies covering 5-star, 4-star, 3-star, 1-star, no-text and a complaint about a site visit. '+
+   '(8) "Photo captions" as copy — 10. '+
+   '(9) "Weekly posting calendar" as table with columns Day, Post type, Topic, Photo to use.\n'+SCHEMA; }},
+
+ forecast:{ tokens:3500, label:'Forecast', prompt:function(){
+   return briefText()+'\n\nTASK: Forecast realistic results for this campaign at this daily budget in Delhi NCR. Base it on real market benchmarks for Indian real estate at this price bracket. Be honest — if the budget is too low for this price point, say so plainly.\n'+
+   'Sections: (1) "30-day estimate" as table with columns Metric, Low, Likely, High — rows: Reach, Impressions, Clicks, CTR %, CPC ₹, CPM ₹, Leads, CPL ₹, Good leads, Spam %, Calls answered, Site visits, Deals closed, Ad spend ₹. '+
+   '(2) "Return" as kv — Cost per site visit, Cost per closed deal, Break-even leads needed, Estimated ROI, Confidence score out of 10 and what would change it. '+
+   '(3) "Budget reality check" as text. '+
+   '(4) "What would improve these numbers most" as steps, ranked by impact.\n'+
+   'State clearly in the summary that these are benchmark estimates, not platform predictions.\n'+SCHEMA; }},
+
+ checklist:{ tokens:3500, label:'Pre-launch checklist', prompt:function(){
+   return briefText()+'\n\nTASK: Build the pre-launch checklist.\n'+
+   'Sections: (1) "Before you spend a rupee" as table with columns Item, Why it matters, How to check it, Blocker if missing — covering Meta Pixel, Conversions API, Domain verification, UTM parameters, Landing page load speed, Mobile optimisation, WhatsApp click-to-chat link, Thank you page, Call button, Lead form connection, Analytics, CRM or sheet to receive leads, Caller ready to answer. '+
+   '(2) "WhatsApp and UTM links" as copy — the exact click-to-chat link with a pre-filled message, and the full UTM-tagged landing page URL, ready to paste. '+
+   '(3) "Day 1 to day 7 routine" as steps — what to check daily and what not to touch. '+
+   '(4) "When to switch it off" as list — the exact numbers that mean stop.\n'+SCHEMA; }},
+
+ audit:{ tokens:4500, label:'Campaign audit', prompt:function(){
+   var g=function(id){ var v=el(id)&&el(id).value; return v||'not provided'; };
+   return briefText()+'\n\nLIVE CAMPAIGN NUMBERS:\n'+
+   'Days running: '+g('aDays')+'\nSpend ₹: '+g('aSpend')+'\nLeads: '+g('aLeads')+'\nJunk/unreachable leads: '+g('aJunk')+
+   '\nImpressions: '+g('aImp')+'\nClicks: '+g('aClicks')+'\nSite visits booked: '+g('aVisits')+'\nDeals closed: '+g('aDeals')+
+   '\nCurrent setup: '+g('aSetup')+
+   '\n\nTASK: Audit this campaign like a paid consultant who is being paid to save money.\n'+
+   'Sections: (1) "Scorecard" of type scores — score out of 100 each: Overall health, Cost per lead, Lead quality, Creative, Audience, Budget efficiency, Tracking, Follow-up. '+
+   '(2) "Calculated numbers" as kv — CPL, CTR, CPC, CPM, junk rate, cost per good lead, cost per site visit, all computed from the numbers given. '+
+   '(3) "What is wasting money" as cards — each with the problem, the evidence in the numbers, and the fix. '+
+   '(4) "Change this today" as steps — ranked, specific, with exact settings. '+
+   '(5) "Change this week" as steps. '+
+   '(6) "Do not touch" as list — what people wrongly change and why it hurts. '+
+   'If a number was not provided, say what to go and find rather than guessing.\n'+SCHEMA; }},
+
+ trainer:{ tokens:3000, label:'Trainer answer', prompt:function(){
+   var q=(el('tQ')&&el('tQ').value.trim())||'Walk me through creating a lead campaign in Meta Ads Manager from start to publish.';
+   return briefText()+'\n\nQUESTION FROM THE USER (a property consultant, not a marketer): '+q+'\n\n'+
+   'TASK: Answer as a patient trainer sitting next to him. '+
+   'Sections: (1) "Short answer" as text. (2) "On your screen" as steps — the exact clicks in order, naming the exact button and field labels. '+
+   '(3) "What to enter for this property" as kv. (4) "Common mistake here" as list.\n'+SCHEMA; }},
+
+ learn:{ tokens:4000, label:'Campaign comparison', prompt:function(){
+   var rows=S.results.map(function(r){
+     return '- '+r.name+' | spend ₹'+r.spend+' | leads '+r.leads+' | good leads '+r.good+' | site visits '+r.visits+' | deals '+r.deals+' | setup: '+r.setup;
+   }).join('\n');
+   return briefText()+'\n\nPAST CAMPAIGN RESULTS LOGGED BY THE USER:\n'+(rows||'(none logged yet)')+
+   '\n\nTASK: Compare these campaigns and extract what actually works for this business.\n'+
+   'Sections: (1) "League table" as table with columns Campaign, CPL ₹, Good lead rate %, Cost per site visit ₹, Cost per deal ₹, Verdict. '+
+   '(2) "What is working" as list. (3) "What to stop" as list. '+
+   '(4) "Next campaign should look like this" as kv. (5) "What to start recording" as list — data he is not capturing that would sharpen this. '+
+   'If there is too little data to conclude, say so honestly instead of inventing patterns.\n'+SCHEMA; }},
+
+ proposal:{ tokens:5000, label:'Client proposal', prompt:function(){
+   return briefText()+'\n\nTASK: Write a client-facing digital marketing proposal from '+(S.biz.bizName||'Nisha Homes')+' for marketing this property. Professional, confident, no jargon, INR throughout.\n'+
+   'Sections: (1) "Objective" as text. (2) "Approach" as steps. (3) "Channels and budget split" as table with columns Channel, What we run, Monthly budget ₹, What it delivers. '+
+   '(4) "Expected outcomes" as table with columns Metric, Month 1, Month 2, Month 3 — labelled as estimates. '+
+   '(5) "What we need from you" as list. (6) "Reporting" as list. (7) "Terms" as list.\n'+SCHEMA; }},
+
+ brief_doc:{ tokens:3500, label:'Creative brief', prompt:function(){
+   return briefText()+'\n\nTASK: Write a creative brief for the designer and videographer.\n'+
+   'Sections: (1) "The one thing this creative must do" as text. (2) "Deliverables" as table with columns Asset, Size, Format, Where it runs, Deadline priority. '+
+   '(3) "Shot list" as list. (4) "On-image text" as copy. (5) "Brand rules" as list. (6) "Reject if" as list.\n'+SCHEMA; }},
+
+ strategy_doc:{ tokens:6000, label:'Marketing strategy report', prompt:function(){
+   return briefText()+'\n\nTASK: Write the full 90-day marketing strategy report for this property across Meta, Google Ads and Google Business Profile.\n'+
+   'Sections: (1) "Situation" as text. (2) "Target buyer" as cards. (3) "Channel strategy" as table with columns Channel, Role, Budget share %, Primary metric. '+
+   '(4) "Month by month plan" as table with columns Month, Focus, Campaigns live, Budget ₹, Target. '+
+   '(5) "Content plan" as list. (6) "Measurement" as table with columns Metric, Target, Review frequency. '+
+   '(7) "Risks" as cards. (8) "Decision rules" as list — the numbers that trigger scale up, change or stop.\n'+SCHEMA; }}
+};
+
+/* ============================ runner ============================ */
+function bindRuns(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-run]'),function(btn){
+    btn.onclick=function(){ run(btn.dataset.run, btn); };
+  });
+}
+function run(id, btn){
+  var m=M[id]; if(!m) return;
+  if(!S.key){ show('setup'); toast('Add your API key first'); return; }
+  var box=el('out-'+id); if(!box) return;
+  var oldLabel=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="spinner"></i> Working…'; }
+  box.innerHTML='<div class="working"><i class="spinner"></i>Claude is thinking. This takes 20–60 seconds for the long ones.</div>';
+  var attach = m.attach ? (m.attachSrc?m.attachSrc():creative) : null;
+  callClaude(m.prompt(), sysPrompt(), m.tokens, attach)
+    .then(function(txt){
+      var json=parseJSON(txt);
+      S.outputs[id]={json:json,at:Date.now(),label:m.label};
+      S.history.unshift({id:id,label:m.label,title:json.title||m.label,at:Date.now()});
+      S.history=S.history.slice(0,60);
+      save();
+      render(box,json,id);
+      renderHistory();
+    })
+    .catch(function(e){ box.innerHTML='<div class="note bad">'+esc(e.message)+'</div>'; })
+    .finally(function(){ if(btn){ btn.disabled=false; btn.innerHTML=oldLabel; } });
+}
+
+/* ============================ renderer ============================ */
+function render(box,j,id){
+  var h='<div class="card" style="margin-top:14px;background:rgba(7,23,43,.55)">';
+  h+='<h3>'+esc(j.title||'Result')+'</h3>';
+  if(j.summary) h+='<p class="lede">'+esc(j.summary)+'</p>';
+  (j.sections||[]).forEach(function(s){ h+=renderSection(s); });
+  if(j.actions&&j.actions.length){
+    h+='<div class="res-sec"><h4>Next</h4><ul class="plain">'+j.actions.map(function(a){return '<li>'+esc(a)+'</li>';}).join('')+'</ul></div>';
+  }
+  h+='<div class="btnrow no-print"><button class="btn ghost sm" data-copyall="'+esc(id)+'">Copy all</button>'+
+     '<button class="btn ghost sm" data-print="'+esc(id)+'">Print / PDF</button></div>';
+  h+='</div>';
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-copy]'),function(b){
+    b.onclick=function(){ copyText(b.dataset.copy); };
+  });
+  Array.prototype.forEach.call(box.querySelectorAll('[data-copyall]'),function(b){
+    b.onclick=function(){ copyText(toPlain(j)); };
+  });
+  Array.prototype.forEach.call(box.querySelectorAll('[data-print]'),function(b){
+    b.onclick=function(){ window.print(); };
+  });
+}
+function renderSection(s){
+  var h='<div class="res-sec"><h4>'+esc(s.heading||'')+'</h4>';
+  var t=s.type||'text';
+  if(t==='kv'&&s.kv){
+    h+='<dl class="kv">'+s.kv.map(function(p){return '<dt>'+esc(p.k)+'</dt><dd>'+esc(p.v)+'</dd>';}).join('')+'</dl>';
+  } else if(t==='list'&&s.list){
+    h+='<ul class="plain">'+s.list.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';
+  } else if(t==='steps'&&s.steps){
+    h+='<ol class="steps">'+s.steps.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol>';
+  } else if(t==='table'&&s.table){
+    h+='<div class="tablewrap"><table><thead><tr>'+
+       (s.table.columns||[]).map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+
+       '</tr></thead><tbody>'+
+       (s.table.rows||[]).map(function(r){return '<tr>'+r.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('')+
+       '</tbody></table></div>';
+  } else if(t==='cards'&&s.cards){
+    h+='<div class="cards">'+s.cards.map(function(c){
+      return '<div class="mini"><b>'+esc(c.title)+'</b><p>'+esc(c.body)+'</p>'+
+        (c.tags&&c.tags.length?'<div class="tags">'+c.tags.map(function(g){return '<span class="tag">'+esc(g)+'</span>';}).join('')+'</div>':'')+
+        '</div>';
+    }).join('')+'</div>';
+  } else if(t==='scores'&&s.scores){
+    h+=s.scores.map(function(x){
+      var v=Math.max(0,Math.min(100,Number(x.value)||0));
+      return '<div class="score"><div class="lab"><span>'+esc(x.label)+'</span><b>'+v+'</b></div>'+
+             '<div class="bar"><i style="width:'+v+'%"></i></div>'+
+             (x.note?'<small>'+esc(x.note)+'</small>':'')+'</div>';
+    }).join('');
+  } else if(t==='copy'&&s.copy){
+    h+=s.copy.map(function(c){
+      return '<div class="copyitem"><p>'+esc(c.text)+(c.note?'<small>'+esc(c.note)+'</small>':'')+
+             '</p><button data-copy="'+esc(c.text)+'">Copy</button></div>';
+    }).join('');
+  } else {
+    h+='<p style="margin:0;white-space:pre-wrap">'+esc(s.text||JSON.stringify(s))+'</p>';
+  }
+  return h+'</div>';
+}
+function toPlain(j){
+  var o=[(j.title||''),'',(j.summary||''),''];
+  (j.sections||[]).forEach(function(s){
+    o.push('== '+(s.heading||'')+' ==');
+    if(s.kv) s.kv.forEach(function(p){o.push(p.k+': '+p.v);});
+    if(s.list) s.list.forEach(function(x){o.push('- '+x);});
+    if(s.steps) s.steps.forEach(function(x,i){o.push((i+1)+'. '+x);});
+    if(s.cards) s.cards.forEach(function(c){o.push(c.title+' — '+c.body);});
+    if(s.scores) s.scores.forEach(function(x){o.push(x.label+': '+x.value+'/100 — '+(x.note||''));});
+    if(s.copy) s.copy.forEach(function(c){o.push(c.text);});
+    if(s.table){ o.push((s.table.columns||[]).join(' | ')); (s.table.rows||[]).forEach(function(r){o.push(r.join(' | '));}); }
+    if(s.text) o.push(s.text);
+    o.push('');
+  });
+  if(j.actions) { o.push('== Next =='); j.actions.forEach(function(a){o.push('- '+a);}); }
+  return o.join('\n');
+}
+function copyText(t){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){toast('Copied');},function(){fallbackCopy(t);});
+  } else fallbackCopy(t);
+}
+function fallbackCopy(t){
+  var a=document.createElement('textarea'); a.value=t; document.body.appendChild(a); a.select();
+  try{ document.execCommand('copy'); toast('Copied'); }catch(e){ toast('Could not copy'); }
+  document.body.removeChild(a);
+}
+
+/* ============================ trainer content ============================ */
+var TRAINER=[
+ ['Set up Meta Business — do this once',[
+  'Go to business.facebook.com and click Create an account. Use your own Facebook login, not a staff member\'s.',
+  'Business Settings → Accounts → Pages → Add → Add an existing Page. Your Nisha Homes page must sit inside the business portfolio, not just be liked by it.',
+  'Accounts → Instagram accounts → Add. Convert the Instagram profile to a Business account first, from the Instagram app: Settings → Account type → Switch to professional.',
+  'Accounts → Ad accounts → Add → Create a new ad account. Name it clearly, set currency to INR and time zone to Asia/Kolkata. Currency and time zone can never be changed later — get them right now.',
+  'Payments → Add payment method. Keep one card. A failed payment stops delivery mid-campaign.',
+  'Users → People → Add. Give the caller Advertiser access, not Admin. Only you stay Admin.',
+  'WhatsApp accounts → Add, if you want WhatsApp campaigns. Connect the number you actually answer.'
+ ]],
+ ['Verify your domain and set up tracking',[
+  'Business Settings → Brand safety and suitability → Domains → Add. Enter nishahomes.com without https.',
+  'Copy the meta-tag or DNS TXT record and send it to your developer to add. Then come back and click Verify.',
+  'Data sources → Datasets (Pixel) → Create. Name it Nisha Homes Pixel.',
+  'Choose Install code manually, copy the base code, and send it to your developer for the site head tag. Or use the Partner integration if the site is on WordPress.',
+  'Add events: Lead on the thank-you page, Contact on the WhatsApp click, ViewContent on property pages.',
+  'Turn on the Conversions API through your developer or the Partner integration. Browser-only pixel loses 20 to 40 percent of events to ad blockers and iPhone privacy settings.',
+  'Events Manager → Test events → open your site on your phone and confirm each event fires before you spend anything.'
+ ]],
+ ['Create a lead campaign — the 13 clicks',[
+  'Open adsmanager.facebook.com and check the top-left shows the right ad account.',
+  'Click the green + Create.',
+  'Choose the objective Leads. Click Continue.',
+  'Name the campaign using the convention from the Meta campaign tab, for example NH_VasantKunj3BHK_Leads_Jul.',
+  'Special ad category: property ads in India — if the Housing category applies to your ad, select it. It removes age, gender and detailed targeting, so read the recommendation before ticking it.',
+  'Advantage campaign budget: on for one ad set, off when you are testing two or three audiences against each other.',
+  'Set the daily budget. Below ₹800 a day Meta cannot exit the learning phase for property leads.',
+  'Ad set level: choose the conversion location — Instant forms, Website, WhatsApp, Calls or Messenger.',
+  'Set the performance goal. For instant forms choose Maximise number of leads first, and only move to conversion leads once you have 50-plus leads of history.',
+  'Build the audience: locations, age, gender, then detailed targeting. Then choose placements — start with Advantage+ placements.',
+  'Ad level: pick the Facebook Page and Instagram account, choose the format, upload the creative, paste the primary text, headline and description, and pick the call to action button.',
+  'If using instant forms, click Create form → choose More volume or Higher intent → add your qualifying questions → add the privacy policy URL → Publish the form. A form cannot be edited after it collects a lead, only duplicated.',
+  'Check the tracking section shows your pixel and your UTM string, click Publish, then watch Delivery until it says Active.'
+ ]],
+ ['Google Ads — first search campaign',[
+  'Go to ads.google.com and switch to Expert mode. Smart campaigns give you no control and waste money.',
+  'Tools → Conversions → New conversion action. Set up form submits and phone calls before you create the campaign.',
+  'New campaign → objective Leads → campaign type Search.',
+  'Set the daily budget, then bidding: start with Maximise clicks with a max CPC limit, and switch to Maximise conversions once you have 15 to 30 conversions logged.',
+  'Locations: enter your micro-markets, then click Location options and select Presence: people in or regularly in your targeted locations. The default setting shows your ads to people merely interested in the area — that is where money leaks.',
+  'Build ad groups by intent, one theme per ad group, 10 to 20 keywords each.',
+  'Add the negative keyword list before launch, not after. Rent, jobs, free, sarkari, images, photos and map queries eat the budget.',
+  'Write the responsive search ad: 15 headlines, 4 descriptions, and pin one headline containing the location.',
+  'Add sitelinks, callouts, structured snippets, call asset and a lead form asset. Extensions raise CTR more than any bid change.'
+ ]],
+ ['Google Business Profile — free leads',[
+  'Go to business.google.com and claim or create the Nisha Homes profile. Verify by video or postcard.',
+  'Primary category: Real estate agency. Add secondary categories such as Real estate consultant and Property management company.',
+  'Fill every field: service areas, hours, phone, website, opening date, and the full 750-character description.',
+  'Add services for each property type you handle, each with its own description.',
+  'Post at least twice a week. Profiles that post weekly rank noticeably better locally than dormant ones.',
+  'Ask every closed client for a review the same week, and reply to every review within 48 hours.',
+  'Upload photos weekly — exteriors, interiors, your team, site visits. Geotagged photos help.',
+  'Use the Q&A section: post the 10 questions buyers ask and answer them yourself.'
+ ]]
+];
+var SCREENS=[
+ ['Campaign screen',[
+   ['Buying type: Auction','Leave it. Reach and frequency needs a ₹5 lakh commitment.',0],
+   ['Campaign objective: Leads','This is the one that unlocks instant forms, WhatsApp and calls.',1],
+   ['Special ad category','Tick Housing only if the ad shows a specific home for sale or rent. It removes age, gender and detailed targeting.',1],
+   ['Advantage campaign budget','On for a single ad set. Off when comparing audiences.',1],
+   ['Daily budget','Below ₹800/day Meta cannot learn on property leads.',1]
+ ]],
+ ['Ad set screen',[
+   ['Conversion location','Instant forms, Website, WhatsApp, Calls or Messenger. This one choice decides your lead quality.',1],
+   ['Performance goal','Maximise number of leads to start.',1],
+   ['Budget and schedule','Start at midnight, not mid-day — a part day skews the learning.',0],
+   ['Audience controls','Locations, age, gender, detailed targeting. Set location option to People living in this location.',1],
+   ['Placements','Advantage+ placements to start. Switch to manual only after 2 weeks of data.',0]
+ ]],
+ ['Ad screen',[
+   ['Identity','Facebook Page plus Instagram account. Missing Instagram halves your reach.',1],
+   ['Ad setup and format','Single image, carousel or video.',0],
+   ['Primary text / Headline / Description','Paste from the Ad copy tab. First 125 characters are what people see.',1],
+   ['Call to action','Learn more for cold traffic, Get quote or WhatsApp for warm.',0],
+   ['Instant form','Create form → More volume or Higher intent → qualifying questions → privacy URL.',1],
+   ['Tracking','Pixel on, and paste your UTM string into URL parameters.',1]
+ ]]
+];
+function renderTrainer(){
+  var h='<div class="eyebrow">Guided screens</div><h3>What each screen is asking you</h3>';
+  SCREENS.forEach(function(sc){
+    h+='<div class="screen"><div class="bar-top">'+esc(sc[0])+'</div><div class="body">';
+    sc[1].forEach(function(r){
+      h+='<div class="row-mock'+(r[2]?' hot':'')+'"><b>'+esc(r[0])+'</b><em>'+esc(r[1])+'</em></div>';
+    });
+    h+='</div></div>';
+  });
+  h+='<div class="divider"></div><div class="eyebrow">Walkthroughs</div>';
+  TRAINER.forEach(function(t){
+    h+='<details class="acc"><summary>'+esc(t[0])+'</summary><div class="inner"><ol>'+
+       t[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol></div></details>';
+  });
+  el('trainerStatic').innerHTML=h;
+}
+
+/* ============================ templates ============================ */
+var TEMPLATES=[
+ {t:'Residential sale — premium',d:'DDA / builder floor / apartment, ₹1.5 Cr and above',v:{pType:'Apartment',pDeal:'Residential — Sale',pSeg:'Premium',pBudget:'1500',pUsp:'Ready to move, corner unit, park facing, RERA registered, two covered parkings, metro within 1 km',pAud:'End users upgrading from 2BHK, business owners, senior professionals'}},
+ {t:'Residential rent',d:'Family rental, quick turnaround',v:{pType:'Builder Floor',pDeal:'Residential — Rent',pSeg:'Mid-segment',pBudget:'600',pUsp:'Semi-furnished, immediate possession, power backup, lift, gated lane',pAud:'Relocating families, corporate transferees, expats'}},
+ {t:'Luxury home',d:'₹5 Cr and above, low volume high intent',v:{pType:'Villa',pDeal:'Residential — Sale',pSeg:'Luxury',pBudget:'2500',pUsp:'Private lawn, imported fittings, gated community, 24x7 security, architect designed',pAud:'HNI families, business owners, NRI buyers, doctors and senior professionals'}},
+ {t:'Commercial sale / lease',d:'Office or retail',v:{pType:'Office Space',pDeal:'Commercial — Lease',pSeg:'Premium',pBudget:'1200',pUsp:'Main road frontage, fitted out, parking, metro connectivity, flexible floor plate',pAud:'Business owners, startups, clinics, coaching institutes, retail brands'}},
+ {t:'DDA flat resale',d:'Delhi DDA inventory',v:{pType:'DDA Flat',pDeal:'Residential — Sale',pSeg:'Mid-segment',pBudget:'900',pUsp:'Freehold, DDA allotted, clear title, well maintained block, corner unit',pAud:'First-time Delhi buyers, government employees, families moving within Delhi'}},
+ {t:'Investment / new launch',d:'RERA-registered new launch',v:{pType:'Apartment',pDeal:'New launch',pSeg:'Premium',pBudget:'2000',pUsp:'RERA registered, construction-linked plan, developer track record, early-stage pricing',pAud:'Investors, NRI buyers, second-home buyers'}},
+ {t:'Farmhouse',d:'Weekend and second homes',v:{pType:'Farmhouse',pDeal:'Residential — Sale',pSeg:'Luxury',pBudget:'2000',pUsp:'Green cover, private access, generous plot, weekend-home potential',pAud:'HNI families, second-home buyers, Delhi business owners'}},
+ {t:'PG / hostel',d:'Rooms and beds, high volume',v:{pType:'PG / Hostel',pDeal:'Residential — Rent',pSeg:'Affordable',pBudget:'400',pUsp:'Meals included, WiFi, laundry, walking distance to metro, single and double sharing',pAud:'Students, working professionals new to the city, parents searching for their children'}}
+];
+function renderTemplates(){
+  var h='';
+  TEMPLATES.forEach(function(t,i){
+    h+='<div class="mini"><b>'+esc(t.t)+'</b><p>'+esc(t.d)+'</p>'+
+       '<div class="btnrow"><button class="btn ghost sm" data-tpl="'+i+'">Load into brief</button></div></div>';
+  });
+  el('templateList').innerHTML=h;
+  Array.prototype.forEach.call(el('templateList').querySelectorAll('[data-tpl]'),function(b){
+    b.onclick=function(){
+      var v=TEMPLATES[+b.dataset.tpl].v;
+      for(var k in v){ if(el(k)) el(k).value=v[k]; S.brief[k]=v[k]; }
+      save(); show('brief'); toast('Template loaded — edit and save');
+    };
+  });
+}
+var PRACTICES=[
+ ['Answer inside 5 minutes','A property lead called back within 5 minutes converts several times better than one called the next day. If nobody can call, do not run lead ads that day.'],
+ ['Instant forms bring volume, higher-intent forms bring buyers','Standard forms cost less per lead and waste caller time. Add a review screen and two qualifying questions and your junk rate drops hard.'],
+ ['Never judge a campaign before 3 days or 50 leads','Meta needs roughly 50 events a week per ad set to leave the learning phase. Editing an ad set restarts learning and burns the budget again.'],
+ ['One ad set, three creatives','Splitting a small budget across many ad sets means none of them learns. Keep the budget together and let the creatives compete.'],
+ ['Price in the ad filters the leads','Leaving price out gets you more leads and worse ones. For premium inventory, put the price or the bracket in the copy.'],
+ ['Location beats interest targeting','For property in Delhi NCR, a tight radius around the right micro-market outperforms elaborate interest stacks almost every time.'],
+ ['WhatsApp leads answer, form leads ghost','WhatsApp costs more per lead but the contact rate is far higher. For high-ticket inventory it is usually the cheaper channel per site visit.'],
+ ['Refresh the creative every 2 to 3 weeks','Frequency above 3 in a small NCR audience means your cost per lead is about to rise. Change the image before the numbers turn.'],
+ ['Track cost per site visit, not cost per lead','CPL is a vanity number. The only figures that matter are cost per site visit and cost per closed deal.']
+];
+function renderPractices(){
+  el('bestPractices').innerHTML=PRACTICES.map(function(p){
+    return '<div class="mini" style="margin-bottom:9px"><b>'+esc(p[0])+'</b><p>'+esc(p[1])+'</p></div>';
+  }).join('');
+}
+
+/* ============================ history & results ============================ */
+function renderHistory(){
+  var h=el('historyList');
+  if(!S.history.length){ h.innerHTML='<p class="hint">Nothing generated yet. Anything you create in the other tabs is saved here automatically.</p>'; return; }
+  h.innerHTML=S.history.map(function(x,i){
+    return '<div class="histitem"><div class="meta">'+new Date(x.at).toLocaleString()+' · '+esc(x.label)+'</div>'+
+           '<b>'+esc(x.title)+'</b>'+
+           '<div class="btnrow no-print"><button class="btn ghost sm" data-open="'+esc(x.id)+'">Open</button></div></div>';
+  }).join('');
+  Array.prototype.forEach.call(h.querySelectorAll('[data-open]'),function(b){
+    b.onclick=function(){
+      var id=b.dataset.open, o=S.outputs[id];
+      if(!o){ toast('That one was replaced by a newer run'); return; }
+      var tab=({analyse:'brief',objective:'strategy',leadquality:'strategy',campaign:'meta',audience:'meta',location:'meta',
+        interests:'meta',copy:'copy',score:'creative',google:'google',gmb:'gmb',forecast:'forecast',checklist:'forecast',
+        audit:'auditor',trainer:'trainer',learn:'history',proposal:'export',brief_doc:'export',strategy_doc:'export'})[id]||'export';
+      show(tab);
+      var box=el('out-'+id); if(box) { render(box,o.json,id); box.scrollIntoView({behavior:'smooth'}); }
+    };
+  });
+}
+function renderResults(){
+  var n=el('resultsList');
+  if(!S.results.length){ n.innerHTML='<p class="hint">No campaign results logged yet. Log at least two campaigns before comparing.</p>'; return; }
+  n.innerHTML=S.results.map(function(r,i){
+    var cpl=r.leads>0?Math.round(r.spend/r.leads):0;
+    return '<div class="histitem"><div class="meta">CPL ₹'+cpl+' · '+r.leads+' leads · '+r.deals+' deals</div>'+
+      '<b>'+esc(r.name)+'</b><div class="btnrow no-print"><button class="btn ghost sm" data-del="'+i+'">Delete</button></div></div>';
+  }).join('');
+  Array.prototype.forEach.call(n.querySelectorAll('[data-del]'),function(b){
+    b.onclick=function(){ S.results.splice(+b.dataset.del,1); save(); renderResults(); renderDash(); };
+  });
+}
+function bindHistory(){
+  el('addResult').onclick=function(){
+    var r={ name:el('hName').value.trim()||'Untitled campaign',
+      spend:+el('hSpend').value||0, leads:+el('hLeads').value||0, good:+el('hGood').value||0,
+      visits:+el('hVisits').value||0, deals:+el('hDeals').value||0, setup:el('hSetup').value.trim(), at:Date.now() };
+    S.results.unshift(r); save(); renderResults(); renderDash();
+    ['hName','hSpend','hLeads','hGood','hVisits','hDeals','hSetup'].forEach(function(f){ el(f).value=''; });
+    toast('Result logged');
+  };
+}
+
+/* ============================ export ============================ */
+function bindExport(){
+  el('exPrint').onclick=function(){
+    var h='';
+    Object.keys(S.outputs).forEach(function(k){
+      var o=S.outputs[k];
+      h+='<div class="card"><div class="eyebrow">'+esc(o.label)+'</div><h3>'+esc(o.json.title||o.label)+'</h3>'+
+         (o.json.summary?'<p class="lede">'+esc(o.json.summary)+'</p>':'')+
+         (o.json.sections||[]).map(renderSection).join('')+'</div>';
+    });
+    el('printAll').innerHTML = h || '<p class="hint">Nothing generated yet.</p>';
+    setTimeout(function(){ window.print(); },120);
+  };
+  el('exCsv').onclick=function(){
+    var rows=[];
+    Object.keys(S.outputs).forEach(function(k){
+      var o=S.outputs[k];
+      (o.json.sections||[]).forEach(function(s){
+        if(s.table&&s.table.columns){
+          rows.push([o.label+' — '+(s.heading||'')]);
+          rows.push(s.table.columns);
+          (s.table.rows||[]).forEach(function(r){ rows.push(r); });
+          rows.push([]);
+        }
+        if(s.copy){
+          rows.push([o.label+' — '+(s.heading||'')]);
+          rows.push(['Text','Note']);
+          s.copy.forEach(function(c){ rows.push([c.text,c.note||'']); });
+          rows.push([]);
+        }
+      });
+    });
+    if(!rows.length){ toast('No tables generated yet'); return; }
+    var csv=rows.map(function(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }).join('\n');
+    download('nisha-campaign-tables.csv','\ufeff'+csv,'text/csv');
+  };
+  el('exJson').onclick=function(){
+    download('nisha-campaign-backup-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(S,null,2),'application/json');
+  };
+  el('exText').onclick=function(){
+    var t=Object.keys(S.outputs).map(function(k){ return '######## '+S.outputs[k].label+' ########\n'+toPlain(S.outputs[k].json); }).join('\n\n');
+    if(!t){ toast('Nothing generated yet'); return; }
+    copyText(t);
+  };
+  el('restoreFile').onchange=function(ev){
+    var f=ev.target.files[0]; if(!f) return;
+    var r=new FileReader();
+    r.onload=function(){
+      try{
+        var o=JSON.parse(r.result);
+        if(!confirm('Replace everything in this browser with the backup?')) return;
+        for(var k in o){ S[k]=o[k]; }
+        save(); location.reload();
+      }catch(e){ toast('That file could not be read'); }
+    };
+    r.readAsText(f);
+  };
+}
+function download(name,content,type){
+  var b=new Blob([content],{type:type});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1500);
+}
+
+
+/* ==================================================================
+   STEP 19 — universal engine, offline mode, education
+   ================================================================== */
+
+var PROVIDERS={
+ claude:{name:'Anthropic Claude',kind:'claude',base:'https://api.anthropic.com/v1/messages',
+   models:['claude-sonnet-4-6','claude-sonnet-5','claude-haiku-4-5','claude-opus-4-8'],
+   def:'claude-sonnet-4-6',vision:true,keyUrl:'console.anthropic.com → Settings → API keys',
+   consumer:'Claude Pro / Max (the claude.ai website subscription)',
+   note:'Works directly from the browser. Best quality for long strategy work.'},
+ openai:{name:'OpenAI (ChatGPT)',kind:'oai',base:'https://api.openai.com/v1/chat/completions',
+   models:['gpt-5.1','gpt-5-mini','gpt-4.1','gpt-4o-mini'],def:'gpt-5.1',vision:true,
+   keyUrl:'platform.openai.com → API keys',consumer:'ChatGPT Plus (the chatgpt.com subscription)',
+   note:'Will NOT work here — OpenAI blocks direct calls from a browser. It needs a backend/proxy (Bhuvnesh). Use Anthropic Claude, Google Gemini or OpenRouter in this app instead.'},
+ gemini:{name:'Google Gemini',kind:'gemini',base:'https://generativelanguage.googleapis.com/v1beta/models',
+   models:['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash'],def:'gemini-2.5-flash',vision:true,
+   keyUrl:'aistudio.google.com → Get API key',consumer:'Gemini Advanced (the Google One AI subscription)',
+   note:'Cheapest cloud option for long outputs. Has a free tier with daily limits.'},
+ grok:{name:'Grok (xAI)',kind:'oai',base:'https://api.x.ai/v1/chat/completions',
+   models:['grok-4','grok-3','grok-3-mini'],def:'grok-4',vision:true,
+   keyUrl:'console.x.ai → API keys',consumer:'X Premium+ (the X/Twitter subscription)',
+   note:'May refuse browser-direct calls. Test the connection before relying on it.'},
+ openrouter:{name:'OpenRouter (any model)',kind:'oai',base:'https://openrouter.ai/api/v1/chat/completions',
+   models:['anthropic/claude-sonnet-4.6','openai/gpt-5.1','google/gemini-2.5-flash','meta-llama/llama-3.3-70b-instruct'],
+   def:'anthropic/claude-sonnet-4.6',vision:true,keyUrl:'openrouter.ai → Keys',
+   consumer:'none — OpenRouter is API-only',
+   note:'One key, every model. Good if you want to switch models without new accounts.'},
+ ollama:{name:'Ollama (your own computer)',kind:'ollama',base:'http://localhost:11434/api/chat',
+   models:['llama3.1','qwen2.5','mistral','gemma2'],def:'llama3.1',vision:false,local:true,
+   keyUrl:'no key needed',consumer:'none',
+   note:'Free and private, but you must install Ollama on a computer and allow this page to reach it.'},
+ lmstudio:{name:'LM Studio (your own computer)',kind:'oai',base:'http://localhost:1234/v1/chat/completions',
+   models:['local-model'],def:'local-model',vision:false,local:true,keyUrl:'no key needed',consumer:'none',
+   note:'Free and private. Install LM Studio, load a model, start the local server, tick Enable CORS.'}
+};
+var RATES={ /* US$ per million tokens, in/out — approximate, editable */
+ 'claude-sonnet-4-6':[3,15],'claude-sonnet-5':[3,15],'claude-haiku-4-5':[1,5],'claude-opus-4-8':[5,25],
+ 'gpt-5.1':[1.25,10],'gpt-5-mini':[0.25,2],'gpt-4.1':[2,8],'gpt-4o-mini':[0.15,0.6],
+ 'gemini-2.5-flash':[0.3,2.5],'gemini-2.5-pro':[1.25,10],'gemini-2.0-flash':[0.1,0.4],
+ 'grok-4':[3,15],'grok-3':[3,15],'grok-3-mini':[0.3,0.5],'default':[2,10],'local':[0,0]
+};
+
+/* ---- state migration ---- */
+if(!S.ai){
+  S.ai={ provider:'claude', keys:{}, bases:{}, models:{}, temp:0.7, max:4000,
+         mode:'hybrid', backup:'', pref:'quality', fx:88, warn:5,
+         usage:[], errors:[], cache:{}, rates:{} };
+  if(S.key){ S.ai.keys.claude=S.key; S.ai.models.claude=S.model||'claude-sonnet-4-6'; }
+}
+if(!S.ai.rates) S.ai.rates={};
+function P(){ return PROVIDERS[S.ai.provider]||PROVIDERS.claude; }
+function activeKey(p){ return (S.ai.keys||{})[p||S.ai.provider]||''; }
+function activeModel(p){ p=p||S.ai.provider; return (S.ai.models||{})[p]||PROVIDERS[p].def; }
+function activeBase(p){ p=p||S.ai.provider; return (S.ai.bases||{})[p]||PROVIDERS[p].base; }
+function aiReady(p){ p=p||S.ai.provider; return PROVIDERS[p].local ? true : !!activeKey(p); }
+function mode(){ if(S.ai.mode==='offline'||S.ai.pref==='none') return 'offline';
+                 if(!aiReady()) return 'offline'; return S.ai.mode; }
+function rateFor(m){ if(P().local) return [0,0]; return S.ai.rates[m]||RATES[m]||RATES['default']; }
+function estTokens(t){ return Math.ceil((t||'').length/3.6); }
+function inr(u){ return u*(Number(S.ai.fx)||88); }
+function money(x){ return '₹'+(x<1?x.toFixed(2):x.toFixed(x<10?2:0)); }
+
+/* ---- badge ---- */
+function keyBadge(){
+  var m=mode(), d=el('keydot'), t=el('keytext');
+  d.classList.toggle('on', m!=='offline');
+  d.style.background = m==='offline' ? '#E0A23C' : '';
+  t.textContent = m==='offline' ? 'Offline mode active'
+    : (m==='hybrid' ? 'Hybrid · '+P().name.split(' ')[0] : 'AI · '+P().name.split(' ')[0]);
+}
+
+/* ---- AI calls ---- */
+function hash(s){ var h=5381,i=s.length; while(i) h=(h*33)^s.charCodeAt(--i); return (h>>>0).toString(36); }
+
+function callAI(userText, sysText, maxTokens, attach, provider){
+  var p=provider||S.ai.provider, cfg=PROVIDERS[p], t0=Date.now();
+  var mdl=activeModel(p), base=activeBase(p), key=activeKey(p);
+  if(!cfg.local && !key) return Promise.reject(new Error('No API key saved for '+cfg.name+'. Add one in AI settings, or switch to Offline mode.'));
+  var maxT=maxTokens||S.ai.max||4000, temp=Number(S.ai.temp);
+  var headers={'content-type':'application/json'}, url=base, body;
+
+  if(cfg.kind==='claude'){
+    headers['x-api-key']=key; headers['anthropic-version']='2023-06-01';
+    headers['anthropic-dangerous-direct-browser-access']='true';
+    var c=[];
+    if(attach) c.push(attach.kind==='pdf'
+      ?{type:'document',source:{type:'base64',media_type:'application/pdf',data:attach.data}}
+      :{type:'image',source:{type:'base64',media_type:attach.media_type,data:attach.data}});
+    c.push({type:'text',text:userText});
+    body={model:mdl,max_tokens:maxT,temperature:temp,system:sysText,messages:[{role:'user',content:c}]};
+  } else if(cfg.kind==='oai'){
+    if(key) headers['authorization']='Bearer '+key;
+    var uc=[{type:'text',text:userText}];
+    if(attach&&attach.kind==='image') uc.unshift({type:'image_url',image_url:{url:'data:'+attach.media_type+';base64,'+attach.data}});
+    body={model:mdl,max_tokens:maxT,temperature:temp,
+      messages:[{role:'system',content:sysText},{role:'user',content:attach&&attach.kind==='image'?uc:userText}]};
+  } else if(cfg.kind==='gemini'){
+    url=base+'/'+mdl+':generateContent?key='+encodeURIComponent(key);
+    var parts=[];
+    if(attach) parts.push({inline_data:{mime_type:attach.media_type,data:attach.data}});
+    parts.push({text:userText});
+    body={contents:[{role:'user',parts:parts}],
+      systemInstruction:{parts:[{text:sysText}]},
+      generationConfig:{temperature:temp,maxOutputTokens:maxT}};
+  } else if(cfg.kind==='ollama'){
+    body={model:mdl,stream:false,options:{temperature:temp,num_predict:maxT},
+      messages:[{role:'system',content:sysText},{role:'user',content:userText}]};
+    if(attach&&attach.kind==='image') body.messages[1].images=[attach.data];
+  }
+
+  return fetch(url,{method:'POST',headers:headers,body:JSON.stringify(body)})
+   .then(function(r){ return r.text().then(function(tx){
+      var d={}; try{ d=JSON.parse(tx); }catch(e){}
+      if(!r.ok){
+        var msg=(d.error&&(d.error.message||d.error))||tx.slice(0,200)||('Request failed ('+r.status+')');
+        if(r.status===401||r.status===403) msg='Key rejected by '+cfg.name+'. Check it in AI settings.';
+        if(r.status===404) msg='Model "'+mdl+'" not found on '+cfg.name+'. Try another model name.';
+        if(r.status===429) msg='Rate limited or out of credit on '+cfg.name+'.';
+        throw new Error(msg);
+      }
+      var out='', usage={in:0,out:0};
+      if(cfg.kind==='claude'){
+        out=(d.content||[]).map(function(c){return c.type==='text'?c.text:'';}).join('\n');
+        if(d.usage){ usage={in:d.usage.input_tokens||0,out:d.usage.output_tokens||0}; }
+      } else if(cfg.kind==='oai'){
+        out=((d.choices||[])[0]||{}).message ? d.choices[0].message.content : '';
+        if(d.usage){ usage={in:d.usage.prompt_tokens||0,out:d.usage.completion_tokens||0}; }
+      } else if(cfg.kind==='gemini'){
+        out=(((d.candidates||[])[0]||{}).content||{}).parts ? d.candidates[0].content.parts.map(function(x){return x.text||'';}).join('') : '';
+        if(d.usageMetadata){ usage={in:d.usageMetadata.promptTokenCount||0,out:d.usageMetadata.candidatesTokenCount||0}; }
+      } else if(cfg.kind==='ollama'){
+        out=(d.message&&d.message.content)||'';
+        usage={in:d.prompt_eval_count||0,out:d.eval_count||0};
+      }
+      if(!usage.in) usage.in=estTokens(userText+sysText);
+      if(!usage.out) usage.out=estTokens(out);
+      logUsage(p,mdl,usage,Date.now()-t0);
+      return (out||'').trim();
+   });})
+   .catch(function(e){
+      var msg=e.message||String(e);
+      if(e instanceof TypeError){
+        if(cfg.local){
+          msg='Could not reach '+cfg.name+' at '+base+'. Is it running, and is CORS allowed? See the Learn tab.';
+        } else if(p==='openai'){
+          msg='OpenAI (ChatGPT) can\u2019t be used directly from a browser — it blocks browser calls for security. Switch the provider to Anthropic Claude, Google Gemini or OpenRouter in AI settings. (Offline mode still works.)';
+        } else if(p==='grok'){
+          msg='Grok refused a direct browser call. Switch to Anthropic Claude, Google Gemini or OpenRouter in AI settings. (Offline mode still works.)';
+        } else {
+          msg=cfg.name+' refused a direct browser call, or you are offline. Try Anthropic Claude, Google Gemini or OpenRouter.';
+        }
+      }
+      logError(p,msg);
+      throw new Error(msg);
+   });
+}
+function logUsage(p,m,u,ms){
+  var r=rateFor(m), cost=inr((u.in/1e6)*r[0]+(u.out/1e6)*r[1]);
+  S.ai.usage.unshift({p:p,m:m,i:u.in,o:u.out,c:cost,ms:ms,at:Date.now()});
+  S.ai.usage=S.ai.usage.slice(0,400); save(); renderUsage();
+}
+function logError(p,msg){
+  S.ai.errors.unshift({p:p,msg:msg,at:Date.now()});
+  S.ai.errors=S.ai.errors.slice(0,30); save(); renderErrors();
+}
+/* legacy name kept so the rest of the app keeps working */
+function callClaude(userText,sysText,maxTokens,attach){ return callAI(userText,sysText,maxTokens,attach); }
+
+function callWithBackup(userText,sysText,maxTokens,attach){
+  return callAI(userText,sysText,maxTokens,attach).catch(function(e){
+    var b=S.ai.backup;
+    if(b && b!==S.ai.provider && aiReady(b)){
+      toast('Main provider failed — trying '+PROVIDERS[b].name);
+      return callAI(userText,sysText,maxTokens,attach,b);
+    }
+    throw e;
+  });
+}
+
+/* ==================== OFFLINE ENGINE (no AI, no cost) ==================== */
+var BENCH={
+ rent:{lab:'Rental / PG',cpm:180,ctr:1.6,cpl:{form:90,hiform:160,wa:220,site:280,call:200},junk:.55,visit:.25,close:.30},
+ lt1:{lab:'Under ₹1 Cr',cpm:250,ctr:1.2,cpl:{form:180,hiform:320,wa:420,site:520,call:400},junk:.50,visit:.18,close:.15},
+ '1to3':{lab:'₹1–3 Cr',cpm:320,ctr:1.0,cpl:{form:300,hiform:550,wa:700,site:900,call:650},junk:.45,visit:.15,close:.12},
+ '3to7':{lab:'₹3–7 Cr',cpm:420,ctr:.85,cpl:{form:550,hiform:950,wa:1300,site:1600,call:1200},junk:.40,visit:.12,close:.10},
+ gt7:{lab:'Above ₹7 Cr',cpm:520,ctr:.7,cpl:{form:900,hiform:1600,wa:2200,site:2600,call:2000},junk:.35,visit:.10,close:.08},
+ comm:{lab:'Commercial',cpm:300,ctr:.9,cpl:{form:400,hiform:700,wa:900,site:1100,call:800},junk:.45,visit:.14,close:.12}
+};
+var FMT={form:'Instant form',hiform:'Higher-intent form',wa:'WhatsApp',site:'Website form',call:'Call campaign'};
+function bracket(){
+  var b=S.brief||{}, d=(b.pDeal||''), p=(b.pPrice||'').toLowerCase();
+  if(/rent/i.test(d)||/PG/i.test(b.pType||'')) return 'rent';
+  if(/commercial/i.test(d)||/office|retail|warehouse/i.test(b.pType||'')) return 'comm';
+  var cr=0, m=p.match(/([\d.]+)\s*cr/); if(m) cr=parseFloat(m[1]);
+  var l=p.match(/([\d.]+)\s*(lakh|lac|l\b)/); if(!cr&&l) cr=parseFloat(l[1])/100;
+  if(!cr) return '1to3';
+  if(cr<1) return 'lt1'; if(cr<3) return '1to3'; if(cr<7) return '3to7'; return 'gt7';
+}
+function bud(){ return Number((S.brief||{}).pBudget)||1200; }
+function bf(k,d){ return ((S.brief||{})[k]||d||''); }
+function OFFDOC(t,s,secs,acts){ return {title:t,summary:s,sections:secs,actions:acts||[],offline:true}; }
+
+var INTERESTS={
+ 'Real estate':['Real estate','Real estate investing','Property','Real estate development','Real property','Realtor','Apartment','Luxury real estate','Commercial property','Housing.com','MagicBricks','99acres','NoBroker'],
+ 'Property investment':['Investment','Real estate investment trust','Rental value','Passive income','Capital gain','Property management','Investor','Asset management','Portfolio (finance)'],
+ 'Luxury homes':['Luxury goods','Luxury vehicles','Mansion','Penthouse apartment','Villa','Gated community','Swimming pool','Home automation','Smart home'],
+ 'Home decor and interiors':['Interior design','Home improvement','Furniture','IKEA','Pepperfry','Urban Ladder','Home Appliances','Modular kitchen','Architectural Digest'],
+ 'Mortgage and home loans':['Mortgage loan','Home equity','HDFC Bank','ICICI Bank','SBI','Axis Bank','Loan','Bank','Credit score','EMI'],
+ 'Finance and wealth':['Investment banking','Mutual funds','Stock market','Personal finance','Wealth management','Insurance','Financial adviser','Economic Times','Moneycontrol'],
+ 'Premium automobiles':['Mercedes-Benz','BMW','Audi','Jaguar Cars','Land Rover','Volvo','Lexus','Luxury vehicles','Car dealership'],
+ 'Luxury lifestyle and travel':['Luxury travel','Business class','Golf','Fine dining','Yacht','Watches','Rolex','Five-star hotel','Airport lounge','Frequent flyer'],
+ 'Architecture and construction':['Architecture','Civil engineering','Construction','Interior architecture','Building','Vastu shastra','Contractor'],
+ 'NRI and overseas Indians':['Non-resident Indian','Expatriate','Indian diaspora','Dubai','Singapore','United Arab Emirates','United States','Canada','Remittance'],
+ 'Retirement and family':['Retirement planning','Pension','Family','Parenting','Marriage','Education','Schools','Senior citizen'],
+ 'Business owners and professionals':['Small business','Entrepreneurship','Business owner','Startup company','Chartered accountant','Doctor of Medicine','Lawyer','Engineering','Information technology','Management consulting','Government employee'],
+ 'High-value shopping':['Online shopping','Shopping mall','Amazon','Tanishq','Jewellery','Designer clothing','Duty-free shop']
+};
+var AVOID=['Free stuff','Lottery','Contests','Job hunting','Government schemes','Sarkari Naukri','Loan against property (attracts distress cases)','Rent (when selling)','Students (unless PG/hostel)','Deals and coupons'];
+
+var NCR={
+ 'south delhi':[['Vasant Kunj','Pin drop','5 km','Core catchment — existing residents upgrading within the colony'],['Vasant Vihar','Pin drop','4 km','Diplomatic and senior corporate belt, buys nearby'],['Saket / Malviya Nagar','Pin drop','5 km','Professionals shifting south-west'],['Green Park / Hauz Khas','Pin drop','4 km','Old Delhi money, second homes'],['Dwarka','Pin drop','6 km','Aspirational upgraders'],['Gurgaon sectors 42-58','Radius','8 km','Corporate buyers wanting a Delhi address']],
+ 'gurgaon':[['Golf Course Road','Pin drop','5 km','Primary luxury catchment'],['Golf Course Ext Road','Pin drop','6 km','New-build buyers'],['Sohna Road','Pin drop','6 km','Mid-segment upgraders'],['DLF phases 1-5','Pin drop','5 km','Resale and rental demand'],['South Delhi','Radius','10 km','Delhi buyers shifting to Gurgaon'],['Cyber City / Udyog Vihar','Radius','5 km','Workplace targeting for rentals']],
+ 'noida':[['Sector 150 / 128','Pin drop','6 km','Premium new build'],['Sector 62 / 63','Radius','5 km','IT workforce, rentals'],['Greater Noida West','Pin drop','7 km','Affordable and mid-segment'],['Indirapuram','Pin drop','5 km','Ghaziabad upgraders'],['East Delhi','Radius','8 km','Crossing over to Noida']],
+ 'default':[['Property micro-market','Pin drop','5 km','Nearest catchment — people already living around it'],['Adjacent premium colony','Pin drop','5 km','Upgrade demand'],['Workplace hub','Radius','8 km','Where the buyers work'],['Delhi NCR wide','City','—','Only for retargeting, never for cold prospecting']]
+};
+function ncrRows(){
+  var l=(bf('pLoc')+' '+bf('pName')).toLowerCase(), k='default';
+  if(/gurgaon|gurugram|dlf|sohna|golf course/.test(l)) k='gurgaon';
+  else if(/noida|greater noida|indirapuram|ghaziabad/.test(l)) k='noida';
+  else if(/delhi|vasant|saket|hauz|dwarka|greater kailash|defence colony/.test(l)) k='south delhi';
+  return NCR[k];
+}
+
+var OFF={
+ teardown:function(){
+   var rt=(el('rivalText')&&el('rivalText').value.trim())||'';
+   if(!rt) return OFFDOC('Competitor teardown — how to read any ad',
+     'No ad text was pasted. Here is the checklist to score a competitor ad by hand. Paste their caption and turn on AI mode for a full rewrite in your language.',
+     [{heading:'Score any competitor ad on these',type:'list',list:[
+       'Hook — does the first line stop the scroll, or is it just the property name?',
+       'Promise — what one thing do they make the buyer feel they will get?',
+       'Proof — RERA, real photos, price, location facts, or only adjectives?',
+       'Offer — a reason to act now (site visit, price, limited units)?',
+       'Urgency — a real deadline, or none?',
+       'Call-to-action — one clear next step (WhatsApp / call), or vague?',
+       'Clarity — could a busy buyer get it in 3 seconds?'
+     ]},
+     {heading:'Beat it with this shape',type:'steps',steps:[
+       'Line 1 — a sharp hook about what the buyer wants, not about the building.',
+       'Line 2-3 — the single strongest selling point from your Brief.',
+       'Line 4 — one proof point (RERA / park-facing / metro distance).',
+       'Line 5 — one clear action, e.g. WhatsApp the word VISIT to book.'
+     ]}]);
+   var tags=(rt.match(/#[A-Za-z0-9_]+/g)||[]);
+   var emojis=(rt.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu)||[]).length;
+   var cta=/\b(call|whatsapp|dm|message|book|visit|contact|enquir|inquir|register|site visit|link in bio)\b/i.test(rt);
+   var urg=/\b(last|only|hurry|limited|few|today|now|sold ?out|closing|hot deal|don'?t miss|fast)\b/i.test(rt);
+   var price=/(₹|rs\.?|inr|\bcr\b|crore|lakh|lac)/i.test(rt);
+   var usp=bf('pUsp'), loc=bf('pLoc','your area'), nm=bf('pName','this property');
+   var weak=[];
+   if(!cta) weak.push('No clear call-to-action — the buyer is not told what to do next. Yours must end in one step (WhatsApp / call).');
+   if(!urg) weak.push('No urgency — nothing makes the buyer act today. Add a real reason (limited units, site-visit slots).');
+   if(!price) weak.push('No price signal — pulls curious time-wasters. A price band filters to serious buyers.');
+   if(tags.length>12) weak.push('Hashtag stuffing ('+tags.length+') — looks spammy and hides the message. 5-8 focused tags beat 20 broad ones.');
+   if(emojis>10) weak.push('Emoji overload — reads cheap for a premium property. Use a few, purposefully.');
+   if(!weak.length) weak.push('Fairly tight ad — beat it on the hook and on stronger proof rather than on structure.');
+   return OFFDOC('Competitor teardown (rule-based)',
+     'Quick machine read of the pasted ad — '+rt.split(/\s+/).filter(Boolean).length+' words. Turn on AI mode for a full breakdown and a rewrite in your language.',
+     [{heading:'What the ad has',type:'kv',kv:[
+       {k:'Length',v:rt.split(/\s+/).filter(Boolean).length+' words'},
+       {k:'Clear call-to-action',v:cta?'Yes':'No — this is a gap you can beat'},
+       {k:'Urgency / scarcity',v:urg?'Yes':'No'},
+       {k:'Price mentioned',v:price?'Yes':'No'},
+       {k:'Hashtags',v:tags.length+(tags.length>12?' (too many)':'')},
+       {k:'Emojis',v:emojis}
+     ]},
+     {heading:'Where it is weak — your openings',type:'list',list:weak},
+     {heading:'Your stronger opening lines',type:'copy',copy:[
+       {text:(loc?loc+': ':'')+'the '+bf('pSeg','premium').toLowerCase()+' address serious buyers ask for by name.',note:'Hook — desire first'},
+       {text:'Before you book any '+loc+' visit, see this one — '+(usp?usp.split(',')[0].trim():'move-in ready, RERA registered')+'.',note:'Hook — proof led'},
+       {text:'Only a handful of homes like '+nm+' come up in '+loc+' each year. This is one. WhatsApp VISIT to see it.',note:'Hook — scarcity + CTA'}
+     ]}]);
+ },
+ angle:function(){
+   var seg=bf('pSeg','Premium'), loc=bf('pLoc','your micro-market'), usp=bf('pUsp');
+   var first=usp?usp.split(',')[0].trim():'the specific thing about this home';
+   return OFFDOC('Winning angle (rule-based)',
+     'The me-too lines most brokers in the '+seg.toLowerCase()+' segment overuse, and the gap to own. Turn on AI mode for hooks tailored line-by-line to your brief.',
+     [{heading:'What everyone else says',type:'list',list:[
+       '"RERA approved" — true, but every serious listing says it. It reassures, it does not sell.',
+       '"Prime location" — meaningless without the one landmark that matters to the buyer.',
+       '"Best price / best deal" — signals discount-hunting, attracts hagglers.',
+       '"Luxury living redefined" — brochure language buyers scroll past.',
+       '"Book your dream home" — no reason to act now.',
+       '"Limited units available" — overused to the point of being ignored.'
+     ]},
+     {heading:'The gap to own',type:'text',text:'Lead with '+first+' — one concrete, checkable fact about THIS home that the me-too ads never mention — and pair it with who it is for. Specifics are believed; adjectives are skipped. In '+loc+', the broker who names the exact benefit (park-facing, corner unit, 900 m to metro, ready to move) wins the serious buyer while everyone else shouts "luxury".'},
+     {heading:'Three hooks that own it',type:'copy',copy:[
+       {text:(usp?first:'Corner unit, park-facing')+' — the detail every other '+loc+' listing leaves out.',note:'For the buyer who has already seen 5 flats'},
+       {text:'Not "prime location". '+loc+', '+(usp?usp.split(',').slice(0,2).join(',').trim():'metro-close, move-in ready')+'. See the difference.',note:'For the comparison shopper'},
+       {text:'The '+seg.toLowerCase()+' home in '+loc+' that does not need a filter to look good.',note:'For the end-user, not the investor'}
+     ]},
+     {heading:'Say this, not that',type:'table',table:{columns:['Tired line','Sharper replacement'],rows:[
+       ['Prime location','7 min to '+loc+' metro, 2 schools within 1 km'],
+       ['Luxury living','Corner unit, park-facing, cross-ventilated'],
+       ['Best price','Priced to move this month — WhatsApp for the number'],
+       ['Book your dream home','WhatsApp VISIT — I will hold a slot this weekend']
+     ]}}]);
+ },
+ execution:function(){
+   var b=BENCH[bracket()], q=(S.brief||{}).pQuality!==false, cost=(S.brief||{}).pCost;
+   var pick = cost ? 'form' : (q ? (bracket()==='rent'?'wa':'hiform') : 'form');
+   var daily=Math.max(800,bud()), cpl=b.cpl[pick], leads=Math.round(daily*30/cpl);
+   var loc=bf('pLoc','your micro-market'), seg=bf('pSeg','Premium'), usp=bf('pUsp'), nm=bf('pName','this property');
+   var locList=ncrRows().map(function(r){return r[0]+' ('+r[1]+' '+r[2]+')';}).join('; ');
+   var ints=(INTERESTS['Real estate']||[]).slice(0,6).concat((INTERESTS['Property investment']||[]).slice(0,3)).join(', ');
+   var runLabel=pick==='wa'?'WhatsApp':pick==='call'?'Calls':pick==='site'?'Website':pick==='hiform'?'Lead form (higher intent)':'Lead form';
+   return OFFDOC('Campaign Execution Sheet (rule-based)',
+     'One-page plan assembled from your brief and Delhi NCR benchmarks. Turn on AI mode and click Improve for finished caption/headline wording and the competitor angle.',
+     [{heading:'Campaign at a glance',type:'kv',kv:[
+       {k:'Objective',v:'Leads'},
+       {k:'Run as',v:runLabel+' — best closing rate per rupee at this bracket'},
+       {k:'Platforms',v:'Meta (Facebook + Instagram)'},
+       {k:'Daily budget',v:'₹'+daily},
+       {k:'Total (30 days)',v:'₹'+(daily*30).toLocaleString('en-IN')},
+       {k:'Duration',v:'30 days, first review at day 7'},
+       {k:'Expected CPL',v:'₹'+Math.round(cpl*.8)+' – ₹'+Math.round(cpl*1.3)+' (estimate)'},
+       {k:'Expected leads / month',v:'~'+leads+' (estimate)'}
+     ]},
+     {heading:'Audience & targeting',type:'kv',kv:[
+       {k:'Age',v:(seg==='Luxury'||seg==='Premium')?'30–60':'27–50'},
+       {k:'Gender',v:'All'},
+       {k:'Income',v:'Top 10–25% — detailed-targeting expansion OFF'},
+       {k:'Locations',v:locList},
+       {k:'Top interests',v:ints},
+       {k:'Exclusions',v:AVOID.slice(0,5).join(', ')},
+       {k:'Lookalikes',v:'1% lookalike of past leads / page engagers, once you have 100+'},
+       {k:'Placements',v:'Advantage+ placements; cut Audience Network if junk rises'},
+       {k:'Bidding',v:'Highest volume, no cost cap for the first 7 days'},
+       {k:'Attribution',v:'7-day click, 1-day view'}
+     ]},
+     {heading:'Lead form questions',type:'list',list:['Name','Phone (pre-filled)','Budget range (dropdown)','Buying timeline: 0–1 / 1–3 / 3–6 months','Purpose: end use or investment']},
+     {heading:'Landing page',type:'text',text:(bf('pUrl')||'No landing page set — use an instant form so no click is wasted. Add a one-page property site later if you switch to a website or conversion campaign.')},
+     {heading:'GMB this week',type:'list',list:['Offer post — "Book a site visit this weekend" with a call button','Photo post — your 3 best shots with a '+loc+' caption','Update post — lead with '+(usp?usp.split(',')[0].trim():'your strongest USP')]},
+     {heading:'Launch checklist',type:'steps',steps:['Pixel / Conversions API firing, lead event tested','Instant form live with the qualifying questions above','Caller briefed to ring every lead within 5 minutes','Daily budget set to ₹'+daily+', schedule continuous','Naming convention applied so results stay sortable','Day-7 review booked to cut whatever is not working']},
+     {heading:'Send to the ads team',type:'copy',copy:[{text:'Run '+runLabel+' campaign on Meta, ₹'+daily+'/day, for '+nm+' in '+loc+'. Target age '+((seg==='Luxury'||seg==='Premium')?'30–60':'27–50')+', top income, interests: '+ints.split(',').slice(0,4).join(',')+'. Target CPL ₹'+cpl+'. Call every lead within 5 minutes.',note:'Paste this to your media buyer on WhatsApp'}]},
+     {heading:'Final recommendation',type:'text',text:'At this price bracket, speed of first call beats every targeting tweak. Whatever else changes, call every lead within 5 minutes.'}],
+     ['Fill or update the Brief for sharper numbers','Turn on AI mode and click Improve for finished ad wording and the competitor angle']);
+ },
+ objective:function(){
+   var b=BENCH[bracket()], q=(S.brief||{}).pQuality!==false, cost=(S.brief||{}).pCost;
+   var pick = cost ? 'form' : (q ? (bracket()==='rent'?'wa':'hiform') : 'form');
+   var rows=Object.keys(FMT).map(function(k){
+     return [FMT[k],'₹'+b.cpl[k],Math.round((1-b.junk)*100)+'%',k===pick?'Recommended':''];
+   });
+   return OFFDOC('Objective — '+FMT[pick],
+    'Rule-based pick for a '+b.lab+' property in Delhi NCR at ₹'+bud()+'/day. Built from benchmark tables, no AI used.',
+    [{heading:'Set this in Ads Manager',type:'kv',kv:[
+      {k:'Objective',v:'Leads'},
+      {k:'Conversion location',v:pick==='wa'?'WhatsApp':pick==='call'?'Calls':pick==='site'?'Website':'Instant forms'},
+      {k:'Form type',v:pick==='hiform'?'Higher intent (adds a review step)':pick==='form'?'More volume':'—'},
+      {k:'Performance goal',v:'Maximise number of leads'},
+      {k:'Daily budget',v:'₹'+Math.max(800,bud())+(bud()<800?' (₹800 is the practical floor)':'')},
+      {k:'Why',v:pick==='hiform'?'Highest closing rate per rupee at this price bracket':pick==='wa'?'Contact rate is far higher for rentals and PG':'Cheapest leads — accepts a higher junk rate'}
+    ]},
+    {heading:'Expected, at this bracket',type:'kv',kv:[
+      {k:'Cost per lead',v:'₹'+Math.round(b.cpl[pick]*.8)+' – ₹'+Math.round(b.cpl[pick]*1.3)},
+      {k:'Junk / unreachable',v:Math.round(b.junk*100)+'%'},
+      {k:'Lead to site visit',v:Math.round(b.visit*100)+'% of contactable leads'},
+      {k:'Visit to deal',v:Math.round(b.close*100)+'%'},
+      {k:'Time to first lead',v:'12–48 hours after approval'}
+    ]},
+    {heading:'All formats compared',type:'table',table:{columns:['Format','Cost per lead','Contactable','Verdict'],rows:rows}},
+    {heading:'Do not run for this',type:'list',list:['Reach or Awareness — no lead capture, spends the whole budget on impressions','Engagement — buys likes, not buyers','Traffic — sends people away with no follow-up handle','Sales / Catalogue — built for e-commerce inventory']}],
+    ['Open Meta campaign tab to get every field','Run the checklist before you publish']);
+ },
+ leadquality:function(){
+   var b=BENCH[bracket()];
+   var data=[
+    ['WhatsApp','Highest contact rate, chat history stays','Costs more, needs someone replying fast','Low','High','High','₹'+b.cpl.wa,'Rentals, PG, high-ticket sale'],
+    ['Instant form (volume)','Cheapest leads, fastest setup','Half the numbers are wrong or idle','High','Low','Low','₹'+b.cpl.form,'Affordable housing, volume plays'],
+    ['Higher-intent form','Review step cuts accidental submits','30–60% fewer leads','Medium','High','High','₹'+b.cpl.hiform,'₹1 Cr and above'],
+    ['Website form','Full control, retargeting pixel fires','Needs a fast landing page','Low','High','High','₹'+b.cpl.site,'Projects with a proper page'],
+    ['Landing page form','Best qualification questions','Costs the most per lead','Very low','Very high','Very high','₹'+Math.round(b.cpl.site*1.2),'Luxury, new launch'],
+    ['Call campaign','Instant conversation, no follow-up gap','Only works in calling hours','Low','High','High','₹'+b.cpl.call,'Urgent rentals, site visit drives'],
+    ['Conversion campaign','Optimises to real events','Needs 50+ conversions to learn','Low','Very high','Very high','₹'+Math.round(b.cpl.site*1.4),'Established campaigns only']
+   ];
+   return OFFDOC('Lead formats compared','Benchmark comparison for a '+b.lab+' property. No AI used.',
+    [{heading:'Side by side',type:'table',table:{columns:['Format','Advantages','Disadvantages','Spam risk','Lead quality','Closing probability','Cost per lead','Best for'],rows:data}},
+     {heading:'Qualifying questions to add to the form',type:'list',list:[
+       'Are you looking to buy for yourself or as an investment?','What is your budget range?','When are you planning to move or invest?',
+       'Which area are you currently living in?','Best time to call you?','Are you paying by loan or self-funded?']},
+     {heading:'Follow-up rule',type:'kv',kv:[
+       {k:'First call',v:'Within 5 minutes of the lead arriving'},{k:'Attempts',v:'6 calls across 14 days, at different times of day'},
+       {k:'WhatsApp',v:'Send the brochure immediately after the first ring, whether or not they pick up'},
+       {k:'Mark dead',v:'Only after 6 attempts and one WhatsApp read-no-reply'}]}],
+    ['Add these questions in the Meta campaign tab before publishing']);
+ },
+ campaign:function(){
+   var b=BENCH[bracket()], name=bf('pName','Property'), slug=name.replace(/[^A-Za-z0-9]/g,'').slice(0,16);
+   var d=new Date(), mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+   var base='NH_'+slug+'_'+mon+d.getFullYear();
+   var daily=Math.max(800,bud());
+   return OFFDOC('Campaign structure — '+name,'Naming, budget and settings built by rule from your brief. No AI used.',
+    [{heading:'Campaign level',type:'kv',kv:[
+      {k:'Campaign name',v:base+'_Leads'},{k:'Objective',v:'Leads'},{k:'Buying type',v:'Auction'},
+      {k:'Special ad category',v:'Tick Housing if the ad shows this specific home. It removes age, gender and detailed targeting.'},
+      {k:'Advantage campaign budget',v:'On (single ad set) / Off (comparing audiences)'},
+      {k:'Daily budget',v:'₹'+daily},{k:'Bid strategy',v:'Highest volume, no cost cap for the first 7 days'},
+      {k:'Schedule',v:'Start at 00:00, run continuously'}]},
+     {heading:'Ad sets',type:'table',table:{columns:['Ad set name','Audience','Budget share','Purpose'],rows:[
+      [base+'_AS1_Broad','Advantage+ audience, 25–65, location only','50%','Lets the algorithm find buyers'],
+      [base+'_AS2_Interest','Detailed targeting from the interest library','30%','Control group'],
+      [base+'_AS3_Retarget','Website visitors 90d + video viewers + page engagers','20%','Cheapest closes']]}},
+     {heading:'Ads under each ad set',type:'table',table:{columns:['Ad name','Format','Angle'],rows:[
+      [base+'_Ad1_Price','Single image','Price and configuration'],
+      [base+'_Ad2_Location','Carousel','Location and connectivity'],
+      [base+'_Ad3_Video','Video / reel','Walkthrough']]}},
+     {heading:'Ad set settings',type:'kv',kv:[
+      {k:'Conversion location',v:bracket()==='rent'?'WhatsApp':'Instant forms (higher intent)'},
+      {k:'Performance goal',v:'Maximise number of leads'},
+      {k:'Attribution setting',v:'7-day click, 1-day view'},
+      {k:'Placements',v:'Advantage+ placements for the first two weeks'},
+      {k:'Delivery',v:'Standard, never accelerated'}]},
+     {heading:'Naming convention',type:'text',text:'NH_Property_Month_Objective_AdSet_Angle. Keep it identical every month and your reports sort themselves.'}],
+    ['Audience tab for the targeting','Checklist tab before publishing']);
+ },
+ audience:function(){
+   var seg=bf('pSeg','Premium'), rent=bracket()==='rent';
+   var age = rent?'25 – 45' : (seg==='Luxury'?'35 – 65+':seg==='Affordable'?'25 – 50':'30 – 60');
+   var picks=[];
+   ['Real estate','Property investment','Finance and wealth','Business owners and professionals'].forEach(function(c){
+     picks=picks.concat(INTERESTS[c].slice(0,5));
+   });
+   if(seg==='Luxury') picks=picks.concat(INTERESTS['Luxury homes'].slice(0,4),INTERESTS['Premium automobiles'].slice(0,4));
+   return OFFDOC('Audiences','Built from the interest library and your segment. No AI used.',
+    [{heading:'Core audience',type:'kv',kv:[
+      {k:'Age',v:age},{k:'Gender',v:'All — men skew higher on property but women decide'},
+      {k:'Languages',v:'English, Hindi (leave blank if targeting is already tight)'},
+      {k:'Detailed targeting',v:picks.join(', ')},
+      {k:'Expand targeting',v:'On, after the first 50 leads'},
+      {k:'If Housing category applies',v:'Age, gender and detailed targeting are removed — location and creative do all the work'}]},
+     {heading:'Audience stack to test',type:'cards',cards:[
+      {title:'1. Broad + Advantage+',body:'Location only, 25–65, no interests. Let Meta find them.',tags:['Start here','Cheapest to learn']},
+      {title:'2. Interest stack',body:'The detailed targeting list above, narrowed by income proxies like premium car and luxury travel interests.',tags:['Control group']},
+      {title:'3. Retargeting',body:'Website visitors 90 days + 50% video viewers + page and Instagram engagers 365 days + form openers who did not submit.',tags:['Best cost per deal']},
+      {title:'4. Lookalike 1%',body:'Source: your past enquiry list uploaded as a customer list. India-wide, then narrow by location.',tags:['Needs 500+ contacts']},
+      {title:'5. NRI layer',body:'Only for investment and luxury inventory. UAE, Singapore, USA, Canada, UK — Indian expats.',tags:['Optional']}]},
+     {heading:'Create the custom audiences',type:'steps',steps:[
+      'Ads Manager → Audiences → Create audience → Custom audience → Website → All visitors, 90 days.',
+      'Repeat with Video → people who watched 50% of any video, 365 days.',
+      'Repeat with Instagram account and Facebook Page → everyone who engaged, 365 days.',
+      'Repeat with Lead form → opened but did not submit, 90 days. This is the cheapest lead source you have.',
+      'Upload your past enquiry phone numbers as a Customer list, then build a 1% lookalike from it.']},
+     {heading:'Exclusions',type:'list',list:['People who already submitted the form (stops paying twice for the same person)','Your own staff and sourcing partners','Existing customers','Job seekers, if the page also posts hiring content']}],
+    ['Interest tab for the full library']);
+ },
+ location:function(){
+   return OFFDOC('Location targeting','Delhi NCR micro-market rules for '+bf('pLoc','your property')+'. No AI used.',
+    [{heading:'Primary setting',type:'kv',kv:[
+      {k:'Method',v:'Pin drop on the property, not the city'},
+      {k:'Radius',v:bracket()==='rent'?'3–5 km':'5–8 km'},
+      {k:'Location option',v:'People living in this location — never "recently in", that catches travellers'},
+      {k:'Why',v:'In NCR the strongest buyer is already living within a few kilometres of the property'}]},
+     {heading:'Areas to include',type:'table',table:{columns:['Area','Type','Radius','Why this area buys here'],rows:ncrRows()}},
+     {heading:'Exclude',type:'list',list:['Anything beyond 25 km unless it is an investment or NRI campaign','Industrial belts and transit corridors — clicks with no intent','Areas where your price point does not exist — you get enquiries you cannot serve']},
+     {heading:'NRI layer',type:'kv',kv:[
+      {k:'Run it?',v:bracket()==='gt7'||/investment|launch/i.test(bf('pDeal'))?'Yes — 20% of budget':'No, not at this price point'},
+      {k:'Countries',v:'UAE, Singapore, USA, Canada, UK, Australia'},
+      {k:'Creative',v:'Lead with rental yield and payment plan, not lifestyle'}]}],[]);
+ },
+ interests:function(){
+   var cards=Object.keys(INTERESTS).map(function(c){
+     return {title:c,body:INTERESTS[c].join(', '),tags:[INTERESTS[c].length+' interests']};
+   });
+   var top=[].concat(INTERESTS['Real estate'].slice(0,4),INTERESTS['Property investment'].slice(0,3),
+     INTERESTS['Mortgage and home loans'].slice(0,3),INTERESTS['Business owners and professionals'].slice(0,2));
+   return OFFDOC('Interest library','Built-in library of Meta detailed-targeting interests for Indian property. No AI used.',
+    [{heading:'Start with these',type:'list',list:top}].concat(cards.length?[{heading:'Full library',type:'cards',cards:cards}]:[])
+     .concat([{heading:'Avoid',type:'list',list:AVOID}]),[]);
+ },
+ checklist:function(){
+   var wa=(S.biz.bizWa||'').replace(/[^0-9]/g,'');
+   var msg=encodeURIComponent('Hi, I am interested in '+bf('pName','your property')+' at '+bf('pLoc','')+'. Please share the details.');
+   var url=bf('pUrl',S.biz.bizSite||'https://example.com');
+   var utm=url+(url.indexOf('?')>-1?'&':'?')+'utm_source=facebook&utm_medium=paid&utm_campaign='+encodeURIComponent(bf('pName','property').replace(/\s+/g,'_'))+'&utm_content=ad1';
+   return OFFDOC('Pre-launch checklist','Fixed checklist plus your links, generated from the brief. No AI used.',
+    [{heading:'Before you spend a rupee',type:'table',table:{columns:['Item','Why it matters','How to check'],rows:[
+      ['Meta Pixel installed','Without it you cannot retarget or optimise','Events Manager → Test events, open your site on your phone'],
+      ['Conversions API','Browser-only tracking loses 20–40% of events','Events Manager → the dataset shows a server connection'],
+      ['Domain verified','Required to control link edits and iOS reporting','Business Settings → Brand safety → Domains shows a green tick'],
+      ['UTM parameters','Otherwise you never know which ad worked','Click your own ad and check the URL in the address bar'],
+      ['Landing page speed','Above 3 seconds on 4G and half your clicks leave','PageSpeed Insights, mobile score above 60'],
+      ['Mobile layout','Over 95% of NCR property traffic is mobile','Open it on your own phone, not a laptop'],
+      ['WhatsApp link works','A broken link burns the whole day\'s budget','Tap the link below on your phone'],
+      ['Thank-you page','Fires the Lead event and sets expectations','Submit a test lead yourself'],
+      ['Call button','Half your buyers will call, not fill','Tap it on your phone'],
+      ['Leads reaching someone','Meta holds leads in the form library if nothing is connected','Ads Manager → Forms library → download the test lead'],
+      ['Caller briefed','A lead called after 24 hours is worth a fraction','Caller has the price list and the script open']]}}]
+     .concat([{heading:'Your links, ready to paste',type:'copy',copy:[
+      {text:wa?('https://wa.me/'+wa+'?text='+msg):'Add your WhatsApp number in the Business tab first',note:'Click-to-chat link with a pre-filled message'},
+      {text:utm,note:'UTM-tagged landing page URL for the ad'}]},
+     {heading:'Day 1 to day 7',type:'steps',steps:[
+      'Day 1: check delivery says Active and one lead has reached your phone. Change nothing else.',
+      'Day 2–3: do not touch the ad set. Every edit restarts the learning phase and re-spends the learning budget.',
+      'Day 4: compare ads, switch off any ad below half the CTR of the best one.',
+      'Day 5–6: check junk rate. Above 60% junk, move to a higher-intent form.',
+      'Day 7: only now judge cost per lead, and only against cost per site visit.']},
+     {heading:'Switch it off when',type:'list',list:[
+      'Cost per lead is more than 2.5x the benchmark after 50 leads',
+      'Zero contactable leads after 20 leads — the format or the number is wrong',
+      'Frequency above 3.5 with rising cost per lead — the audience is exhausted',
+      'Nobody is available to call for the next 3 days']}]),[]);
+ },
+ forecast:function(){
+   var b=BENCH[bracket()], daily=Math.max(500,bud()), spend=daily*30;
+   var q=(S.brief||{}).pQuality!==false, fmt=q?'hiform':'form';
+   var cpl=b.cpl[fmt], leads=Math.round(spend/cpl), good=Math.round(leads*(1-b.junk));
+   var imp=Math.round(spend/b.cpm*1000), clicks=Math.round(imp*b.ctr/100);
+   var visits=Math.round(good*b.visit), deals=(visits*b.close);
+   var r=function(x,lo,hi){ return [Math.round(x*lo).toLocaleString('en-IN'),Math.round(x).toLocaleString('en-IN'),Math.round(x*hi).toLocaleString('en-IN')]; };
+   return OFFDOC('30-day forecast — calculator',
+    'Arithmetic on Delhi NCR benchmarks at ₹'+daily+'/day using '+FMT[fmt]+'. These are planning estimates, not platform predictions. No AI used.',
+    [{heading:'At ₹'+spend.toLocaleString('en-IN')+' over 30 days',type:'table',table:{columns:['Metric','Low','Likely','High'],rows:[
+      ['Impressions'].concat(r(imp,.7,1.3)),
+      ['Reach'].concat(r(imp*.42,.7,1.3)),
+      ['Clicks'].concat(r(clicks,.7,1.4)),
+      ['CTR %',(b.ctr*.7).toFixed(2),b.ctr.toFixed(2),(b.ctr*1.4).toFixed(2)],
+      ['CPM ₹',Math.round(b.cpm*.8),b.cpm,Math.round(b.cpm*1.3)],
+      ['CPC ₹',Math.round(b.cpm/10/b.ctr*.8),Math.round(b.cpm/10/b.ctr),Math.round(b.cpm/10/b.ctr*1.4)],
+      ['Leads'].concat(r(leads,.7,1.3)),
+      ['Cost per lead ₹',Math.round(cpl*.75),cpl,Math.round(cpl*1.4)],
+      ['Contactable leads'].concat(r(good,.7,1.25)),
+      ['Junk %',Math.round(b.junk*70),Math.round(b.junk*100),Math.round(b.junk*125)],
+      ['Site visits'].concat(r(visits,.6,1.4)),
+      ['Deals closed',(deals*.4).toFixed(1),deals.toFixed(1),(deals*1.8).toFixed(1)]
+    ]}},
+    {heading:'What it costs you',type:'kv',kv:[
+      {k:'Cost per contactable lead',v:'₹'+Math.round(spend/Math.max(1,good)).toLocaleString('en-IN')},
+      {k:'Cost per site visit',v:'₹'+Math.round(spend/Math.max(1,visits)).toLocaleString('en-IN')},
+      {k:'Cost per closed deal',v:'₹'+Math.round(spend/Math.max(.2,deals)).toLocaleString('en-IN')},
+      {k:'Leads needed for one deal',v:Math.ceil(1/Math.max(.001,(1-b.junk)*b.visit*b.close))},
+      {k:'Confidence',v:daily<800?'Low — below ₹800/day the algorithm cannot learn':'Medium — benchmark based, your creative moves it ±40%'}]},
+    {heading:'Reality check',type:'text',text:daily<800
+      ? 'At ₹'+daily+' a day this campaign will not exit the learning phase. Either raise it to ₹800–1,000 a day for a shorter period, or run 10 days at a proper budget instead of 30 days at this one.'
+      : 'This budget can realistically produce '+visits+' site visits a month. If your close rate on visits is better than '+Math.round(b.close*100)+'%, everything above improves proportionally.'},
+    {heading:'Biggest levers, in order',type:'steps',steps:[
+      'Call speed. Five minutes versus one hour roughly doubles contact rate — costs nothing.',
+      'Form type. Higher intent cuts junk by a third.',
+      'Creative refresh every 2–3 weeks — the single biggest CPM lever.',
+      'Tighter radius. 5 km beats city-wide almost every time in NCR.',
+      'Retargeting ad set. Usually the cheapest cost per site visit in the account.']}],[]);
+ }
+};
+
+/* copy templates for offline mode */
+var CT={
+ English:{h:['{n} — {sz} in {loc}','{loc}: {sz} at {p}','Own a home in {loc}','{sz} ready to move | {loc}','{loc} address, {p}','Site visits open this week','{n} — book a visit','Last few units | {n}','{sz} with parking, {loc}','Investment ready: {n}','{loc} — priced at {p}','Move in this month','{n}: {u1}','Verified {sz} in {loc}','Your {loc} address awaits','Premium {sz}, honest price','{loc} living, {p}','See it this weekend','{n} — limited units','{sz}, {loc}, ready'],
+  pt:['{n} in {loc}. {sz}, priced at {p}. {u1}. Book a site visit this week — call {ph}.','Looking in {loc}? {n} offers {sz} at {p}. {u1}. WhatsApp {ph} for the full details.','{sz} in {loc} at {p}. {u1}. Genuine listing, verified papers, direct site visit. Message us.','A {loc} address at {p}. {n} — {sz}, {u1}. Limited units. Call {ph}.','Buying in {loc}? See {n} before you decide. {sz}, {p}, {u1}.','{n}: {sz} | {p} | {loc}. Ready for viewing. Send a message for the floor plan.','{u1}. That is why {n} in {loc} sells fast. {sz} at {p}. Book your visit.','Serious buyers only: {n}, {loc}. {sz}, {p}. Papers verified, direct owner deal.','{loc} is holding value better than most of NCR. {n} — {sz} at {p}. Talk to us before you commit elsewhere.','Site visits open this weekend for {n}, {loc}. {sz}, {p}. Reply to book a slot.'],
+  c:['Book a site visit','Call now for details','WhatsApp for the floor plan','Get the price list','Schedule your visit','Talk to our consultant','Send me the details','Check availability','Reserve your slot','See it this weekend','Request a callback','Get the brochure'],
+  d:['{sz} in {loc}, priced at {p}. Site visits open.','Verified listing. {u1}. Call for a viewing.','{n}, {loc}. Direct deal, clear papers.','{sz} available now. Book a visit today.','{loc} property at {p}. Limited units.','Genuine {sz} with {u1}.','Ready to move {sz} in {loc}.','Investment-ready property in {loc}.','Site visit slots open this week.','Call for the full price breakdown.','Clear title, verified documents.','{p} for a {loc} address.'],
+  k:['Still paying rent in {loc}?','{loc} prices are not coming down.','Before you book anywhere in {loc}, see this.','This {sz} will not stay listed long.','Everyone asks for {loc}. Very few get it.','A {loc} address for {p}.','Most buyers miss this one.','Papers verified. Price honest. Visit open.']},
+ Hindi:{h:['{loc} में {sz} — {p}','{n}: अभी विजिट करें','{loc} में अपना घर','{sz}, तुरंत कब्ज़ा','{loc} का पता, {p} में','साइट विजिट इस हफ़्ते','{n} — सीमित यूनिट','{loc} में वेरिफाइड प्रॉपर्टी','{sz} पार्किंग के साथ','निवेश के लिए तैयार','{p} में {loc}','इसी महीने शिफ्ट करें','{n}: {u1}','{loc} में {sz} उपलब्ध','अपना घर, अपनी शर्तों पर','सही कीमत, सही कागज़','{loc} लाइफस्टाइल','इस वीकेंड देखें','{n} — जल्दी करें','{sz}, {loc}, तैयार'],
+  pt:['{loc} में {n}। {sz}, कीमत {p}। {u1}। इस हफ़्ते साइट विजिट बुक करें — कॉल {ph}।','{loc} में घर ढूंढ रहे हैं? {n} में {sz} सिर्फ़ {p} में। {u1}। पूरी जानकारी के लिए WhatsApp करें {ph}।','{sz}, {loc}, {p}। कागज़ पूरे, सीधा सौदा। मैसेज करें और विजिट फिक्स करें।','{loc} का पता {p} में। {n} — {sz}, {u1}। सीमित यूनिट बची हैं।','कहीं और बुक करने से पहले {n} ज़रूर देखें। {sz}, {p}, {loc}।','{n}: {sz} | {p} | {loc}। फ्लोर प्लान के लिए मैसेज करें।','{u1} — इसीलिए {loc} में यह प्रॉपर्टी तेज़ी से बिकती है। विजिट बुक करें।','सीरियस खरीदार ही संपर्क करें: {n}, {loc}। {sz}, {p}। वेरिफाइड कागज़।','{loc} में कीमतें रुक नहीं रहीं। {n} — {sz}, {p}। फैसले से पहले बात करें।','इस वीकेंड {n} की साइट विजिट खुली है। स्लॉट बुक करने के लिए रिप्लाई करें।'],
+  c:['साइट विजिट बुक करें','अभी कॉल करें','WhatsApp पर जानकारी लें','प्राइस लिस्ट मंगाएं','विजिट फिक्स करें','कंसल्टेंट से बात करें','डिटेल भेजें','उपलब्धता जानें','स्लॉट बुक करें','इस वीकेंड देखें','कॉलबैक मंगाएं','ब्रोशर लें'],
+  d:['{loc} में {sz}, {p}। विजिट खुली है।','वेरिफाइड लिस्टिंग। {u1}।','{n}, {loc}। सीधा सौदा, पूरे कागज़।','{sz} उपलब्ध। आज ही विजिट करें।','{loc} प्रॉपर्टी {p} में।','{u1} के साथ {sz}।','{loc} में रेडी टू मूव {sz}।','निवेश के लिए बेहतरीन।','इस हफ़्ते विजिट स्लॉट खुले।','पूरी कीमत जानने के लिए कॉल करें।','क्लियर टाइटल, वेरिफाइड डॉक्युमेंट।','{p} में {loc} का पता।'],
+  k:['{loc} में अब भी किराया दे रहे हैं?','{loc} के रेट नीचे नहीं आ रहे।','कहीं और बुक करने से पहले यह देखें।','यह {sz} ज़्यादा दिन नहीं रुकेगी।','{loc} सबको चाहिए, मिलता किसी-किसी को है।','{p} में {loc} का पता।','ज़्यादातर खरीदार इसे मिस कर देते हैं।','कागज़ पूरे, कीमत सही।']},
+ Hinglish:{h:['{loc} mein {sz} — {p}','{n}: visit karo abhi','{loc} mein apna ghar','{sz}, ready to move','{loc} ka address, {p}','Site visit is week','{n} — limited units','{loc} mein verified property','{sz} parking ke saath','Investment ready hai','{p} mein {loc}','Is mahine shift karo','{n}: {u1}','{loc} mein {sz} available','Apna ghar, apni terms','Sahi price, poore papers','{loc} wali life','Is weekend dekh lo','{n} — jaldi karo','{sz}, {loc}, ready'],
+  pt:['{loc} mein {n}. {sz}, price {p}. {u1}. Is week site visit book karo — call {ph}.','{loc} mein ghar dhoondh rahe ho? {n} mein {sz} sirf {p} mein. {u1}. Details ke liye WhatsApp {ph}.','{sz}, {loc}, {p}. Papers clear, direct deal. Message karo aur visit fix karo.','{loc} ka address {p} mein. {n} — {sz}, {u1}. Limited units bachi hain.','Kahin aur book karne se pehle {n} dekh lo. {sz}, {p}, {loc}.','{n}: {sz} | {p} | {loc}. Floor plan ke liye message karo.','{u1} — isiliye {loc} mein ye property fast jaati hai. Visit book karo.','Serious buyers only: {n}, {loc}. {sz}, {p}. Verified papers, direct deal.','{loc} ke rates ruk nahi rahe. {n} — {sz}, {p}. Decide karne se pehle baat karo.','Is weekend {n} ki site visit open hai. Slot ke liye reply karo.'],
+  c:['Site visit book karo','Abhi call karo','WhatsApp pe details lo','Price list mangao','Visit fix karo','Consultant se baat karo','Details bhejo','Availability check karo','Slot book karo','Is weekend dekho','Callback mangao','Brochure lo'],
+  d:['{loc} mein {sz}, {p}. Visit open hai.','Verified listing. {u1}.','{n}, {loc}. Direct deal, clear papers.','{sz} available. Aaj hi visit karo.','{loc} property {p} mein.','{u1} ke saath {sz}.','{loc} mein ready to move {sz}.','Investment ke liye best.','Is week visit slots open.','Full price ke liye call karo.','Clear title, verified documents.','{p} mein {loc} ka address.'],
+  k:['{loc} mein abhi bhi rent de rahe ho?','{loc} ke rate neeche nahi aa rahe.','Kahin aur book karne se pehle ye dekho.','Ye {sz} zyada din nahi rukegi.','{loc} sabko chahiye, milta kisi kisi ko hai.','{p} mein {loc} ka address.','Zyadatar buyers isse miss kar dete hain.','Papers poore, price sahi.']}
+};
+function fill(t){
+  var u=(bf('pUsp')||'').split(/[,.;\n]/)[0].trim()||'ready to move';
+  return t.replace(/{n}/g,bf('pName','this property')).replace(/{loc}/g,bf('pLoc','Delhi NCR'))
+   .replace(/{p}/g,bf('pPrice','on request')).replace(/{sz}/g,bf('pSize','property'))
+   .replace(/{u1}/g,u).replace(/{ph}/g,S.biz.bizPhone||'us');
+}
+OFF.copy=function(){
+  var t=CT[S.lang]||CT.English;
+  var mk=function(arr,note){ return arr.map(function(x){ return {text:fill(x),note:note}; }); };
+  return OFFDOC('Ad copy — template engine ('+S.lang+')',
+   'Built from your brief using proven templates. No AI used — turn on AI mode for original, angle-varied copy.',
+   [{heading:'Headlines',type:'copy',copy:mk(t.h,'Headline, under 40 characters')},
+    {heading:'Primary texts',type:'copy',copy:mk(t.pt,'Primary text')},
+    {heading:'Call to action lines',type:'copy',copy:mk(t.c,'Closing line')},
+    {heading:'Descriptions',type:'copy',copy:mk(t.d,'Description')},
+    {heading:'Hooks',type:'copy',copy:mk(t.k,'First line — stops the scroll')}],
+   ['Check every line against your standing rules before publishing']);
+};
+OFF.google=function(){
+  var loc=bf('pLoc','Delhi'), ty=bf('pType','property').toLowerCase(), deal=/rent/i.test(bf('pDeal'))?'rent':'sale';
+  var seeds=['{ty} in {loc}','{ty} for '+deal+' in {loc}','buy {ty} {loc}','{loc} {ty} price','best {ty} in {loc}',
+   '3bhk in {loc}','ready to move flats {loc}','property dealers in {loc}','new projects in {loc}','{loc} real estate',
+   'flats for '+deal+' near {loc}','{ty} {loc} without brokerage','resale flats {loc}','luxury {ty} {loc}','{loc} property rates'];
+  var rows=seeds.map(function(s){
+    var k=s.replace(/{ty}/g,ty).replace(/{loc}/g,loc);
+    return [k, /price|rates/.test(k)?'Phrase':'Phrase', /buy|for sale|ready/.test(k)?'High':'Medium', '₹'+(28+Math.round(Math.random()*40))];
+  });
+  return OFFDOC('Google Ads — starter build','Keyword and structure generator from your brief. No AI used.',
+   [{heading:'Campaign settings',type:'kv',kv:[
+     {k:'Type',v:'Search'},{k:'Goal',v:'Leads'},{k:'Networks',v:'Google Search only — switch off Search partners and Display'},
+     {k:'Locations',v:loc+' + 10 km radius'},{k:'Location option',v:'Presence: people in or regularly in your locations'},
+     {k:'Bidding',v:'Maximise clicks with a max CPC of ₹60 for the first 2 weeks'},
+     {k:'Daily budget',v:'₹'+Math.max(500,Math.round(bud()*0.6))},{k:'Ad schedule',v:'9am–9pm, someone must answer the phone'}]},
+    {heading:'Keywords',type:'table',table:{columns:['Keyword','Match type','Intent','Suggested CPC'],rows:rows}},
+    {heading:'Negative keywords',type:'list',list:['free','job','jobs','vacancy','salary','sarkari','photos','images','map','wikipedia','pdf','olx','quikr','sample','model','wallpaper','games','video','rent'+(deal==='rent'?'ed':''),'pg','hostel','loan calculator','stamp duty calculator','circle rate','dda draw','result','list pdf','contact number of','complaint','review','fraud','scam']},
+    {heading:'Responsive search ad',type:'copy',copy:[].concat(
+      (CT.English.h.slice(0,15)).map(function(x){return {text:fill(x).slice(0,30),note:'Headline, max 30 characters'};}),
+      (CT.English.d.slice(0,4)).map(function(x){return {text:fill(x).slice(0,90),note:'Description, max 90 characters'};}))},
+    {heading:'Assets to add',type:'list',list:['Sitelinks: Price list, Site visit booking, Floor plans, About us','Callouts: Verified papers, Direct deal, Site visit same day, RERA registered','Call asset with your number and 9am–9pm scheduling','Location asset linked to your Google Business Profile','Lead form asset with the same qualifying questions as Meta','Image assets: 3 exteriors, 2 interiors']},
+    {heading:'Before launch',type:'steps',steps:['Tools → Conversions → create a Form submit and a Phone call conversion.','Link Google Analytics and Google Business Profile.','Add the negative list at account level, not just campaign level.','Set a shared budget cap so a runaway keyword cannot drain the month.']}],[]);
+};
+OFF.gmb=function(){
+  var n=bf('pName','our latest property'), loc=bf('pLoc','Delhi NCR'), p=bf('pPrice',''), biz=S.biz.bizName||'Nisha Homes';
+  var post=function(t){ return {text:fill(t),note:'GMB post'}; };
+  return OFFDOC('Google Business Profile — content pack','Template posts filled from your brief. No AI used.',
+   [{heading:'Business description',type:'copy',copy:[
+     {text:biz+' is a property consultancy working across '+(S.biz.bizCities||'Delhi NCR')+'. We handle residential and commercial sale, rental and investment property — from DDA flats and builder floors to villas, farmhouses and office space. Every listing we share is verified, with clear documentation and a direct site visit. Talk to us before you commit anywhere else.',note:'Main description'}]},
+   {heading:'Offer posts',type:'copy',copy:[
+     post('Site visits open this week at {n}, {loc}. {sz} at {p}. Book a slot — call {ph}.'),
+     post('{n} — {u1}. {sz} available in {loc}. Limited units. Message us for the price list.'),
+     post('New listing in {loc}: {sz}, {p}. Verified papers, direct deal. Call {ph}.'),
+     post('Weekend viewing at {n}. {loc}, {sz}. Slots fill fast — reply to book.'),
+     post('Investment ready: {n} in {loc}. Ask us for the rental yield working.'),
+     post('Price update for {loc}: {n} now at {p}. Call {ph} for the full breakdown.')]},
+   {heading:'Event posts',type:'copy',copy:[
+     post('Open house this Saturday and Sunday, {loc}. {n} — {sz}. Walk in between 11am and 5pm.'),
+     post('Site visit drive at {n}, {loc}. Transport arranged from South Delhi. Register by calling {ph}.'),
+     post('Buyer meet: everything about {loc} property rates, documentation and loan options. Free to attend.'),
+     post('Weekend viewing window for {n}. Book your slot on WhatsApp.')]},
+   {heading:'Business updates',type:'copy',copy:[
+     post('Papers matter more than price. Every {loc} listing we share is document-verified before it reaches you.'),
+     post('What ₹'+(p||'your budget')+' buys in {loc} today — ask us for the honest comparison.'),
+     post('Thinking of selling in {loc}? We will tell you what your property is genuinely worth, not what you want to hear.'),
+     post('Rental yields in {loc} explained, in plain numbers. Ask us.'),
+     post('Buying your first home? Here is the document checklist we give every client.'),
+     post('We only share listings we have seen ourselves. That is the whole model.')]},
+   {heading:'Services to list',type:'list',list:['Residential property sale','Residential rental','Commercial sale and lease','Investment advisory','DDA flat resale','Builder floor sale','Villa and farmhouse','PG and co-living','Property documentation support','Home loan coordination']},
+   {heading:'FAQs',type:'cards',cards:[
+     {title:'Do you charge brokerage?',body:'Yes, standard consultancy brokerage, disclosed before the site visit. Nothing hidden.'},
+     {title:'Are the listings verified?',body:'We visit the property and check documentation before we list it.'},
+     {title:'Can you arrange a home loan?',body:'We coordinate with lending partners. The sanction is between you and the bank.'},
+     {title:'Do you deal in DDA flats?',body:'Yes, DDA resale is a core part of our South Delhi work.'},
+     {title:'Can NRIs buy through you?',body:'Yes. We handle video site visits and documentation coordination.'},
+     {title:'How soon can I visit?',body:'Usually the same or next day, subject to owner availability.'},
+     {title:'Is the price negotiable?',body:'On most resale inventory, yes. We tell you where the real room is.'},
+     {title:'What documents should I check?',body:'Title chain, mutation, freehold conversion, society NOC, encumbrance. We walk you through each.'},
+     {title:'Do you handle rentals?',body:'Yes, residential and commercial, including PG and co-living.'},
+     {title:'What areas do you cover?',body:(S.biz.bizCities||'South Delhi, Gurgaon, Noida, Ghaziabad and Faridabad')+'.'}]},
+   {heading:'Review replies',type:'copy',copy:[
+     {text:'Thank you for the kind words. It was a pleasure working with you — do reach out whenever you need us again.',note:'5 star'},
+     {text:'Thank you for the review and for the honest feedback. We will use it to do better on the next visit.',note:'4 star'},
+     {text:'Thank you for taking the time. Please tell us what fell short — we would like to fix it.',note:'3 star'},
+     {text:'We are sorry this was your experience. Please call us directly so we can understand what happened and put it right.',note:'1 star'},
+     {text:'Thank you for the rating. If there is anything we could have done better, we would like to hear it.',note:'Rating with no text'},
+     {text:'We apologise for the delay on your site visit. That is not our standard. Please contact us and we will arrange a fresh slot personally.',note:'Complaint'}]},
+   {heading:'Weekly posting calendar',type:'table',table:{columns:['Day','Post type','Topic','Photo'],rows:[
+     ['Monday','Update','Market or rate observation for '+loc,'Exterior shot'],
+     ['Wednesday','Offer','Featured property with price','Best interior'],
+     ['Friday','Event','Weekend site visit slots','Balcony or view'],
+     ['Sunday','Update','Buyer education — documents, loans, checks','Team or office']]}}],
+   ['Post twice a week minimum. Dormant profiles rank lower.']);
+};
+
+/* ==================== runner with modes ==================== */
+function lockedMsg(id){
+  return '<div class="note warn"><b>Needs AI.</b> This one reads images, judges quality or writes original text, so it cannot run on built-in rules. '+
+   'Switch to Hybrid or AI mode in the <b>AI settings</b> tab and connect any provider — Gemini has a free tier if you want to try it at no cost.</div>';
+}
+function run(id, btn){
+  var m=M[id], box=el('out-'+id); if(!box) return;
+  var md=mode();
+  if(OFF[id] && (md==='offline'||md==='hybrid')){
+    var doc=OFF[id]();
+    S.outputs[id]={json:doc,at:Date.now(),label:(m&&m.label)||id};
+    S.history.unshift({id:id,label:((m&&m.label)||id)+' (offline)',title:doc.title,at:Date.now()});
+    S.history=S.history.slice(0,60); save();
+    render(box,doc,id); renderHistory(); afterRender(box,id,doc);
+    return;
+  }
+  if(md==='offline'){ box.innerHTML=lockedMsg(id); return; }
+  aiRun(id,btn,null);
+}
+function afterRender(box,id,doc){
+  var row=box.querySelector('.btnrow'); if(!row) return;
+  var tag=document.createElement('span');
+  tag.className='tag'; tag.style.alignSelf='center';
+  tag.textContent='Built offline — no API cost';
+  row.appendChild(tag);
+  if(M[id] && aiReady() && mode()!=='offline'){
+    var b=document.createElement('button');
+    b.className='btn sm'; b.textContent='Improve with AI';
+    b.onclick=function(){ aiRun(id,b,doc); };
+    row.insertBefore(b,row.firstChild);
+  }
+}
+function aiRun(id,btn,draft){
+  var m=M[id]; if(!m) return;
+  var box=el('out-'+id);
+  var prompt=m.prompt();
+  if(draft) prompt+='\n\nA rule-based draft already exists. Your job is to IMPROVE it — sharpen it for this specific property, correct anything wrong, and add what is missing. Do not simply repeat it.\n\nDRAFT:\n'+toPlain(draft);
+  var sys=sysPrompt(), tok=m.tokens||S.ai.max;
+  var ck=hash(S.ai.provider+activeModel()+prompt);
+  if(S.ai.cache[ck]){
+    var cached=JSON.parse(S.ai.cache[ck]);
+    S.outputs[id]={json:cached,at:Date.now(),label:m.label}; save();
+    render(box,cached,id);
+    var r=box.querySelector('.btnrow');
+    if(r){ var t=document.createElement('span'); t.className='tag'; t.style.alignSelf='center'; t.textContent='Reused a saved answer — no cost'; r.appendChild(t);
+      var f=document.createElement('button'); f.className='btn ghost sm'; f.textContent='Run again fresh';
+      f.onclick=function(){ delete S.ai.cache[ck]; save(); aiRun(id,btn,draft); }; r.appendChild(f); }
+    return;
+  }
+  var rt=rateFor(activeModel());
+  var est=inr(estTokens(prompt+sys)/1e6*rt[0] + tok*0.6/1e6*rt[1]);
+  if(est>(Number(S.ai.warn)||5) && !confirm('This request is estimated at about '+money(est)+' on '+P().name+'.\n\nRun it?')) return;
+  var old=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="spinner"></i> Working…'; }
+  box.innerHTML='<div class="working"><i class="spinner"></i>'+P().name+' is working. Estimated cost '+money(est)+'.</div>';
+  callWithBackup(prompt,sys,tok, m.attach ? (m.attachSrc?m.attachSrc():creative) : null)
+   .then(function(txt){
+      var j=parseJSON(txt);
+      S.outputs[id]={json:j,at:Date.now(),label:m.label};
+      S.history.unshift({id:id,label:m.label,title:j.title||m.label,at:Date.now()});
+      S.history=S.history.slice(0,60);
+      try{ S.ai.cache[ck]=JSON.stringify(j); }catch(e){}
+      var ks=Object.keys(S.ai.cache); if(ks.length>40) delete S.ai.cache[ks[0]];
+      save(); render(box,j,id); renderHistory();
+   })
+   .catch(function(e){
+      box.innerHTML='<div class="note bad">'+esc(e.message)+'</div>'+
+        (OFF[id]?'<div class="btnrow"><button class="btn ghost sm" id="fb-'+id+'">Use the offline version instead</button></div>':'');
+      var fb=el('fb-'+id); if(fb) fb.onclick=function(){ var d=OFF[id](); render(box,d,id); afterRender(box,id,d); };
+   })
+   .finally(function(){ if(btn){ btn.disabled=false; btn.innerHTML=old; } });
+}
+
+/* ==================== calculators ==================== */
+function bindTools(){
+  var f=function(ids,fn){ ids.forEach(function(i){ var n=el(i); if(n){ n.oninput=fn; n.onchange=fn; } }); fn(); };
+  f(['cbDeals','cbBracket','cbFormat','cbClose'],function(){
+    var b=BENCH[el('cbBracket').value], fmt=el('cbFormat').value;
+    var deals=Math.max(1,+el('cbDeals').value||1), close=(+el('cbClose').value||12)/100;
+    var visits=Math.ceil(deals/Math.max(.01,close));
+    var good=Math.ceil(visits/b.visit), leads=Math.ceil(good/(1-b.junk));
+    var spend=leads*b.cpl[fmt];
+    var days=30, daily=Math.round(spend/days);
+    el('cbOut').innerHTML=renderSection({heading:'To close '+deals+' deal'+(deals>1?'s':''),type:'kv',kv:[
+      {k:'Site visits needed',v:visits},{k:'Contactable leads needed',v:good},
+      {k:'Total leads needed',v:leads},{k:'Cost per lead ('+FMT[fmt]+')',v:'₹'+b.cpl[fmt]},
+      {k:'Total ad spend',v:'₹'+spend.toLocaleString('en-IN')},
+      {k:'Daily budget over 30 days',v:'₹'+daily.toLocaleString('en-IN')+(daily<800?' — below the ₹800 learning floor, run fewer days at a higher budget':'')},
+      {k:'Realistic timeline',v:Math.max(30,Math.ceil(leads/Math.max(1,Math.round(800/b.cpl[fmt]))))+' days at ₹800/day'}
+    ]})+'<p class="hint">Benchmarks for '+b.lab+' in Delhi NCR. Your own close rate should replace the default as soon as you have one.</p>';
+  });
+  f(['cpSpend','cpLeads','cpGood','cpVisits'],function(){
+    var s=+el('cpSpend').value||0,l=+el('cpLeads').value||0,g=+el('cpGood').value||0,v=+el('cpVisits').value||0;
+    var b=BENCH[bracket()];
+    var cpl=l?s/l:0, cpg=g?s/g:0, cpv=v?s/v:0, junk=l?(1-g/l)*100:0;
+    var verdict = !l?'Enter your numbers.' : cpl<b.cpl.hiform*0.8?'Below benchmark — this is working. Scale the budget 20% at a time.'
+      : cpl<b.cpl.hiform*1.5?'Around benchmark. The lever is junk rate and call speed, not the bid.'
+      : 'Well above benchmark. Change the creative first, then the form type.';
+    el('cpOut').innerHTML=renderSection({heading:'Your numbers',type:'kv',kv:[
+      {k:'Cost per lead',v:'₹'+Math.round(cpl).toLocaleString('en-IN')},
+      {k:'Cost per contactable lead',v:'₹'+Math.round(cpg).toLocaleString('en-IN')},
+      {k:'Cost per site visit',v:'₹'+Math.round(cpv).toLocaleString('en-IN')},
+      {k:'Junk rate',v:Math.round(junk)+'% (benchmark '+Math.round(b.junk*100)+'%)'},
+      {k:'Benchmark CPL for your bracket',v:'₹'+b.cpl.hiform+' (higher-intent form)'},
+      {k:'Verdict',v:verdict}]});
+  });
+  f(['roSpend','roDeals','roValue','roComm'],function(){
+    var s=+el('roSpend').value||0,d=+el('roDeals').value||0,v=+el('roValue').value||0,c=(+el('roComm').value||0)/100;
+    var rev=d*v*c, profit=rev-s, roi=s?(profit/s)*100:0;
+    el('roOut').innerHTML=renderSection({heading:'Return',type:'kv',kv:[
+      {k:'Brokerage earned',v:'₹'+Math.round(rev).toLocaleString('en-IN')},
+      {k:'Ad spend',v:'₹'+Math.round(s).toLocaleString('en-IN')},
+      {k:'Profit after ads',v:'₹'+Math.round(profit).toLocaleString('en-IN')},
+      {k:'ROI',v:Math.round(roi)+'%'},
+      {k:'Ad cost as % of brokerage',v:rev?Math.round(s/rev*100)+'%':'—'},
+      {k:'Break-even spend',v:'₹'+Math.round(rev).toLocaleString('en-IN')+' — anything below this and the campaign paid for itself'}]})+
+      '<p class="hint">Healthy for property consultancy is ad spend under 25% of brokerage earned.</p>';
+  });
+  renderDash();
+}
+function renderDash(){
+  var n=el('dashOut'); if(!n) return;
+  if(!S.results.length){ n.innerHTML='<p class="hint">Log campaign results in the History tab and this fills in.</p>'; return; }
+  var t=S.results.reduce(function(a,r){
+    a.spend+=r.spend||0; a.leads+=r.leads||0; a.good+=r.good||0; a.visits+=r.visits||0; a.deals+=r.deals||0; return a;
+  },{spend:0,leads:0,good:0,visits:0,deals:0});
+  var max=Math.max.apply(null,S.results.map(function(r){ return r.leads?r.spend/r.leads:0; }))||1;
+  var bars=S.results.slice(0,8).map(function(r){
+    var cpl=r.leads?Math.round(r.spend/r.leads):0;
+    return '<div class="score"><div class="lab"><span>'+esc(r.name)+'</span><b>₹'+cpl.toLocaleString('en-IN')+'</b></div>'+
+           '<div class="bar"><i style="width:'+Math.round(cpl/max*100)+'%"></i></div>'+
+           '<small>'+(r.leads||0)+' leads · '+(r.visits||0)+' visits · '+(r.deals||0)+' deals</small></div>';
+  }).join('');
+  n.innerHTML=renderSection({heading:'All campaigns',type:'kv',kv:[
+    {k:'Total spend',v:'₹'+t.spend.toLocaleString('en-IN')},
+    {k:'Total leads',v:t.leads},
+    {k:'Average cost per lead',v:'₹'+(t.leads?Math.round(t.spend/t.leads):0).toLocaleString('en-IN')},
+    {k:'Contactable rate',v:t.leads?Math.round(t.good/t.leads*100)+'%':'—'},
+    {k:'Cost per site visit',v:'₹'+(t.visits?Math.round(t.spend/t.visits):0).toLocaleString('en-IN')},
+    {k:'Cost per deal',v:'₹'+(t.deals?Math.round(t.spend/t.deals):0).toLocaleString('en-IN')},
+    {k:'Deals closed',v:t.deals}]})+
+    '<div class="res-sec"><h4>Cost per lead by campaign</h4>'+bars+'</div>';
+}
+
+/* ==================== playbooks (offline) ==================== */
+var PLAYBOOKS=[
+ ['Marketing playbook — new listing, first 30 days',[
+  'Day 0: photos and a 30-second walkthrough video. Bad photos cost more than any bid setting.',
+  'Day 1: GMB post + Instagram post + WhatsApp broadcast to your own database. Free reach first, always.',
+  'Day 2: launch one Meta lead campaign, one ad set, three creatives, ₹800–1,500 a day.',
+  'Day 4: switch off the weakest creative. Do not touch the ad set.',
+  'Day 7: add the retargeting ad set at 20% of budget.',
+  'Day 10: launch Google Search on 10–15 high-intent keywords only.',
+  'Day 14: refresh the top creative with a new angle — price, then location, then lifestyle.',
+  'Day 21: if cost per site visit is under target, raise budget 20%. Never double it.',
+  'Day 30: review against the History tab, and decide keep, change or stop.']],
+ ['Playbook — property that is not moving',[
+  'Check the price against three genuinely comparable listings before blaming the ads.',
+  'Change the lead photo. It is responsible for most of the CTR.',
+  'Put the price in the ad. Leads drop, quality rises, calls actually convert.',
+  'Narrow the radius to 5 km. Wide targeting on stale inventory burns money.',
+  'Switch from instant form to WhatsApp — stale listings need conversation, not a form.',
+  'Run a site visit drive for one weekend and advertise the slots, not the property.',
+  'If it still does not move in 60 days, the issue is price or paperwork, not marketing.']],
+ ['Playbook — rentals and PG',[
+  'Rentals are a speed game. Whoever replies first usually wins the tenant.',
+  'WhatsApp conversion location, always. Forms waste the urgency.',
+  'Tight radius: 3 km for PG, 5 km for family rentals.',
+  'Advertise between 10am and 9pm only. Nobody views a flat at 3am.',
+  'Refresh the ad every 10 days — the audience is small and burns out fast.',
+  'Ask three questions in the first reply: when do you need it, budget, how many people.']],
+ ['Playbook — luxury and NRI',[
+  'Never chase cost per lead here. One deal pays for a year of ads.',
+  'Landing page or higher-intent form only. Instant forms bring browsers.',
+  'Layer in premium car, luxury travel and wealth interests as income proxies.',
+  'Run a separate NRI ad set for UAE, Singapore, USA, Canada, UK.',
+  'Lead with rental yield and payment plan for NRI, lifestyle for local buyers.',
+  'Offer a video site visit as the call to action — it converts NRIs better than a call.']]
+];
+var SCRIPTS=[
+ ['First call — within 5 minutes',
+  'Namaste, this is {caller} from {biz}. You just enquired about {property} in {loc} — am I catching you at an alright time?\n\n'+
+  '(If yes) Just three quick things so I do not waste your time:\n'+
+  '1. Are you looking for yourself or as an investment?\n'+
+  '2. What budget range are you working with?\n'+
+  '3. When are you hoping to move or invest?\n\n'+
+  'Perfect. Based on that, {property} is a {config} at {price}. The papers are verified and I can arrange a visit '+
+  'this Saturday or Sunday — which suits you better?\n\n'+
+  '(Always close on a day, never on "let me know". Then send the brochure on WhatsApp within 2 minutes.)'],
+ ['They did not pick up',
+  'WhatsApp immediately: "Hi, this is {caller} from {biz}. You enquired about {property} in {loc}. '+
+  'Sharing the details and photos here. Let me know a good time to call — or reply here, whatever is easier."\n\n'+
+  'Attach: 4 photos, price, configuration, one line on documentation. Never send a wall of text.'],
+ ['"Just send me the details on WhatsApp"',
+  'Of course, sending now. One question while I have you — are you looking in {loc} specifically, or open to nearby as well? '+
+  'That way I only send what is actually relevant to you.\n\n'+
+  '(This one question turns a dead lead into a conversation about half the time.)'],
+ ['"It is too expensive"',
+  'I understand. Can I ask what number you had in mind? … The reason I ask is that at {price} you are paying for '+
+  '{usp}. If the budget is firm, I have two other options in {loc} at a lower point — should I send those instead?\n\n'+
+  '(Never defend the price. Move to inventory that fits, or find out the real budget.)'],
+ ['"I am just looking for now"',
+  'That is completely fine, most buyers take three to six months. Can I ask what would need to be true for you to say yes to something? '+
+  'That way, when it comes up, I call you first instead of sending you everything.\n\n'+
+  '(Then log the answer and follow up monthly, not daily.)'],
+ ['Site visit confirmation, day before',
+  'Hi {name}, confirming our visit tomorrow at {time} for {property}, {loc}. I will be there ten minutes early. '+
+  'Landmark: {landmark}. Please carry a photo ID for society entry. See you tomorrow.'],
+ ['After the site visit',
+  'Thank you for your time today at {property}. As discussed, sharing the floor plan and the payment breakdown. '+
+  'Two other buyers are seeing it this week — if you want me to hold a discussion with the owner, tell me by tomorrow evening and I will.\n\n'+
+  '(Urgency only if true. A fabricated other buyer costs you the client permanently.)']
+];
+var CALLER=[
+ ['Before you touch the phone',['Know the price, configuration, floor, facing, parking and one honest weakness of the property.','Have the brochure open and ready to send on WhatsApp.','Know what is nearby: metro distance, schools, hospital, market.','Know what you cannot answer, and say so instead of guessing.']],
+ ['The first 20 seconds',['Say your name, the company name, and the exact property they enquired about.','Ask permission to continue. It costs three seconds and doubles the conversation length.','Never open with "are you interested in property?" — they already told you they are.']],
+ ['Qualify without interrogating',['Purpose, budget, timeline. Three questions, in that order, conversationally.','If the budget is far below, do not hang up — offer the right inventory. That referral comes back.','Log every answer the same day. An unlogged call did not happen.']],
+ ['Never do this',['Never quote a price you have not confirmed.','Never promise a return, an appreciation figure or a guaranteed rental.','Never give the builder number — always the company number.','Never name the exact address before a visit is confirmed. Landmark level only.','Never argue about brokerage on the first call.']],
+ ['Handover to the consultant',['Pass on: name, budget, purpose, timeline, objection, and the exact words they used.','A lead handed over without the objection noted usually dies on the second call.']]
+];
+var QUALIFY=[
+ ['Hot — call within 5 minutes, visit this week',['Budget matches within 15%','Wants to move or invest within 3 months','Answered the phone and asked questions','Asked about documents, loan or possession']],
+ ['Warm — follow up weekly',['Budget matches but timeline is 3–6 months','Asked for details on WhatsApp and read them','Comparing two or three areas','Loan not yet started']],
+ ['Cold — monthly touch, no chasing',['Budget more than 30% below','Timeline beyond 6 months','Only asked the price and went quiet','Wants "just information"']],
+ ['Dead — mark and move on',['Wrong number or unreachable after 6 attempts','Looking to rent when you are selling, or the reverse','Another broker already closed them','Asked not to be contacted — remove immediately and exclude from ads']]
+];
+var FOLLOWUP=[
+ ['Minute 0','Call. If no answer, WhatsApp with photos.'],
+ ['Hour 2','Second call at a different time of day.'],
+ ['Day 1','WhatsApp: one clear question, not a reminder.'],
+ ['Day 2','Third call. If contacted, book the visit.'],
+ ['Day 4','Send one comparable option — shows you listened.'],
+ ['Day 7','Call. Ask what has changed since last week.'],
+ ['Day 10','Send something useful, not a pitch: a document checklist or a rate observation.'],
+ ['Day 14','Final call of the cycle. If dead, mark it and stop.'],
+ ['Monthly','Warm and cold leads only: one message with genuinely new inventory.']
+];
+function renderPlay(){
+  var h='<div class="eyebrow">Playbooks</div><h3>Run the property, not the ad account</h3>';
+  PLAYBOOKS.forEach(function(p){
+    h+='<details class="acc"><summary>'+esc(p[0])+'</summary><div class="inner"><ol>'+
+       p[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol></div></details>';
+  });
+  h+='<div class="divider"></div><div class="eyebrow">Sales scripts</div><h3>What to actually say</h3>';
+  SCRIPTS.forEach(function(s){
+    h+='<details class="acc"><summary>'+esc(s[0])+'</summary><div class="inner">'+
+       '<p style="white-space:pre-wrap">'+esc(s[1])+'</p>'+
+       '<div class="btnrow no-print"><button class="btn ghost sm" data-copy="'+esc(s[1])+'">Copy script</button></div></div></details>';
+  });
+  h+='<div class="divider"></div><div class="eyebrow">Caller training</div><h3>For the team</h3>';
+  CALLER.forEach(function(c){
+    h+='<details class="acc"><summary>'+esc(c[0])+'</summary><div class="inner"><ul class="plain">'+
+       c[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div></details>';
+  });
+  h+='<div class="divider"></div><div class="eyebrow">Lead qualification</div><h3>Which leads deserve your time</h3>';
+  QUALIFY.forEach(function(q){
+    h+='<div class="mini" style="margin-bottom:9px"><b>'+esc(q[0])+'</b><ul class="plain" style="margin-top:6px">'+
+       q[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>';
+  });
+  el('playbookBox').innerHTML=h;
+  Array.prototype.forEach.call(el('playbookBox').querySelectorAll('[data-copy]'),function(b){
+    b.onclick=function(){ copyText(b.dataset.copy); };
+  });
+  el('followBox').innerHTML=renderSection({heading:'Every lead, every time',type:'table',
+    table:{columns:['When','What to do'],rows:FOLLOWUP}})+
+    '<p class="hint">Six touches over fourteen days. Most consultants stop at two, which is where the deals are lost.</p>';
+  el('playPrint').onclick=function(){
+    Array.prototype.forEach.call(document.querySelectorAll('#v-play details'),function(d){ d.open=true; });
+    setTimeout(function(){ window.print(); },100);
+  };
+}
+
+/* ==================== learning centre ==================== */
+var BASICS=[
+ ['What is an API key, in plain language',
+  'An API key is a password that lets one app talk to another app on your behalf. When you paste an AI company\'s key into this tool, '+
+  'you are telling them: requests arriving with this password are mine, bill them to my account. It is not a login, and it is not a subscription. '+
+  'Anyone holding the key can spend your credit, so treat it like a card number.'],
+ ['Why does this app need one?',
+  'This app runs entirely in your browser. There is no server of ours in between. When you press a button that needs AI, your browser talks '+
+  'straight to the AI company using your key. That is why nothing you type is stored anywhere except your own phone or laptop — and why you '+
+  'pay the AI company directly instead of paying us a monthly fee.'],
+ ['A website subscription is NOT API access',
+  'This catches almost everybody. Claude Pro lets you use Claude on claude.ai. It does not give you API credit. The API is a separate '+
+  'developer product with a separate balance, billed by usage. Exactly the same applies to ChatGPT Plus versus the OpenAI API, Gemini Advanced '+
+  'versus the Gemini API, and X Premium versus the Grok API. If you already pay for the website subscription, you still need to add a small '+
+  'API balance separately — usually ₹500 lasts a long time here.'],
+ ['What is a token?',
+  'AI companies charge by the token, which is roughly three-quarters of a word. A long ad-copy generation might use 2,000 tokens in and '+
+  '6,000 out. At current rates that is a rupee or three. The Calculators, Playbooks, Trainer, Templates and every offline generator in '+
+  'this app cost nothing at all, because no AI is involved.'],
+ ['What is a prompt?',
+  'The instruction sent to the AI. This app writes the prompts for you — it packs in your brief, your business rules, the property details '+
+  'and a strict output format, which is why the answers come back structured instead of as an essay.'],
+ ['How to keep the cost tiny',
+  'Leave the app in Hybrid mode. It builds everything it can from built-in rules for free, and only calls AI when you press "Improve with AI". '+
+  'Answers are saved, so pressing the same button twice costs nothing the second time. Pick a cheap model — Gemini Flash or Claude Haiku — '+
+  'for routine work and save the expensive one for strategy.'],
+ ['Is any of this shared with anyone?',
+  'Your key, your brief and every generated answer live in this browser only. Nothing is uploaded to us. If you clear your browser data '+
+  'without taking a backup from the Export tab, it is gone. The AI company does see whatever you send them when you use AI mode.']
+];
+var TROUBLE=[
+ ['Key rejected / 401 / 403','The key is wrong, was deleted, or belongs to a different provider. Generate a fresh one and paste it again — watch for a space at the start or end.'],
+ ['Rate limited / 429','Either you are out of credit, or you sent too many requests too quickly. Check the balance on the provider\'s billing page first — this is nearly always an empty balance.'],
+ ['Model not found / 404','Model names change every few months. Open the provider\'s model list and paste the current name into the Model field in AI settings.'],
+ ['Nothing happens / network error','Either you are offline, or that provider refuses direct browser calls. Try Claude, Gemini or OpenRouter, which all allow it.'],
+ ['Local AI will not connect','Ollama and LM Studio must be running on the same computer, and must be told to accept requests from this page. See the local AI section above.'],
+ ['The answer came back as one block of text','The AI ignored the format instruction. Press the button again, or lower the creativity setting to 0.5 in AI settings.'],
+ ['Everything disappeared','Browser data was cleared. Restore the JSON backup from the Export tab. Take a backup monthly.']
+];
+var LOCALAI=[
+ ['Ollama',[
+  'What it is: free software that runs an AI model on your own computer. No key, no bill, nothing leaves your machine.',
+  'You need: a laptop or desktop, ideally 16 GB RAM. This will not work from a phone.',
+  'Install: download from ollama.com and run the installer.',
+  'Get a model: open a terminal and run "ollama pull llama3.1". Around 5 GB.',
+  'Allow this page to reach it: Ollama blocks other pages by default. Set the environment variable OLLAMA_ORIGINS to * and restart Ollama. On Windows this is done in System environment variables; on Mac, launchctl setenv OLLAMA_ORIGINS "*".',
+  'Connect: in AI settings pick Ollama, leave the server address as http://localhost:11434/api/chat, set the model to llama3.1, and press Test connection.',
+  'Good for: unlimited free copywriting drafts and private data.',
+  'Limits: noticeably weaker than Claude or Gemini on strategy, cannot read your brochure images, and slow on a laptop.']],
+ ['LM Studio',[
+  'What it is: the same idea as Ollama but with a normal window-and-buttons interface instead of a terminal.',
+  'Install: download from lmstudio.ai.',
+  'Get a model: search for a model inside the app and download it.',
+  'Start the server: go to the Developer / Local Server tab, load your model, tick Enable CORS, and press Start.',
+  'Connect: in AI settings pick LM Studio, keep http://localhost:1234/v1/chat/completions, and press Test connection.',
+  'Good for: trying local AI without touching a terminal.',
+  'Limits: same as Ollama — weaker output, no image reading, and the computer must stay awake.']]
+];
+function renderLearn(){
+  el('learnBasics').innerHTML='<div class="eyebrow">The basics</div><h3>Read this once</h3>'+
+   BASICS.map(function(b){
+     return '<details class="acc"><summary>'+esc(b[0])+'</summary><div class="inner"><p>'+esc(b[1])+'</p></div></details>';
+   }).join('');
+  el('learnWizards').innerHTML=Object.keys(PROVIDERS).map(function(k){
+    var p=PROVIDERS[k];
+    var steps = p.local
+     ? ['Install the software on a computer (see the local AI section below).','Download a model inside it.','Start its local server.','Pick '+p.name+' in AI settings.','Press Test connection.','Choose the model you downloaded.','Start using it — no key, no cost.']
+     : ['Go to '+p.keyUrl.split(' → ')[0]+' and create an account.','Add a small balance — ₹500 to ₹1,000 goes a long way.','Open '+p.keyUrl+' and create a new key.','Copy it immediately. Most providers never show it again.','Open the AI settings tab here, pick '+p.name+', paste the key.','Press Test connection.','Pick a model and start.'];
+    return '<details class="acc"><summary>'+esc(p.name)+'</summary><div class="inner">'+
+      '<p>'+esc(p.note)+'</p>'+
+      (p.consumer!=='none'?'<div class="note warn">'+esc(p.consumer)+' does <b>not</b> include API credit. The API is billed separately.</div>':'')+
+      '<ol>'+steps.map(function(s){return '<li>'+esc(s)+'</li>';}).join('')+'</ol>'+
+      '<p class="hint">Suggested model: '+esc(p.def)+'</p></div></details>';
+  }).join('');
+  el('learnLocal').innerHTML=LOCALAI.map(function(l){
+    return '<details class="acc"><summary>'+esc(l[0])+'</summary><div class="inner"><ol>'+
+      l[1].map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ol></div></details>';
+  }).join('')+'<div class="note warn">Local AI is the one part of this app that needs software installed on a computer and a setting changed. If that is not for you, Gemini has a free tier that needs nothing but a key.</div>';
+  el('learnTrouble').innerHTML=renderSection({heading:'Common problems',type:'table',
+    table:{columns:['What you see','What to do'],rows:TROUBLE}});
+}
+
+/* ==================== AI settings ==================== */
+function fillProviderSelects(){
+  var a=el('aiProvider'), b=el('aiBackup');
+  a.innerHTML=''; b.innerHTML='<option value="">None</option>';
+  Object.keys(PROVIDERS).forEach(function(k){
+    var o=document.createElement('option'); o.value=k; o.textContent=PROVIDERS[k].name; a.appendChild(o);
+    var o2=o.cloneNode(true); b.appendChild(o2);
+  });
+  a.value=S.ai.provider; b.value=S.ai.backup||'';
+}
+function syncProviderFields(){
+  var p=P();
+  el('aiKey').value=activeKey();
+  el('aiKey').placeholder=p.local?'Not needed for local AI':'Paste the key here';
+  el('aiKey').disabled=!!p.local;
+  el('aiBase').value=activeBase();
+  el('baseWrap').style.display=(p.local||S.ai.provider==='openrouter')?'block':'none';
+  el('aiModel').value=activeModel();
+  el('modelList').innerHTML=p.models.map(function(m){return '<option value="'+esc(m)+'">';}).join('');
+  var r=rateFor(activeModel());
+  var blocked=(S.ai.provider==='openai'||S.ai.provider==='grok');
+  el('aiStatus').innerHTML='<div class="note'+(blocked?' bad':'')+'">'+esc(p.note)+'<br>Price guide: about '+money(inr(r[0]/1e6*1000))+
+    ' per 1,000 words in, '+money(inr(r[1]/1e6*1000))+' per 1,000 words out.</div>';
+}
+function renderModeExplain(){
+  var m=el('aiMode').value;
+  var txt={
+    hybrid:'The built-in engine does the work first — free and instant. Every result then gets an "Improve with AI" button, so you only spend when the draft is not good enough. Recommended.',
+    ai:'Every generator calls the AI directly. Best quality, highest cost.',
+    offline:'No AI at all. Calculators, wizards, structure, audiences, interests, locations, checklists, template ad copy, GMB packs, playbooks, scripts and training all still work. Creative analysis, scoring, auditing and original copywriting are switched off.'
+  }[m];
+  el('modeExplain').innerHTML=esc(txt);
+}
+function renderUsage(){
+  var n=el('usageBox'); if(!n) return;
+  var u=S.ai.usage||[];
+  var month=u.filter(function(x){ return Date.now()-x.at < 31*864e5; });
+  var cost=month.reduce(function(a,x){return a+x.c;},0);
+  var tok=month.reduce(function(a,x){return a+x.i+x.o;},0);
+  var ms=month.length?Math.round(month.reduce(function(a,x){return a+x.ms;},0)/month.length):0;
+  n.innerHTML=renderSection({heading:'Last 30 days',type:'kv',kv:[
+    {k:'Requests',v:month.length},
+    {k:'Tokens used',v:tok.toLocaleString('en-IN')},
+    {k:'Estimated spend',v:money(cost)},
+    {k:'Average response time',v:ms?(ms/1000).toFixed(1)+' s':'—'},
+    {k:'Saved answers stored',v:Object.keys(S.ai.cache||{}).length},
+    {k:'Provider',v:P().name+' · '+activeModel()}]})+
+    '<p class="hint">Estimates from the price list. Always check the provider\'s own billing page for the real figure.</p>';
+}
+function renderErrors(){
+  var n=el('errorBox'); if(!n) return;
+  if(!(S.ai.errors||[]).length){ n.innerHTML='<p class="hint">No errors logged. </p>'; return; }
+  n.innerHTML=S.ai.errors.map(function(e){
+    return '<div class="mini" style="margin-bottom:8px"><b>'+esc(PROVIDERS[e.p]?PROVIDERS[e.p].name:e.p)+'</b>'+
+      '<p>'+esc(e.msg)+'</p><div class="tags"><span class="tag">'+new Date(e.at).toLocaleString()+'</span></div></div>';
+  }).join('')+'<div class="btnrow no-print"><button class="btn ghost sm" id="clrErr">Clear log</button></div>';
+  var c=el('clrErr'); if(c) c.onclick=function(){ S.ai.errors=[]; save(); renderErrors(); };
+}
+function renderRates(){
+  var n=el('ratesBox');
+  var keys=Object.keys(RATES).filter(function(k){return k!=='local';});
+  n.innerHTML='<div class="divider"></div><div class="eyebrow">Price list (US$ per million tokens)</div>'+
+   '<p class="hint">Edit these when providers change their pricing. Used only to estimate cost.</p>'+
+   keys.map(function(k){
+     var r=S.ai.rates[k]||RATES[k];
+     return '<div class="grid2" style="margin-bottom:6px"><label class="f"><span>'+esc(k)+' — in</span>'+
+       '<input type="number" step="0.01" data-rate="'+esc(k)+'" data-i="0" value="'+r[0]+'"></label>'+
+       '<label class="f"><span>'+esc(k)+' — out</span>'+
+       '<input type="number" step="0.01" data-rate="'+esc(k)+'" data-i="1" value="'+r[1]+'"></label></div>';
+   }).join('');
+  Array.prototype.forEach.call(n.querySelectorAll('[data-rate]'),function(inp){
+    inp.onchange=function(){
+      var k=inp.dataset.rate, i=+inp.dataset.i;
+      S.ai.rates[k]=S.ai.rates[k]||RATES[k].slice();
+      S.ai.rates[k][i]=parseFloat(inp.value)||0; save(); renderUsage();
+    };
+  });
+}
+function bindAI(){
+  fillProviderSelects();
+  el('aiMode').value=S.ai.mode; el('aiTemp').value=S.ai.temp; el('aiMax').value=S.ai.max;
+  el('aiPref').value=S.ai.pref; el('aiFx').value=S.ai.fx; el('aiWarn').value=S.ai.warn;
+  syncProviderFields(); renderModeExplain(); renderUsage(); renderErrors();
+
+  el('aiMode').onchange=function(){ S.ai.mode=el('aiMode').value; save(); renderModeExplain(); keyBadge(); };
+  el('aiProvider').onchange=function(){ S.ai.provider=el('aiProvider').value; save(); syncProviderFields(); keyBadge(); };
+  el('aiPref').onchange=function(){
+    S.ai.pref=el('aiPref').value;
+    if(S.ai.pref==='none'){ S.ai.mode='offline'; el('aiMode').value='offline'; renderModeExplain(); }
+    if(S.ai.pref==='local' && !P().local){ S.ai.provider='ollama'; el('aiProvider').value='ollama'; syncProviderFields(); }
+    if(S.ai.pref==='cost'){ S.ai.provider='gemini'; el('aiProvider').value='gemini'; S.ai.models.gemini='gemini-2.5-flash'; syncProviderFields(); }
+    if(S.ai.pref==='quality'){ S.ai.provider='claude'; el('aiProvider').value='claude'; S.ai.models.claude='claude-sonnet-4-6'; syncProviderFields(); }
+    if(S.ai.pref==='speed'){ S.ai.provider='claude'; el('aiProvider').value='claude'; S.ai.models.claude='claude-haiku-4-5'; syncProviderFields(); }
+    save(); keyBadge();
+  };
+  el('aiSave').onclick=function(){
+    S.ai.keys[S.ai.provider]=el('aiKey').value.trim();
+    S.ai.bases[S.ai.provider]=el('aiBase').value.trim()||PROVIDERS[S.ai.provider].base;
+    S.ai.models[S.ai.provider]=el('aiModel').value.trim()||PROVIDERS[S.ai.provider].def;
+    S.ai.temp=Math.min(1,Math.max(0,parseFloat(el('aiTemp').value)||0.7));
+    S.ai.max=Math.max(500,parseInt(el('aiMax').value)||4000);
+    S.ai.backup=el('aiBackup').value; S.ai.fx=parseFloat(el('aiFx').value)||88;
+    S.ai.warn=parseFloat(el('aiWarn').value)||5;
+    save(); keyBadge(); syncProviderFields(); renderUsage(); toast('Saved');
+  };
+  el('aiForget').onclick=function(){
+    delete S.ai.keys[S.ai.provider]; el('aiKey').value=''; save(); keyBadge(); toast('Key removed');
+  };
+  el('aiTest').onclick=function(){
+    el('aiSave').onclick();
+    var b=el('aiTest'), old=b.innerHTML; b.disabled=true; b.innerHTML='<i class="spinner"></i> Testing…';
+    var t0=Date.now();
+    callAI('Reply with exactly: ready','You are a connection test.',60,null)
+     .then(function(r){
+       el('aiStatus').innerHTML='<div class="note"><b>Connected.</b> '+esc(P().name)+' replied in '+
+         ((Date.now()-t0)/1000).toFixed(1)+' s using '+esc(activeModel())+'.</div>';
+     })
+     .catch(function(e){
+       el('aiStatus').innerHTML='<div class="note bad"><b>Not connected.</b> '+esc(e.message)+
+         '<br>Offline mode still works for most of the app.</div>';
+     })
+     .finally(function(){ b.disabled=false; b.innerHTML=old; keyBadge(); });
+  };
+  el('aiClearCache').onclick=function(){ S.ai.cache={}; save(); renderUsage(); toast('Saved answers cleared'); };
+  el('aiResetUsage').onclick=function(){ S.ai.usage=[]; save(); renderUsage(); toast('Usage reset'); };
+  el('aiRates').onclick=function(){ renderRates(); };
+  el('aiModel').onchange=function(){ S.ai.models[S.ai.provider]=el('aiModel').value.trim(); save(); syncProviderFields(); };
+}
+
+/* ==================== business tab (replaces old setup) ==================== */
+function bindSetup(){
+  ['bizName','bizPhone','bizWa','bizSite','bizCities','bizRules'].forEach(function(f){
+    if(S.biz[f]!=null && el(f)) el(f).value=S.biz[f];
+  });
+  el('saveBiz').onclick=function(){
+    ['bizName','bizPhone','bizWa','bizSite','bizCities','bizRules'].forEach(function(f){ S.biz[f]=el(f).value.trim(); });
+    save(); toast('Saved');
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-go]'),function(b){
+    b.onclick=function(){ show(b.dataset.go); };
+  });
+}
+
+/* ==================== competitors tab ==================== */
+function bindCompete(){
+  var loc=el('cLoc'); if(loc && !loc.value) loc.value=(S.brief&&S.brief.pLoc)||'';
+  var rf=el('rivalFile');
+  if(rf) rf.onchange=function(ev){
+    var f=ev.target.files[0]; if(!f) return;
+    if(f.size>4.5*1024*1024){ toast('Image too large — keep it under 4.5 MB'); return; }
+    var r=new FileReader();
+    r.onload=function(){
+      rival={ name:f.name, media_type:f.type, data:r.result.split(',')[1], kind:'image' };
+      el('rivalPreview').innerHTML='<img src="data:'+f.type+';base64,'+rival.data+'" style="max-width:100%;border-radius:11px;margin-top:11px;border:1px solid rgba(237,231,220,.12)">'+
+        '<div class="btnrow"><button class="btn ghost sm" id="rivalClear">Remove screenshot</button></div>';
+      var rc=el('rivalClear'); if(rc) rc.onclick=function(){ rival=null; el('rivalPreview').innerHTML=''; el('rivalFile').value=''; };
+    };
+    r.readAsDataURL(f);
+  };
+  var td=el('doTeardown');
+  if(td) td.onclick=function(){
+    var hasText=el('rivalText')&&el('rivalText').value.trim();
+    if(!hasText && !rival){ toast('Paste a competitor ad or upload a screenshot first'); return; }
+    run('teardown', td);
+  };
+  var lb=el('cLinksBtn'); if(lb) lb.onclick=buildCompeteLinks;
+}
+function buildCompeteLinks(){
+  var loc=((el('cLoc')&&el('cLoc').value.trim())||(S.brief&&S.brief.pLoc)||'').trim();
+  var type=((S.brief&&S.brief.pType)||'property');
+  if(!loc){ toast('Type an area first'); if(el('cLoc')) el('cLoc').focus(); return; }
+  var q=encodeURIComponent;
+  var links=[
+    ['Facebook & Instagram — ads running now',
+     'https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=IN&media_type=all&search_type=keyword_unordered&q='+q(loc+' real estate property'),
+     'Meta\u2019s public Ad Library — every live FB/Insta ad mentioning your area. Screenshot any you like.'],
+    ['Competitor Instagram posts',
+     'https://www.google.com/search?q='+q(loc+' property real estate site:instagram.com'),
+     'Broker posts from your area. Open a few and copy a caption for Step 2.'],
+    ['Property tour videos (YouTube)',
+     'https://www.youtube.com/results?search_query='+q(loc+' '+type+' tour'),
+     'See how others film walkthroughs — note their hooks and titles.'],
+    ['Local competitors (Google Maps)',
+     'https://www.google.com/maps/search/'+q('real estate consultant '+loc),
+     'The brokers you\u2019re up against locally, with their reviews.'],
+    ['Who\u2019s advertising on Google',
+     'https://www.google.com/search?q='+q(type+' for sale '+loc),
+     'The results marked "Sponsored" are competitors paying for this search. Read their headlines.'],
+    ['Listings on 99acres',
+     'https://www.google.com/search?q='+q('site:99acres.com '+loc+' '+type),
+     'How rivals price and describe similar homes.'],
+    ['Listings on MagicBricks',
+     'https://www.google.com/search?q='+q('site:magicbricks.com '+loc+' '+type),
+     'The same check on the other big portal.']
+  ];
+  var h='<div class="btnrow" style="flex-direction:column;align-items:stretch;gap:10px;margin-top:12px">';
+  links.forEach(function(L){
+    h+='<a class="btn ghost" href="'+L[1]+'" target="_blank" rel="noopener" style="justify-content:flex-start;text-align:left;flex-direction:column;align-items:flex-start;gap:3px;padding:12px 14px">'+
+       '<span style="font-weight:600;color:var(--cream)">'+esc(L[0])+' \u2197</span>'+
+       '<span style="font-size:12px;color:var(--muted);font-weight:400;line-height:1.4">'+esc(L[2])+'</span></a>';
+  });
+  h+='</div><p class="hint">These open public pages in a new tab. Nothing is scraped or saved. Grab any ad you like, then paste it into Step 2 above.</p>';
+  el('cLinks').innerHTML=h;
+}
+
+/* ============================ init ============================ */
+function bindLang(){
+  Array.prototype.forEach.call(el('langChips').children,function(c){
+    c.classList.toggle('on', c.dataset.lang===S.lang);
+    c.onclick=function(){
+      S.lang=c.dataset.lang; save();
+      Array.prototype.forEach.call(el('langChips').children,function(x){ x.classList.toggle('on', x.dataset.lang===S.lang); });
+    };
+  });
+}
+load();
+buildTabs();
+bindSetup(); bindBrief(); bindRuns(); bindLang(); bindHistory(); bindExport();
+bindAI(); bindTools(); bindCompete(); renderPlay(); renderLearn();
+renderTrainer(); renderTemplates(); renderPractices(); renderHistory(); renderResults();
+keyBadge();
+show((S.biz.bizName||S.brief.pName) ? 'brief' : 'learn');
+Object.keys(S.outputs).forEach(function(id){
+  var box=el('out-'+id); if(box) render(box,S.outputs[id].json,id);
+});
+})();
+</script>
+</body>
+</html>
