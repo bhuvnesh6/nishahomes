@@ -941,6 +941,12 @@ async function shareListingWA(id){
   const originalLabel = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Preparing…'; }
 
+  // Safe combined-size ceiling for the OS share sheet. Android/Chromium silently
+  // reject shares over roughly 50-100MB with NotAllowedError.
+  const MAX_SHARE_BYTES = 45 * 1024 * 1024; // ~45MB
+
+  const isImageUrl = (url) => /\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(url.split('?')[0]);
+
   try{
     // 1. Get the formatted share text from the backend
     let text = '';
@@ -953,28 +959,31 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
 
-    // 2. Fetch only photos/videos as real Files (PDF skipped)
-    const mediaUrls = [...(p.mediaUrls || [])].filter(Boolean);
-    console.log('[share] media URLs to attach:', mediaUrls);
+    // 2. Only fetch photos — videos are skipped entirely (too large for share sheet)
+    const allMediaUrls = [...(p.mediaUrls || [])].filter(Boolean);
+    const imageUrls = allMediaUrls.filter(isImageUrl);
+    const videoUrls = allMediaUrls.filter(u => !isImageUrl(u));
+    console.log('[share] image URLs to attach:', imageUrls);
+    console.log('[share] video URLs (skipped, linked instead):', videoUrls);
 
     const fetchOne = async (url) => {
       const resp = await fetch(url);
       if(!resp.ok) throw new Error(`bad response ${resp.status} for ${url}`);
       const blob = await resp.blob();
       const filename = url.split('/').pop().split('?')[0] || 'file';
-      return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+      return new File([blob], filename, { type: blob.type || 'image/jpeg' });
     };
     const timeout = (ms) => new Promise((_, rej) => setTimeout(()=>rej(new Error('timeout')), ms));
 
     let files = [];
     try{
       const results = await Promise.race([
-        Promise.allSettled(mediaUrls.map(fetchOne)),
-        timeout(6000) // bumped up a bit to give videos more room
+        Promise.allSettled(imageUrls.map(fetchOne)),
+        timeout(8000)
       ]);
       results.forEach((r, i) => {
-        if(r.status === 'fulfilled') console.log('[share] fetched OK:', mediaUrls[i]);
-        else console.warn('[share] FAILED to fetch:', mediaUrls[i], r.reason);
+        if(r.status === 'fulfilled') console.log('[share] fetched OK:', imageUrls[i]);
+        else console.warn('[share] FAILED to fetch:', imageUrls[i], r.reason);
       });
       files = results.filter(r=>r.status==='fulfilled').map(r=>r.value);
     }catch(e){
@@ -984,7 +993,29 @@ async function shareListingWA(id){
 
     console.log('[share] files ready:', files.length, files.map(f=>f.name));
 
-    // 3. Build the share payload
+    // 3. Trim if still too large — drop biggest photos first, link them instead
+    let droppedUrls = [];
+    if(files.length){
+      files.sort((a,b)=> a.size - b.size);
+      let total = files.reduce((s,f)=>s+f.size, 0);
+      while(total > MAX_SHARE_BYTES && files.length){
+        const removed = files.pop();
+        total -= removed.size;
+        const originalUrl = imageUrls.find(u => u.endsWith(removed.name));
+        if(originalUrl) droppedUrls.push(originalUrl);
+        console.warn('[share] dropped for size:', removed.name, removed.size);
+      }
+    }
+
+    // Videos always go in as links since we never fetch them as files
+    if(videoUrls.length){
+      text += `\n\nVideo:\n${videoUrls.join('\n')}`;
+    }
+    if(droppedUrls.length){
+      text += `\n\nMore photos:\n${droppedUrls.join('\n')}`;
+    }
+
+    // 4. Build the share payload
     let shareData = { title: p.name, text };
     if(files.length){
       const canAttach = navigator.canShare && navigator.canShare({ files });
@@ -996,7 +1027,17 @@ async function shareListingWA(id){
       }
     }
 
-    await navigator.share(shareData);
+    try{
+      await navigator.share(shareData);
+    }catch(shareErr){
+      if(shareData.files && shareData.files.length){
+        console.warn('[share] file share rejected, retrying text-only:', shareErr);
+        const fallbackText = `${text}\n\nPhotos:\n${imageUrls.join('\n')}`;
+        await navigator.share({ title: p.name, text: fallbackText });
+      } else {
+        throw shareErr;
+      }
+    }
 
   }catch(e){
     if(e.name === 'AbortError'){
