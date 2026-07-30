@@ -1348,7 +1348,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     <div class="dash-section anim anim-2">
       <div class="dash-section-head">
         <div class="dash-section-title">Lead Intent (AI)</div>
-        <div class="dash-section-sub">Classified from call logs by Mistral</div>
+        <div class="dash-section-sub">Based on Interest Level from call logs</div>
       </div>
       <div class="intent-grid">
         <div class="intent-card hot" onclick="openIntentModal('Hot')">
@@ -2854,6 +2854,55 @@ async function loadDashboardFollowups(){
   }catch(e){ console.warn('followups load failed', e); }
 }
 
+let intentData = { hotLeads: [], warmLeads: [], coldLeads: [] };
+
+async function loadDashboardIntentLeads(){
+  try{
+    const res = await fetch(`${BASE}/dashboard-intent-leads`);
+    const d = await res.json();
+    if(!d.success) return;
+    intentData.hotLeads = d.hotLeads || [];
+    intentData.warmLeads = d.warmLeads || [];
+    intentData.coldLeads = d.coldLeads || [];
+    document.getElementById('dashIntentHot').textContent = d.hotCount;
+    document.getElementById('dashIntentWarm').textContent = d.warmCount;
+    document.getElementById('dashIntentCold').textContent = d.coldCount;
+  }catch(e){ console.warn('intent leads load failed', e); }
+}
+
+function openIntentModal(bucket){
+  const key = bucket.toLowerCase() + 'Leads';
+  const list = intentData[key] || [];
+  document.getElementById('followupModalTitle').textContent = `${bucket} Leads`;
+
+  const box = document.getElementById('followupList');
+  if(!list.length){
+    box.innerHTML = '<p style="color:rgba(255,255,255,0.5)">No leads in this bucket</p>';
+  } else {
+    box.innerHTML = list.map(l => {
+      const rawPhone = String(l.number||'').replace(/[^0-9]/g,'');
+      return `
+      <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.08)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;font-size:0.9rem">
+          <span style="color:#fff;font-weight:700">${escHtml(l.name)}</span>
+          <span class="badge ${typeBadgeClass(l.type)}">${escHtml(getTypeLabel(l.type))}</span>
+        </div>
+        <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:6px;line-height:1.6">
+          📞 +${escHtml(l.number)}<br>
+          📍 ${escHtml(l.location)}${l.propertyType && l.propertyType!=='-' ? ' · 🏠 '+escHtml(l.propertyType) : ''}${l.budget && l.budget!=='-' ? ' · 💰 '+escHtml(l.budget) : ''}
+        </div>
+        <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:4px">
+          Interest: <strong style="color:rgba(255,255,255,0.85)">${escHtml(l.interestLevel)}</strong> · Status: ${escHtml(l.callStatus)}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <a href="tel:${escHtml(l.number)}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(16,185,129,0.12);border:1.5px solid #10B981;color:#34d399;font-size:0.8rem;font-weight:600;text-decoration:none">Call</a>
+          <a href="https://wa.me/${rawPhone}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">WhatsApp</a>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('followupModal').classList.add('active');
+}
 
 function openFollowupModal(which){
   const list = which === 'today' ? followupData.todayLeads : followupData.weekLeads;
@@ -3500,7 +3549,7 @@ document.getElementById('spSendBtn').addEventListener('click', ()=>{
    INIT
 ═══════════════════════════════════ */
 window.addEventListener('load',()=>{
-  setTimeout(()=>{hideLoader();loadAllLeads();loadDashboardStats();loadAssignedLeads();loadDashboardFollowups()},600);
+  setTimeout(()=>{hideLoader();loadAllLeads();loadDashboardStats();loadAssignedLeads();loadDashboardFollowups();loadDashboardIntentLeads()},600);
 });
 </script>
 </body>
