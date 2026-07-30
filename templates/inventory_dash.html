@@ -932,7 +932,6 @@ function projectCardHTML(p){
 async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
 
-  // Native share isn't available at all on this browser/device
   if(!navigator.share){
     toast('Sharing isn\'t supported on this browser. Please open this page on a mobile device (Chrome/Safari) to share.');
     return;
@@ -954,12 +953,13 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
 
-    // 2. Fetch only photos/videos as real Files — PDF is skipped, it's rarely needed
-    // in the share sheet and just adds fetch time/weight.
-    const mediaUrls = [...(p.mediaUrls || [])].filter(Boolean); // no pdfUrl here
+    // 2. Fetch only photos/videos as real Files (PDF skipped)
+    const mediaUrls = [...(p.mediaUrls || [])].filter(Boolean);
+    console.log('[share] media URLs to attach:', mediaUrls);
+
     const fetchOne = async (url) => {
       const resp = await fetch(url);
-      if(!resp.ok) throw new Error('bad response');
+      if(!resp.ok) throw new Error(`bad response ${resp.status} for ${url}`);
       const blob = await resp.blob();
       const filename = url.split('/').pop().split('?')[0] || 'file';
       return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
@@ -970,26 +970,37 @@ async function shareListingWA(id){
     try{
       const results = await Promise.race([
         Promise.allSettled(mediaUrls.map(fetchOne)),
-        timeout(3500) // if media isn't ready in 3.5s, give up on files and share text only
+        timeout(6000) // bumped up a bit to give videos more room
       ]);
+      results.forEach((r, i) => {
+        if(r.status === 'fulfilled') console.log('[share] fetched OK:', mediaUrls[i]);
+        else console.warn('[share] FAILED to fetch:', mediaUrls[i], r.reason);
+      });
       files = results.filter(r=>r.status==='fulfilled').map(r=>r.value);
     }catch(e){
-      console.warn('Media fetch for share timed out — falling back to text-only share', e);
+      console.warn('[share] fetch race timed out — falling back to text-only share', e);
       files = [];
     }
 
-    // 3. Build the share payload — prefer files+text, degrade to text-only if files can't attach
+    console.log('[share] files ready:', files.length, files.map(f=>f.name));
+
+    // 3. Build the share payload
     let shareData = { title: p.name, text };
-    if(files.length && navigator.canShare && navigator.canShare({ files })){
-      shareData = { title: p.name, text, files };
+    if(files.length){
+      const canAttach = navigator.canShare && navigator.canShare({ files });
+      console.log('[share] canShare({files}) =', canAttach);
+      if(canAttach){
+        shareData = { title: p.name, text, files };
+      } else {
+        console.warn('[share] browser refused these files (unsupported type/size) — sharing text only');
+      }
     }
 
     await navigator.share(shareData);
-    // Share sheet opened successfully — the OS/user handles the rest (pick WhatsApp, Threads, SMS, etc.)
 
   }catch(e){
     if(e.name === 'AbortError'){
-      // User closed the share sheet themselves — not an error, do nothing
+      // user closed the sheet — not an error
     } else {
       console.error('Share failed:', e);
       toast('Could not open the share sheet. Please try again.');
