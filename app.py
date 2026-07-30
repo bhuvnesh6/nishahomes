@@ -318,6 +318,82 @@ def call_mistral_generate(extracted_text, schema):
     content = resp.json()["choices"][0]["message"]["content"]
     return json.loads(content)
 
+# NEW: separate Mistral key used ONLY for lead-intent classification (Hot/Warm/Cold),
+# kept apart from MISTRAL_API_KEY (used for AI autofill) so usage/quota don't mix.
+MISTRAL_API_KEY2 = os.getenv("MISTRAL_API_KEY2")
+
+
+def classify_lead_intent(lead_snapshot: dict, call_log: dict):
+    """
+    Uses MISTRAL_API_KEY2 to classify a lead's buying intent as Hot / Warm / Cold,
+    based on the lead's stored details plus the call log just submitted.
+    Returns {"intent": "Hot"|"Warm"|"Cold", "reason": "..."} or None on failure.
+    """
+    if not MISTRAL_API_KEY2:
+        print("[intent] MISTRAL_API_KEY2 not configured — skipping intent classification")
+        return None
+
+    context = {
+        "lead": {
+            "name": lead_snapshot.get("name"),
+            "location": lead_snapshot.get("location"),
+            "property": lead_snapshot.get("property"),
+            "budget": lead_snapshot.get("budget"),
+            "timeline": lead_snapshot.get("timeline"),
+            "note": lead_snapshot.get("note"),
+        },
+        "latest_call_log": {
+            "callStatus": call_log.get("callStatus"),
+            "customerResponse": call_log.get("customerResponse"),
+            "interestLevel": call_log.get("interestLevel"),
+            "objection": call_log.get("objection"),
+            "followupTimeline": call_log.get("followupTimeline"),
+            "callPriority": call_log.get("callPriority"),
+            "callerRemarks": call_log.get("callerRemarks"),
+        }
+    }
+
+    system_prompt = (
+        "You are a real-estate CRM assistant. Given a lead's profile and the "
+        "latest call log recorded by a sales agent, classify the lead's buying "
+        "intent as exactly one of: Hot, Warm, Cold. "
+        "Hot = ready to move soon, strong interest, budget matches, no major objection. "
+        "Warm = interested but hesitant, budget mismatch, or comparing options. "
+        "Cold = not interested, wrong number, unreachable repeatedly, or explicitly declined. "
+        "Return ONLY a valid JSON object with keys 'intent' and 'reason' "
+        "(reason: max one short sentence). No markdown, no commentary."
+    )
+
+    payload = {
+        "model": "mistral-large-latest",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(context)}
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"}
+    }
+
+    try:
+        resp = requests.post(
+            MISTRAL_API_URL,
+            headers={
+                "Authorization": f"Bearer {MISTRAL_API_KEY2}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        result = json.loads(content)
+        intent = str(result.get("intent", "")).strip().capitalize()
+        if intent not in ("Hot", "Warm", "Cold"):
+            intent = "Warm"
+        return {"intent": intent, "reason": result.get("reason", "")}
+    except Exception as e:
+        print(f"[intent] classification failed: {e}")
+        return None
 
 # =============================
 # NEW: BRANDING OVERLAY (images only)
@@ -1514,6 +1590,8 @@ def add_call_log():
         }
         update_fields = {k: v for k, v in update_fields.items() if v not in [None, ""]}
 
+        update_fields["LastLeadType"] = data.get("leadType", "")
+
         end_collection.update_one(
             {"Number": number},
             {
@@ -1536,6 +1614,28 @@ def add_call_log():
             },
             upsert=True
         )
+
+        # NEW: AI intent classification (Hot / Warm / Cold) using MISTRAL_API_KEY2
+        intent_result = classify_lead_intent(
+            {
+                "name": data.get("name", ""),
+                "location": data.get("location", ""),
+                "property": data.get("property", ""),
+                "budget": data.get("budget", ""),
+                "timeline": data.get("timeline", ""),
+                "note": data.get("note", "")
+            },
+            data
+        )
+        if intent_result:
+            end_collection.update_one(
+                {"Number": number},
+                {"$set": {
+                    "AI Intent": intent_result["intent"],
+                    "AI Intent Reason": intent_result.get("reason", ""),
+                    "AI Intent At": now
+                }}
+            )
 
         updated_doc = end_collection.find_one({"Number": number})
 
@@ -1730,6 +1830,57 @@ def dashboard_followups():
         "todayLeads": today_list,
         "weekLeads": week_list
     }), 200
+
+
+@app.route("/api/dashboard-intent-leads", methods=["GET"])
+def dashboard_intent_leads():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    end_collection = db["endData"]
+    docs = list(end_collection.find({"AI Intent": {"$in": ["Hot", "Warm", "Cold"]}}))
+
+    def _clean(v, default="-"):
+        if v is None or v == "":
+            return default
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return v
+
+    buckets = {"Hot": [], "Warm": [], "Cold": []}
+    for d in docs:
+        intent = d.get("AI Intent")
+        if intent not in buckets:
+            continue
+        buckets[intent].append({
+            "number": d.get("Number", ""),
+            "name": _clean(d.get("Customer Name"), "Unknown"),
+            "location": _clean(d.get("Location Interested In")),
+            "propertyType": _clean(d.get("Property Type")),
+            "budget": _clean(d.get("Budget Range")),
+            "callStatus": _clean(d.get("Call Status")),
+            "customerResponse": _clean(d.get("Customer Response")),
+            "interestLevel": _clean(d.get("Interest Level")),
+            "callerRemarks": _clean(d.get("Caller Remarks")),
+            "nextFollowupTimeline": _clean(d.get("Next Follow-up Timeline")),
+            "nextCallDate": _clean(d.get("Next Call Date")),
+            "callAttempts": d.get("Call_attempt") if isinstance(d.get("Call_attempt"), int) else 0,
+            "aiReason": _clean(d.get("AI Intent Reason")),
+            "leadId": d.get("LeadId", ""),
+            "type": d.get("LastLeadType", "buying") or "buying",
+        })
+
+    return jsonify({
+        "success": True,
+        "hotCount": len(buckets["Hot"]),
+        "warmCount": len(buckets["Warm"]),
+        "coldCount": len(buckets["Cold"]),
+        "hotLeads": buckets["Hot"],
+        "warmLeads": buckets["Warm"],
+        "coldLeads": buckets["Cold"]
+    }), 200
+
+
 
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():

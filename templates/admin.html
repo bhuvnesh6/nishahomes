@@ -411,6 +411,25 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .fc-hint{font-size:0.76rem;color:rgba(255,255,255,0.4);margin-top:6px;position:relative;z-index:1}
 
+
+.intent-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:640px){.intent-grid{grid-template-columns:1fr}}
+.intent-card{
+  position:relative;overflow:hidden;border-radius:var(--radius);padding:20px 18px;
+  cursor:pointer;transition:var(--transition);border:1px solid var(--border-dark);
+  background:linear-gradient(135deg,var(--primary-deep) 0%,var(--primary-mid) 100%);
+  isolation:isolate;
+}
+.intent-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg)}
+.intent-card::after{content:'';position:absolute;width:110px;height:110px;border-radius:50%;top:-35px;right:-25px;z-index:0}
+.intent-card.hot::after{background:rgba(239,68,68,0.20)}
+.intent-card.warm::after{background:rgba(245,158,11,0.20)}
+.intent-card.cold::after{background:rgba(59,130,246,0.18)}
+.intent-icon{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:1.2rem;position:relative;z-index:1}
+.intent-label{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:rgba(255,255,255,0.5);margin-top:16px;position:relative;z-index:1}
+.intent-value{font-family:'Playfair Display',serif;font-size:2.1rem;font-weight:900;color:#fff;line-height:1;margin-top:4px;position:relative;z-index:1}
+
+
 .charts-row{
   display:grid;
   grid-template-columns:1fr;
@@ -1323,6 +1342,34 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         <div id="dashCallsByEmployee" class="donut-wrap"></div>
       </div>
     </div>
+
+
+    <!-- Lead Intent (AI) -->
+    <div class="dash-section anim anim-2">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Lead Intent (AI)</div>
+        <div class="dash-section-sub">Classified from call logs by Mistral</div>
+      </div>
+      <div class="intent-grid">
+        <div class="intent-card hot" onclick="openIntentModal('Hot')">
+          <div class="intent-icon">🔥</div>
+          <div class="intent-label">Hot Leads</div>
+          <div class="intent-value" id="dashIntentHot">—</div>
+        </div>
+        <div class="intent-card warm" onclick="openIntentModal('Warm')">
+          <div class="intent-icon">🌤️</div>
+          <div class="intent-label">Warm Leads</div>
+          <div class="intent-value" id="dashIntentWarm">—</div>
+        </div>
+        <div class="intent-card cold" onclick="openIntentModal('Cold')">
+          <div class="intent-icon">❄️</div>
+          <div class="intent-label">Cold Leads</div>
+          <div class="intent-value" id="dashIntentCold">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Team activity -->
 
     <!-- Charts -->
     <div class="dash-section anim anim-2">
