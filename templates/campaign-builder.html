@@ -968,7 +968,7 @@ function callAI(userText, sysText, maxTokens, attach){
       if(!r.ok || !d.success){
         throw new Error(d.message || ('Request failed ('+r.status+')'));
       }
-      logUsage('openai', 'gpt-4o-mini', {in: estTokens(userText+sysText), out: estTokens(d.text)}, Date.now()-t0);
+      logUsage('openrouter', 'openai/gpt-4o-mini', {in: estTokens(userText+sysText), out: estTokens(d.text)}, Date.now()-t0);
       return (d.text||'').trim();
     });
   }).catch(function(e){
@@ -2419,8 +2419,8 @@ var BASICS=[
   'Your brief and generated answers live in this browser (localStorage) except when you explicitly run an AI step, in which case the prompt is sent to the server, which forwards it to OpenAI to generate the answer.']
 ];
 var TROUBLE=[
- ['"OPENAI_API_KEY not set" error','The server does not have a key configured. Add OPENAI_API_KEY to the .env file on the server and restart it.'],
- ['Rate limited / 429','The server\'s OpenAI account is out of credit or hit a rate limit. Check the OpenAI billing dashboard.'],
+ ['"OPENROUTER_API_KEY not set" error','The server does not have a key configured. Add OPENROUTER_API_KEY to the .env file on the server and restart it.'],
+ ['Rate limited / 429','The server\'s OpenRouter account is out of credit or hit a rate limit. Check the OpenRouter dashboard.'],
  ['Nothing happens / network error','The browser could not reach the Flask server. Check your connection or that the server is running.'],
  ['The answer came back as one block of text','The AI ignored the format instruction. Press the button again.'],
  ['Everything disappeared','Browser data was cleared. Restore the JSON backup from the Export tab if you took one.']
@@ -2439,15 +2439,15 @@ function renderLearn(){
 /* ==================== AI settings ==================== */
 function fillProviderSelects(){
   var a=el('aiProvider'); if(!a) return;
-  a.innerHTML='<option value="server">Server AI (OpenAI, via this app)</option>';
+  a.innerHTML='<option value="server">Server AI (OpenRouter, via this app)</option>';
   a.value='server';
   var b=el('aiBackup'); if(b) b.innerHTML='<option value="">None</option>';
 }
 function syncProviderFields(){
   if(el('aiKey')){ el('aiKey').value=''; el('aiKey').placeholder='Not needed — handled by the server'; el('aiKey').disabled=true; }
   if(el('baseWrap')) el('baseWrap').style.display='none';
-  if(el('aiModel')){ el('aiModel').value='gpt-4o-mini (server-side)'; el('aiModel').disabled=true; }
-  if(el('aiStatus')) el('aiStatus').innerHTML='<div class="note">This app calls OpenAI through its own server route (/api/ai/campaign). No key is needed in the browser.</div>';
+  if(el('aiModel')){ el('aiModel').value='openai/gpt-4o-mini (server-side, via OpenRouter)'; el('aiModel').disabled=true; }
+  if(el('aiStatus')) el('aiStatus').innerHTML='<div class="note">This app calls OpenRouter through its own server route (/api/ai/campaign). No key is needed in the browser.</div>';
 }
 function renderModeExplain(){
   var m=el('aiMode').value;
@@ -2471,7 +2471,7 @@ function renderUsage(){
     {k:'Estimated spend',v:money(cost)},
     {k:'Average response time',v:ms?(ms/1000).toFixed(1)+' s':'—'},
     {k:'Saved answers stored',v:Object.keys(S.ai.cache||{}).length},
-    {k:'Provider',v:'Server AI (OpenAI gpt-4o-mini)'}]})+
+    {k:'Provider',v:'Server AI (OpenRouter · openai/gpt-4o-mini)'}]})+
     '<p class="hint">Estimates from the price list. Always check the OpenAI billing page for the real figure.</p>';
 }
 function renderErrors(){

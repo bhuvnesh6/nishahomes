@@ -959,12 +959,17 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
     }
 
-    // 2. Only fetch photos — videos are skipped entirely (too large for share sheet)
+    // 2. Only fetch ONE photo to attach as a file — every other photo goes
+    // in as a link, exactly like videos/PDF already do. Keeps the share
+    // payload small and avoids browsers silently rejecting big file sets.
     const allMediaUrls = [...(p.mediaUrls || [])].filter(Boolean);
     const imageUrls = allMediaUrls.filter(isImageUrl);
     const videoUrls = allMediaUrls.filter(u => !isImageUrl(u));
-    console.log('[share] image URLs to attach:', imageUrls);
-    console.log('[share] video URLs (skipped, linked instead):', videoUrls);
+    const primaryImageUrl = imageUrls[0] || null;
+    const extraImageUrls = imageUrls.slice(1);
+    console.log('[share] image URL to attach:', primaryImageUrl);
+    console.log('[share] extra photo URLs (linked instead):', extraImageUrls);
+    console.log('[share] video URLs (linked instead):', videoUrls);
 
     const fetchOne = async (url) => {
       const resp = await fetch(url);
@@ -976,43 +981,42 @@ async function shareListingWA(id){
     const timeout = (ms) => new Promise((_, rej) => setTimeout(()=>rej(new Error('timeout')), ms));
 
     let files = [];
-    try{
-      const results = await Promise.race([
-        Promise.allSettled(imageUrls.map(fetchOne)),
-        timeout(8000)
-      ]);
-      results.forEach((r, i) => {
-        if(r.status === 'fulfilled') console.log('[share] fetched OK:', imageUrls[i]);
-        else console.warn('[share] FAILED to fetch:', imageUrls[i], r.reason);
-      });
-      files = results.filter(r=>r.status==='fulfilled').map(r=>r.value);
-    }catch(e){
-      console.warn('[share] fetch race timed out — falling back to text-only share', e);
-      files = [];
+    if(primaryImageUrl){
+      try{
+        const file = await Promise.race([fetchOne(primaryImageUrl), timeout(8000)]);
+        files = [file];
+        console.log('[share] fetched OK:', primaryImageUrl);
+      }catch(e){
+        console.warn('[share] FAILED to fetch primary image, linking it instead:', e);
+        extraImageUrls.unshift(primaryImageUrl);
+        files = [];
+      }
     }
 
     console.log('[share] files ready:', files.length, files.map(f=>f.name));
 
-    // 3. Trim if still too large — drop biggest photos first, link them instead
+    // 3. Defensive size check — a single photo rarely exceeds the ceiling,
+    // but keep the same safety net: drop it and link it instead.
     let droppedUrls = [];
     if(files.length){
-      files.sort((a,b)=> a.size - b.size);
       let total = files.reduce((s,f)=>s+f.size, 0);
-      while(total > MAX_SHARE_BYTES && files.length){
+      if(total > MAX_SHARE_BYTES){
         const removed = files.pop();
-        total -= removed.size;
-        const originalUrl = imageUrls.find(u => u.endsWith(removed.name));
-        if(originalUrl) droppedUrls.push(originalUrl);
         console.warn('[share] dropped for size:', removed.name, removed.size);
+        droppedUrls.push(primaryImageUrl);
       }
     }
 
-    // Videos always go in as links since we never fetch them as files
+    // Every other photo, all videos, and any photo dropped for size go in
+    // as links, since we only ever attach the one primary image as a file.
+    if(extraImageUrls.length){
+      text += `\n\nMore photos:\n${extraImageUrls.join('\n')}`;
+    }
     if(videoUrls.length){
       text += `\n\nVideo:\n${videoUrls.join('\n')}`;
     }
     if(droppedUrls.length){
-      text += `\n\nMore photos:\n${droppedUrls.join('\n')}`;
+      text += `\n\nPhoto:\n${droppedUrls.join('\n')}`;
     }
 
     // 4. Build the share payload

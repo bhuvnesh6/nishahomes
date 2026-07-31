@@ -33,7 +33,8 @@ import fitz  # PyMuPDF — pip install pymupdf
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-
+import subprocess
+import shutil
 # NEW: branding overlay for images
 from PIL import Image, ImageDraw, ImageFont
 
@@ -573,7 +574,175 @@ def build_branded_image(image_bytes, fields):
     out.seek(0)
     return out
 
+def _get_video_dimensions(path):
+    """Uses ffprobe (bundled with ffmpeg) to get (width, height) of a video."""
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=s=x:p=0", path
+    ]
+    out = subprocess.check_output(cmd).decode().strip()
+    w, h = out.split("x")
+    return int(w), int(h)
 
+
+def _build_brand_bars(fields, video_w):
+    """
+    Builds the same top-bar / info-panel / contact-bar graphics used for
+    branded images, but as two standalone PNGs sized to `video_w` — these
+    get composited onto video frames with ffmpeg instead of pasted with PIL.
+    Returns: (top_bar_png_bytes, top_bar_h, bottom_bar_png_bytes, bottom_bar_h)
+    """
+    import textwrap
+    CONTACT_NUMBER = "+91 73035 15710"
+    W = video_w
+
+    top_bar_h = int(W * 0.095)
+    panel_h   = int(W * 0.40)
+    contact_h = int(W * 0.11)
+    bottom_h  = panel_h + contact_h
+
+    # ---- TOP BAR ----
+    top_img = Image.new("RGB", (W, top_bar_h), BRAND_ORANGE)
+    draw = ImageDraw.Draw(top_img, "RGBA")
+    f_brand = _font("bold", int(top_bar_h * 0.42))
+    f_tag   = _font("regular", int(top_bar_h * 0.24))
+    draw.text((int(W * 0.035), top_bar_h * 0.28), "NISHA HOMES", font=f_brand, fill="white")
+    tag = "Trusted Real Estate Advisor"
+    tag_w = draw.textlength(tag, font=f_tag)
+    draw.text((W - tag_w - int(W * 0.035), top_bar_h * 0.40), tag, font=f_tag, fill="white")
+
+    deal = (fields.get("dealType") or "For Sale").upper()
+    f_pill = _font("bold", int(W * 0.032))
+    pill_pad_x = int(W * 0.03)
+    pill_h = int(W * 0.06)
+    pill_w = draw.textlength(deal, font=f_pill) + pill_pad_x * 2
+    px = int(W * 0.035)
+    py = max(0, top_bar_h - pill_h - int(W * 0.015))
+    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2, fill=(255, 255, 255, 245))
+    draw.text((px + pill_pad_x, py + pill_h * 0.20), deal, font=f_pill, fill=BRAND_ORANGE)
+
+    # ---- BOTTOM: INFO PANEL + CONTACT BAR ----
+    bottom_img = Image.new("RGB", (W, bottom_h), BRAND_NAVY_SOLID)
+    draw2 = ImageDraw.Draw(bottom_img, "RGBA")
+
+    pad_x = int(W * 0.045)
+    y = int(panel_h * 0.10)
+
+    f_title = _font("bold", int(W * 0.052))
+    title = fields.get("propertyTitle") or ""
+    max_chars = max(10, int(W / (f_title.size * 0.52)))
+    for line in textwrap.wrap(title, width=max_chars)[:2]:
+        draw2.text((pad_x, y), line, font=f_title, fill="white")
+        y += int(f_title.size * 1.22)
+
+    y += int(panel_h * 0.025)
+    f_meta = _font("regular", int(W * 0.030))
+    draw2.text((pad_x, y), "📍 " + (fields.get("locality") or ""), font=f_meta, fill=(210, 214, 224))
+    y += int(f_meta.size * 1.6)
+
+    f_price = _font("bold", int(W * 0.062))
+    draw2.text((pad_x, y), _format_price_display(fields.get("price")), font=f_price, fill=BRAND_ORANGE)
+    y += int(f_price.size * 1.05)
+
+    words = _indian_price_words(fields.get("price"))
+    if words:
+        f_words = _font("regular", int(W * 0.026))
+        draw2.text((pad_x, y), f"({words})", font=f_words, fill=(180, 186, 198))
+        y += int(f_words.size * 1.5)
+    else:
+        y += int(W * 0.01)
+
+    sub = " · ".join(filter(None, [
+        fields.get("configuration"),
+        fields.get("superArea") and f'{fields["superArea"]} sq.ft'
+    ]))
+    if sub:
+        draw2.text((pad_x, y), sub, font=f_meta, fill=(210, 214, 224))
+
+    divider_y = panel_h
+    draw2.line([(pad_x, divider_y - 1), (W - pad_x, divider_y - 1)], fill=(255, 255, 255, 40), width=2)
+
+    icon_r = int(contact_h * 0.30)
+    icon_cx, icon_cy = pad_x + icon_r, divider_y + contact_h // 2
+    draw2.ellipse([icon_cx - icon_r, icon_cy - icon_r, icon_cx + icon_r, icon_cy + icon_r], fill=BRAND_ORANGE)
+    f_icon = _font("bold", int(icon_r * 1.1))
+    icon_glyph = "\u260E"
+    iw = draw2.textlength(icon_glyph, font=f_icon)
+    draw2.text((icon_cx - iw / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
+
+    f_contact = _font("bold", int(W * 0.042))
+    draw2.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), CONTACT_NUMBER, font=f_contact, fill="white")
+
+    top_buf = io.BytesIO(); top_img.save(top_buf, format="PNG"); top_buf.seek(0)
+    bottom_buf = io.BytesIO(); bottom_img.save(bottom_buf, format="PNG"); bottom_buf.seek(0)
+
+    return top_buf.read(), top_bar_h, bottom_buf.read(), bottom_h
+
+
+def build_branded_video(video_bytes, fields):
+    """
+    Brands a video the same way build_branded_image brands photos: an
+    orange top bar above the clip, a navy info+contact panel below it.
+    Requires the `ffmpeg`/`ffprobe` binaries to be installed and on PATH
+    on the server (e.g. `apt-get install ffmpeg` in your Dockerfile).
+    Returns branded MP4 bytes. Raises RuntimeError if ffmpeg is missing,
+    or subprocess.CalledProcessError if the encode fails.
+    """
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise RuntimeError("ffmpeg/ffprobe not installed on this server — cannot brand video")
+
+    tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tmp_in.write(video_bytes); tmp_in.close()
+    tmp_top = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    tmp_bottom = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tmp_out.close()
+
+    try:
+        TARGET_W = 1080
+        src_w, src_h = _get_video_dimensions(tmp_in.name)
+        scaled_h = int(src_h * (TARGET_W / src_w))
+        if scaled_h % 2:
+            scaled_h += 1  # ffmpeg needs even dimensions
+
+        top_bytes, top_h, bottom_bytes, bottom_h = _build_brand_bars(fields, TARGET_W)
+        tmp_top.write(top_bytes); tmp_top.close()
+        tmp_bottom.write(bottom_bytes); tmp_bottom.close()
+
+        total_h = top_h + scaled_h + bottom_h
+        if total_h % 2:
+            total_h += 1
+
+        filter_complex = (
+            f"[0:v]scale={TARGET_W}:{scaled_h},setsar=1[v0];"
+            f"[v0]pad={TARGET_W}:{total_h}:0:{top_h}:color=0x10131c[padded];"
+            f"[padded][1:v]overlay=0:0[tmp1];"
+            f"[tmp1][2:v]overlay=0:{top_h + scaled_h}[vout]"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", tmp_in.name,
+            "-i", tmp_top.name,
+            "-i", tmp_bottom.name,
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            tmp_out.name
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+
+        with open(tmp_out.name, "rb") as f:
+            return f.read()
+    finally:
+        for p in (tmp_in.name, tmp_top.name, tmp_bottom.name, tmp_out.name):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
 @app.route("/")
 def loginpage():
@@ -2291,6 +2460,10 @@ def check_assign():
 
 #https://www.karmandrones.com/
 
+# Allowed values for the LeadType field on every Leads-family document
+VALID_LEAD_TYPES = {"buyer_purchase", "buyer_rental", "seller", "agent"}
+
+
 @app.route("/add-lead", methods=["POST"])
 def add_lead():
     try:
@@ -2307,6 +2480,13 @@ def add_lead():
         phone_number = data.get("Phone Number")
         if not phone_number:
             return jsonify({"error": "Phone Number is required"}), 400
+
+        # NEW: normalize/validate LeadType — defaults to "buyer_purchase"
+        # if missing or not one of the accepted values.
+        lead_type = str(data.get("LeadType", "")).strip()
+        if lead_type not in VALID_LEAD_TYPES:
+            lead_type = "buyer_purchase"
+        data["LeadType"] = lead_type
 
         # 3. Remove collection key from document
         data.pop("collection", None)
@@ -3274,11 +3454,19 @@ def upload_inventory():
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
 
-        # Videos are uploaded as-is — no branding overlay applied to video
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
-            up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
+            if branding:
+                try:
+                    branded_video = build_branded_video(file.read(), brand_fields)
+                    up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/inventory")
+                except Exception as vid_err:
+                    print(f"[branding] video branding failed, uploading original: {vid_err}")
+                    file.seek(0)
+                    up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
+            else:
+                up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
 
@@ -3726,11 +3914,19 @@ def upload_project_v2():
             media_public_ids.append(up.get("public_id"))
             has_image = True
 
-        # Videos are uploaded as-is — no branding overlay applied to video
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
-            up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
+            if branding:
+                try:
+                    branded_video = build_branded_video(file.read(), brand_fields)
+                    up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/projects")
+                except Exception as vid_err:
+                    print(f"[branding] video branding failed, uploading original: {vid_err}")
+                    file.seek(0)
+                    up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
+            else:
+                up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
             has_video = True
@@ -3918,8 +4114,8 @@ def search_inventory():
 # =============================
 # CAMPAIGN BUILDER (OpenAI-backed, no Mongo)
 # =============================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 @app.route("/campaign-builder")
@@ -3935,8 +4131,8 @@ def ai_campaign():
     if not session.get("user_id"):
         return jsonify({"success": False, "message": "Login required"}), 401
 
-    if not OPENAI_API_KEY:
-        return jsonify({"success": False, "message": "OPENAI_API_KEY not set in .env"}), 500
+    if not OPENROUTER_API_KEY:
+        return jsonify({"success": False, "message": "OPENROUTER_API_KEY not set in .env"}), 500
 
     resp = None
     try:
@@ -3961,7 +4157,7 @@ def ai_campaign():
         user_content.append({"type": "text", "text": user_prompt})
 
         payload = {
-            "model": data.get("model") or "gpt-4o-mini",
+            "model": data.get("model") or "openai/gpt-4o-mini",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
@@ -3971,10 +4167,12 @@ def ai_campaign():
         }
 
         resp = requests.post(
-            OPENAI_API_URL,
+            OPENROUTER_API_URL,
             headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json"
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://nishahomes.com",   # OpenRouter recommends/requires this
+                "X-Title": "Nisha Homes Campaign Builder"
             },
             json=payload,
             timeout=90

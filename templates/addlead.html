@@ -653,6 +653,20 @@ input.err, select.err, textarea.err {
         <span class="err-msg" id="err-phone">Valid phone number required</span>
       </div>
 
+      <!-- Lead Type -->
+      <div class="form-group">
+        <label>Lead Type <span class="req">*</span></label>
+        <div class="input-wrap">
+          <span class="field-icon">🏷️</span>
+          <select id="leadType">
+            <option value="buyer_purchase">Buyer (Purchase)</option>
+            <option value="buyer_rental">Buyer (Rental)</option>
+            <option value="seller">Seller</option>
+            <option value="agent">Agent</option>
+          </select>
+        </div>
+      </div>
+
     </div>
 
     <!-- Section: Property -->
@@ -949,7 +963,7 @@ $("leadForm").addEventListener("submit", async (e) => {
     "Buying Timeline":        timelineValue,
     "note":                   val("note")      || null,
     "Project":                val("project")   || null,
-    "LeadType":               "other"
+    "LeadType":               val("leadType")  || "buyer_purchase"
   };
 
   setLoading(true);
