@@ -753,7 +753,7 @@ def loginpage():
         if role == "admin":
             return redirect("/admin")
         elif role == "emp":
-            return redirect("/emp")
+            return redirect("/admin")
         elif role == "partner":
             return redirect("/inventory")
         else:
@@ -811,10 +811,11 @@ def login():
     session.permanent = bool(remember)
 
     # Redirect based on role
+    # Redirect based on role
     if role == "admin":
         return redirect("/admin")
     elif role == "emp":
-        return redirect("/emp")
+        return redirect("/admin")
     elif role == "partner":
         return redirect("/inventory")
     else:
@@ -829,13 +830,14 @@ def upload_page():
 
 @app.route("/admin")
 def admin():
-    if not session.get("user_id") or session.get("role") != "admin":
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
         return redirect("/")
 
     return render_template(
         "admin.html",
         employee_name=session.get("employee_name"),
-        employee_number=session.get("employee_number")
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
     )
 
 @app.route("/emp")
@@ -1605,10 +1607,19 @@ def reassign_lead():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/call-attempt", methods=["POST"])
 def call_attempt():
+    """
+    Fires whenever ANY 'Call' button is clicked, from ANY page (All Leads,
+    Assigned Leads, Followups, Hot/Warm/Cold, etc). Increments Total Calls,
+    pushes a {At, By} entry into CallHistory (array, so every call attempt
+    is kept, not just the latest), and also writes a lightweight row into
+    callLogs so the dashboard's "Team Activity - Calls Today" picks it up
+    automatically (that widget already aggregates callLogs by DateOnly).
+    """
     try:
-        data = request.json
+        data = request.json or {}
         number = data.get("number")
 
         if not number:
@@ -1617,25 +1628,52 @@ def call_attempt():
         # Clean number
         number = str(number).replace("+", "").strip()
 
+        employee_name = session.get("employee_name") or data.get("employee") or "Unknown"
+        now = datetime.utcnow()
+        formatted_dt = format_ist(now)
+        today_str = now.strftime("%Y-%m-%d")
+
         end_collection = db["endData"]
 
-        # Increment or create
-        result = end_collection.update_one(
-            {"Number": number},          # Find by number
+        end_collection.update_one(
+            {"Number": number},
             {
-                "$inc": {"Call_attempt": 1},   # Increment by 1
-                "$setOnInsert": {"Number": number}
+                "$inc": {"Call_attempt": 1},
+                "$setOnInsert": {"Number": number},
+                "$push": {
+                    "CallHistory": {
+                        "$each": [{
+                            "At": now,
+                            "AtFormatted": formatted_dt,
+                            "By": employee_name
+                        }],
+                        "$slice": -100
+                    }
+                }
             },
-            upsert=True   # If not found -> create document
+            upsert=True
         )
 
-        # Get updated count
+        # Also record it in callLogs so Team Activity / Total Calls count it
+        call_logs_collection.insert_one({
+            "Number": number,
+            "Name": data.get("name", ""),
+            "LeadType": data.get("leadType", ""),
+            "CallAttemptOnly": True,
+            "CallDateTimeFormatted": formatted_dt,
+            "CalledBy": employee_name,
+            "CreatedAt": now,
+            "DateOnly": today_str
+        })
+
         updated_doc = end_collection.find_one({"Number": number})
 
         return jsonify({
             "success": True,
             "Number": number,
-            "Call_attempt": updated_doc.get("Call_attempt", 1)
+            "Call_attempt": updated_doc.get("Call_attempt", 1),
+            "CalledBy": employee_name,
+            "CallDateTime": formatted_dt
         })
 
     except Exception as e:
