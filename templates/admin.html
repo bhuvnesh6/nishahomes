@@ -1227,7 +1227,16 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         <h1>Dashboard Overview</h1>
         <p>Live snapshot of your leads, pipeline and team activity</p>
       </div>
-      <div class="dash-date-pill" id="dashDatePill">—</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <select id="dashPeriodFilter" style="background:#fff;border:1.5px solid var(--border);color:var(--primary);padding:8px 16px;border-radius:var(--radius-pill);font-weight:600;font-size:0.78rem;box-shadow:var(--sh-sm);font-family:'DM Sans',sans-serif;cursor:pointer;outline:none">
+          <option value="lifetime" selected>Lifetime</option>
+          <option value="today">Today</option>
+          <option value="this_month">This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="last_3_months">Last 3 Months</option>
+        </select>
+        <div class="dash-date-pill" id="dashDatePill">—</div>
+      </div>
     </div>
 
     <!-- KPI: lead volume by type -->
@@ -1300,7 +1309,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           <div class="pipeline-icon gray">📞</div>
           <div class="pipeline-info">
             <div class="pipeline-value" id="dashCallsToday">—</div>
-            <div class="pipeline-label">Calls Today</div>
+            <div class="pipeline-label" id="dashCallsLabel">Calls Today</div>
           </div>
         </div>
       </div>
@@ -1345,7 +1354,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         <div class="dash-section-sub">Calls logged today</div>
       </div>
       <div class="chart-card">
-        <div class="chart-card-title">Calls Today — By Team Member</div>
+        <div class="chart-card-title"><span id="dashCallsByEmployeeTitle">Calls Today — By Team Member</span></div>
         <div id="dashCallsByEmployee" class="donut-wrap"></div>
       </div>
     </div>
@@ -2348,8 +2357,6 @@ async function loadAllLeads(keepPage){
     ];
 
     document.getElementById('sidebarLeadCount').textContent = flatLeads.length;
-    updateDashStats();
-    buildCharts();
     if(keepPage) currentPage = savedPage;
     applyFilter(keepPage);
   }catch(e){
@@ -2798,34 +2805,20 @@ document.getElementById('selectAllBtn').addEventListener('click',()=>{
 /* ═══════════════════════════════════
    DASHBOARD STATS
 ═══════════════════════════════════ */
-function updateDashStats(){
-  const total=flatLeads.length;
-  const buying=(allLeads.buying||[]).length;
-  const rental=(allLeads.rental||[]).length;
-  const selling=(allLeads.selling||[]).length;
-  document.getElementById('dashTotalLeads').textContent=total.toLocaleString();
-  document.getElementById('dashTotalChange').innerHTML='↑ Unassigned leads';
-  document.getElementById('dashBuying').textContent=buying;
-  document.getElementById('dashBuyingChange').textContent='Buying';
-  document.getElementById('dashRental').textContent=rental;
-  document.getElementById('dashRentalChange').textContent='Rental';
-  document.getElementById('dashSelling').textContent=selling;
-  document.getElementById('dashSellingChange').textContent='Selling';
-}
+
 
 /* ═══════════════════════════════════
    CHARTS
 ═══════════════════════════════════ */
-function buildCharts(){
-  buildLineChart();buildDonut();buildStatusBars();buildTopLocations();
-}
+let lastTrendData = {};
 
-function buildLineChart(){
+function buildLineChart(trendObj){
+  if(trendObj) lastTrendData = trendObj;
   const svg=document.getElementById('lineChartSvg');
   const W=600,H=180,PAD={t:20,r:20,b:30,l:40};
-  const byDate={};
-  flatLeads.forEach(l=>{const d=String(l.Date||'').trim();if(!d)return;byDate[d]=(byDate[d]||0)+1});
-  const sorted=Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0])).slice(-30);
+  const days = parseInt(document.getElementById('chartPeriod').value || '30', 10);
+  const byDate = lastTrendData || {};
+  const sorted=Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0])).slice(-days);
   if(sorted.length<2){svg.innerHTML=`<text x="50%" y="50%" fill="rgba(255,255,255,0.3)" text-anchor="middle" font-size="13">Not enough data</text>`;return}
   const vals=sorted.map(s=>s[1]);
   const minV=Math.min(...vals),maxV=Math.max(...vals),range=maxV-minV||1;
@@ -2846,9 +2839,10 @@ function buildLineChart(){
   svg.innerHTML=`<defs><linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EF8354" stop-opacity="0.35"/><stop offset="100%" stop-color="#EF8354" stop-opacity="0"/></linearGradient></defs>${yTicks}<path d="${area}" fill="url(#lineGrad)"/><path d="${path}" fill="none" stroke="#EF8354" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#EF8354"/>`).join('')}${labels}`;
 }
 
-function buildDonut(){
-  const counts={Buying:(allLeads.buying||[]).length,Rental:(allLeads.rental||[]).length,Selling:(allLeads.selling||[]).length,Agent:(allLeads.agent||[]).length,Other:(allLeads.other||[]).length};
-  const colors={Buying:'#EF8354',Rental:'#3B82F6',Selling:'#F59E0B',Agent:'#8B5CF6',Other:'#6B7280'};
+function buildDonut(totals){
+  totals = totals || {};
+  const counts={Buying:totals.buying||0,Rental:totals.rental||0,Selling:totals.selling||0,Agent:totals.agent||0};
+  const colors={Buying:'#EF8354',Rental:'#3B82F6',Selling:'#F59E0B',Agent:'#8B5CF6'};
   const total=Object.values(counts).reduce((a,b)=>a+b,0)||1;
   const svg=document.getElementById('donutSvg');
   const cx=60,cy=60,r=45,ir=28;let startAngle=-Math.PI/2;let paths='';
@@ -2868,35 +2862,106 @@ function buildDonut(){
   legend.innerHTML=Object.entries(counts).map(([k,v])=>`<div class="donut-row"><div class="donut-legend-item"><div class="donut-dot" style="background:${colors[k]}"></div>${k}</div><span class="donut-pct">${Math.round(v/total*100)}%</span></div>`).join('');
 }
 
-function buildStatusBars(){
-  const statusCounts={};
-  if(endDataLoaded && Object.keys(endDataMap).length>0){
-    Object.values(endDataMap).forEach(r=>{
-      const s=r['Call Status']||'No Log';
-      statusCounts[s]=(statusCounts[s]||0)+1;
-    });
-  } else {
-    flatLeads.forEach(l=>{
-      const s=l.endData?.['Call Status']||'No Log';
-      statusCounts[s]=(statusCounts[s]||0)+1;
-    });
-  }
+function buildStatusBars(statusObj){
+  const statusCounts = statusObj || {};
   const sorted=Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const max=sorted[0]?.[1]||1;
   const container=document.getElementById('statusBarChart');
+  if(!sorted.length){
+    container.innerHTML = '<div style="color:var(--text-soft);font-size:0.8rem">No data for this period</div>';
+    return;
+  }
+  const max=sorted[0]?.[1]||1;
   container.innerHTML=sorted.map(([s,v])=>`<div class="bar-row"><div class="bar-label" title="${s}">${s}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%"></div></div><div class="bar-count">${v}</div></div>`).join('');
 }
 
-function buildTopLocations(){
-  const locCounts={};
-  flatLeads.forEach(l=>{const loc=(l['Location Interested In']||l['Property Location']||l['Operating City']||'').trim();if(!loc)return;locCounts[loc]=(locCounts[loc]||0)+1});
+function buildTopLocations(locObj){
+  const locCounts = locObj || {};
   const sorted=Object.entries(locCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const container = document.getElementById('topLocationsList');
+  if(!sorted.length){
+    container.innerHTML = '<div style="color:var(--text-soft);font-size:0.8rem">No location data for this period</div>';
+    return;
+  }
   const max=sorted[0]?.[1]||1;
   const emojis=['🏙','🌆','🌃','🏘','🌇'];
-  document.getElementById('topLocationsList').innerHTML=sorted.map(([loc,v],i)=>`<div class="location-item"><div class="location-flag">${emojis[i]||'📍'}</div><div class="location-name">${escHtml(loc)}</div><div class="location-bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%"></div></div></div><div class="location-count">${v}</div></div>`).join('');
+  container.innerHTML=sorted.map(([loc,v],i)=>`<div class="location-item"><div class="location-flag">${emojis[i]||'📍'}</div><div class="location-name">${escHtml(loc)}</div><div class="location-bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%"></div></div></div><div class="location-count">${v}</div></div>`).join('');
 }
 
-document.getElementById('chartPeriod').addEventListener('change',buildLineChart);
+document.getElementById('chartPeriod').addEventListener('change',()=>buildLineChart());
+
+/* ═══════════════════════════════════
+   DASHBOARD OVERVIEW (PERIOD-AWARE)
+   Drives every widget: KPIs, Pipeline Health, Follow-ups, Team Activity,
+   Lead Intent, Trends, Breakdown — all from one endpoint, filtered by
+   the selected period.
+═══════════════════════════════════ */
+const DASH_PERIOD_LABELS = {
+  lifetime: 'Lifetime', today: 'Today', this_month: 'This Month',
+  last_month: 'Last Month', last_3_months: 'Last 3 Months'
+};
+let currentDashPeriod = 'lifetime';
+
+async function loadDashboardOverview(period){
+  currentDashPeriod = period || 'lifetime';
+  try{
+    const res = await fetch(`${BASE}/dashboard-overview?period=${encodeURIComponent(currentDashPeriod)}`);
+    const d = await res.json();
+    if(!d.success) return;
+
+    // KPI cards
+    document.getElementById('dashTotalLeads').textContent = (d.totals.total||0).toLocaleString();
+    document.getElementById('dashTotalChange').textContent = DASH_PERIOD_LABELS[currentDashPeriod] || 'Lifetime';
+    document.getElementById('dashBuying').textContent = d.totals.buying||0;
+    document.getElementById('dashBuyingChange').textContent = 'Buying';
+    document.getElementById('dashRental').textContent = d.totals.rental||0;
+    document.getElementById('dashRentalChange').textContent = 'Rental';
+    document.getElementById('dashSelling').textContent = d.totals.selling||0;
+    document.getElementById('dashSellingChange').textContent = 'Selling';
+
+    // Pipeline health
+    document.getElementById('dashFollowup').textContent = d.pipeline.followup_count;
+    document.getElementById('dashPending').textContent = d.pipeline.pending_count;
+    document.getElementById('dashDone').textContent = d.pipeline.done_count;
+    document.getElementById('dashCallsToday').textContent = d.pipeline.calls_period_total;
+    const callsLabel = currentDashPeriod === 'today' ? 'Calls Today' : `Calls (${DASH_PERIOD_LABELS[currentDashPeriod]})`;
+    document.getElementById('dashCallsLabel').textContent = callsLabel;
+    document.getElementById('dashCallsByEmployeeTitle').textContent = `${callsLabel} — By Team Member`;
+
+    // Team activity
+    const list = Object.entries(d.team_activity.by_employee||{}).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('dashCallsByEmployee').innerHTML = list.length
+      ? list.map(([name,c])=>`<div class="donut-row"><span style="color:rgba(255,255,255,.72);font-size:.85rem">${escHtml(name)}</span><span class="donut-pct">${c}</span></div>`).join('')
+      : '<div style="color:rgba(255,255,255,0.4);font-size:0.8rem">No calls in this period</div>';
+
+    // Follow-ups
+    followupData.todayLeads = d.followups.todayLeads || [];
+    followupData.weekLeads = d.followups.weekLeads || [];
+    document.getElementById('dashFollowupToday').textContent = d.followups.todayCount;
+    document.getElementById('dashFollowupWeek').textContent = d.followups.weekCount;
+
+    // Lead intent
+    intentData.hotLeads = d.intent.hotLeads || [];
+    intentData.warmLeads = d.intent.warmLeads || [];
+    intentData.coldLeads = d.intent.coldLeads || [];
+    document.getElementById('dashIntentHot').textContent = d.intent.hotCount;
+    document.getElementById('dashIntentWarm').textContent = d.intent.warmCount;
+    document.getElementById('dashIntentCold').textContent = d.intent.coldCount;
+
+    // Trends + Breakdown
+    buildLineChart(d.trend || {});
+    buildDonut(d.totals || {});
+    buildStatusBars(d.status_breakdown || {});
+    buildTopLocations(d.top_locations || {});
+
+    document.getElementById('dashDatePill').textContent = DASH_PERIOD_LABELS[currentDashPeriod] || 'Lifetime';
+  }catch(e){
+    console.warn('dashboard overview load failed', e);
+  }
+}
+
+document.getElementById('dashPeriodFilter').addEventListener('change', function(){
+  loadDashboardOverview(this.value);
+});
 
 /* ═══════════════════════════════════
    ADMIN OVERVIEW STATS
@@ -3628,7 +3693,12 @@ document.getElementById('spSendBtn').addEventListener('click', ()=>{
    INIT
 ═══════════════════════════════════ */
 window.addEventListener('load',()=>{
-  setTimeout(()=>{hideLoader();loadAllLeads();loadDashboardStats();loadAssignedLeads();loadDashboardFollowups();loadDashboardIntentLeads()},600);
+  setTimeout(()=>{
+    hideLoader();
+    loadAllLeads();
+    loadAssignedLeads();
+    loadDashboardOverview('lifetime');
+  },600);
 });
 </script>
 </body>

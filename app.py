@@ -208,6 +208,51 @@ def get_date_range(period):
 
 
 # =============================
+# DASHBOARD PERIOD FILTER (Today / This Month / Last Month / Last 3 Months / Lifetime)
+# Uses the "Created At" field written by /add-lead (format "%Y-%m-%d %H:%M:%S").
+# =============================
+def get_dashboard_period_range(period):
+    """Returns (start_datetime, end_datetime) for the dashboard period filter,
+    or (None, None) for 'lifetime' (meaning: no filtering, include everything —
+    even leads that have no 'Created At' field at all)."""
+    now = datetime.utcnow()
+
+    if period == "today":
+        start = datetime(now.year, now.month, now.day)
+        return start, now
+
+    if period == "this_month":
+        start = datetime(now.year, now.month, 1)
+        return start, now
+
+    if period == "last_month":
+        first_of_this_month = datetime(now.year, now.month, 1)
+        last_month_end = first_of_this_month - timedelta(seconds=1)
+        start = datetime(last_month_end.year, last_month_end.month, 1)
+        return start, last_month_end
+
+    if period == "last_3_months":
+        month = now.month - 2
+        year = now.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        start = datetime(year, month, 1)
+        return start, now
+
+    return None, None  # "lifetime"
+
+
+def parse_created_at_str(s):
+    """Parses the 'Created At' field written by /add-lead: 'YYYY-MM-DD HH:MM:SS'."""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(str(s).strip(), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+# =============================
 # AI PROPERTY AUTOFILL (Mistral)
 # =============================
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
@@ -2099,6 +2144,210 @@ def dashboard_intent_leads():
     }), 200
 
 
+# =============================
+# DASHBOARD OVERVIEW — single period-aware endpoint that powers every
+# widget on the Dashboard page: KPI totals, Pipeline Health, Follow-ups,
+# Team Activity, Lead Intent (AI), Trends and Breakdown.
+#
+# period = "today" | "this_month" | "last_month" | "last_3_months" | "lifetime"
+#
+# Filtering is based on each lead's "Created At" field. For "lifetime",
+# every lead is included — even ones with no "Created At" at all (as
+# requested). For any other period, leads without a parseable "Created At"
+# are excluded (there's no reliable way to place them in a specific window).
+# =============================
+@app.route("/api/dashboard-overview", methods=["GET"])
+def dashboard_overview():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    period = request.args.get("period", "lifetime")
+    start, end = get_dashboard_period_range(period)
+    now = datetime.utcnow()
+
+    collections = {
+        "buying": "Leads", "rental": "RentalLeads",
+        "selling": "sellingLeads", "agent": "agentLeads"
+    }
+
+    totals = {"buying": 0, "rental": 0, "selling": 0, "agent": 0}
+    trend_counts = {}       # "YYYY-MM-DD" -> count
+    location_counts = {}    # location -> count
+    qualifying_phones = {}  # normalized "91xxxxxxxxxx" -> leadType
+
+    try:
+        for lead_type, coll_name in collections.items():
+            for lead in db[coll_name].find():
+                created_dt = parse_created_at_str(lead.get("Created At"))
+
+                if start is not None:
+                    if not created_dt or created_dt < start or created_dt > end:
+                        continue
+                # lifetime (start is None): include regardless of Created At
+
+                totals[lead_type] += 1
+
+                if created_dt:
+                    d_str = created_dt.strftime("%Y-%m-%d")
+                    trend_counts[d_str] = trend_counts.get(d_str, 0) + 1
+
+                loc = (lead.get("Location Interested In") or lead.get("Property Location")
+                       or lead.get("Operating City") or "").strip()
+                if loc:
+                    location_counts[loc] = location_counts.get(loc, 0) + 1
+
+                phone = normalize_number(lead.get("Phone Number", ""))
+                if phone:
+                    if not phone.startswith("91"):
+                        phone = "91" + phone
+                    qualifying_phones[phone] = lead_type
+
+        total_leads = sum(totals.values())
+
+        # ---- Pipeline health / status breakdown / intent / follow-ups ----
+        end_collection = db["endData"]
+        followup_count = pending_count = done_count = 0
+        status_counts = {}
+        intent_buckets = {"Hot": [], "Warm": [], "Cold": []}
+        today_list, week_list = [], []
+
+        def map_interest_to_bucket(level):
+            lvl = (level or "").strip().lower()
+            if lvl in ("very high", "high"):
+                return "Hot"
+            if lvl == "medium":
+                return "Warm"
+            if lvl == "cold":
+                return "Cold"
+            return None
+
+        def _clean(v, default="-"):
+            if v is None or v == "":
+                return default
+            if isinstance(v, float) and math.isnan(v):
+                return default
+            return v
+
+        def parse_followup_date(s):
+            if not s:
+                return None
+            s = str(s).strip()
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(s, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        today = now.date()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+
+        if qualifying_phones:
+            for ed in end_collection.find({"Number": {"$in": list(qualifying_phones.keys())}}):
+                number = ed.get("Number")
+                lead_type = qualifying_phones.get(number, "buying")
+
+                status_val = (ed.get("Status") or "").strip().lower()
+                followup_val = (ed.get("Next Follow-up Timeline") or "").strip()
+                if followup_val:
+                    followup_count += 1
+                if status_val == "done":
+                    done_count += 1
+                else:
+                    pending_count += 1
+
+                call_status = ed.get("Call Status") or "No Log"
+                status_counts[call_status] = status_counts.get(call_status, 0) + 1
+
+                bucket = map_interest_to_bucket(ed.get("Interest Level"))
+                if bucket:
+                    intent_buckets[bucket].append({
+                        "number": number, "name": _clean(ed.get("Customer Name"), "Unknown"),
+                        "location": _clean(ed.get("Location Interested In")),
+                        "propertyType": _clean(ed.get("Property Type")),
+                        "budget": _clean(ed.get("Budget Range")),
+                        "callStatus": _clean(ed.get("Call Status")),
+                        "customerResponse": _clean(ed.get("Customer Response")),
+                        "interestLevel": _clean(ed.get("Interest Level")),
+                        "callerRemarks": _clean(ed.get("Caller Remarks")),
+                        "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                        "nextCallDate": _clean(ed.get("Next Call Date")),
+                        "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                        "leadId": ed.get("LeadId", ""),
+                        "type": lead_type,
+                    })
+
+                fdate = parse_followup_date(ed.get("Next Call Date"))
+                if fdate and fdate >= today:
+                    entry = {
+                        "leadType": lead_type,
+                        "name": _clean(ed.get("Customer Name"), "Unknown"),
+                        "phone": number,
+                        "assignedTo": "-",
+                        "nextCallDate": _clean(ed.get("Next Call Date")),
+                        "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                        "callStatus": _clean(ed.get("Call Status")),
+                        "location": _clean(ed.get("Location Interested In")),
+                        "propertyType": _clean(ed.get("Property Type")),
+                        "budget": _clean(ed.get("Budget Range")),
+                        "customerResponse": _clean(ed.get("Customer Response")),
+                        "interestLevel": _clean(ed.get("Interest Level")),
+                        "callerRemarks": _clean(ed.get("Caller Remarks")),
+                        "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                    }
+                    if fdate == today:
+                        today_list.append(entry)
+                    elif week_start <= fdate <= week_end:
+                        week_list.append(entry)
+
+        # ---- Team activity: calls within the selected period, by the call log's own timestamp ----
+        call_query = {}
+        if start is not None:
+            call_query["CreatedAt"] = {"$gte": start, "$lte": end}
+        by_employee = {}
+        calls_period_total = 0
+        for log in call_logs_collection.find(call_query, {"CalledBy": 1}):
+            calls_period_total += 1
+            name = log.get("CalledBy", "Unknown")
+            by_employee[name] = by_employee.get(name, 0) + 1
+
+        top_locations = dict(sorted(location_counts.items(), key=lambda x: -x[1])[:5])
+
+        return jsonify({
+            "success": True,
+            "period": period,
+            "totals": {"total": total_leads, **totals},
+            "pipeline": {
+                "followup_count": followup_count,
+                "pending_count": pending_count,
+                "done_count": done_count,
+                "calls_period_total": calls_period_total
+            },
+            "team_activity": {"by_employee": by_employee},
+            "intent": {
+                "hotCount": len(intent_buckets["Hot"]),
+                "warmCount": len(intent_buckets["Warm"]),
+                "coldCount": len(intent_buckets["Cold"]),
+                "hotLeads": intent_buckets["Hot"],
+                "warmLeads": intent_buckets["Warm"],
+                "coldLeads": intent_buckets["Cold"]
+            },
+            "followups": {
+                "todayCount": len(today_list), "weekCount": len(week_list),
+                "todayLeads": today_list, "weekLeads": week_list
+            },
+            "trend": trend_counts,
+            "status_breakdown": status_counts,
+            "top_locations": top_locations
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
     try:
@@ -2529,10 +2778,20 @@ def add_lead():
         # 3. Remove collection key from document
         data.pop("collection", None)
 
+        # NEW: "Created At" timestamp, formatted as "YYYY-MM-DD HH:MM:SS"
+        # (e.g. 2026-07-14 13:58:12). Uses $setOnInsert so it's only written
+        # once — the first time this lead is created — and never gets
+        # overwritten on later upserts/updates to the same phone number.
+        data.pop("Created At", None)  # never let incoming payload override it
+        created_at_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
         # 4. Upsert (update if exists, insert if not)
         result = collection.update_one(
             {"Phone Number": phone_number},
-            {"$set": data},
+            {
+                "$set": data,
+                "$setOnInsert": {"Created At": created_at_str}
+            },
             upsert=True
         )
 
