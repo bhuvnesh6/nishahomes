@@ -721,7 +721,7 @@ def build_banner_image(image_bytes, fields):
     icon_glyph_w = draw.textlength(icon_glyph, font=f_icon)
     draw.text((icon_cx - icon_glyph_w / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
 
-    f_contact = _font("bold", int(W * 0.042))
+    f_contact = _font("bold", int(W * 0.034))
     contact_display = f"{CONTACT_NUMBER}  •  {BRAND_WEBSITE}"
     draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), contact_display, font=f_contact, fill="white")
 
@@ -746,7 +746,7 @@ def build_simple_branded_image(image_bytes):
     pad = 10      # padding inside each badge around the text
 
     # ---- TOP-LEFT: brand name badge ----
-    f_logo = _font("bold", max(int(W * 0.028), 16))
+    f_logo = _font("bold", max(int(W * 0.022), 13))
     logo_w = draw.textlength(BRAND_NAME, font=f_logo)
     logo_h = f_logo.size
 
@@ -760,7 +760,7 @@ def build_simple_branded_image(image_bytes):
     draw.text((bx + pad, by + pad - 2), BRAND_NAME, font=f_logo, fill="white")
 
     # ---- BOTTOM-LEFT: contact + website badge ----
-    f_contact = _font("regular", max(int(W * 0.022), 13))
+    f_contact = _font("regular", max(int(W * 0.017), 11))
     contact_text = f"{BRAND_CONTACT_NUMBER}  |  {BRAND_WEBSITE}"
     contact_w = draw.textlength(contact_text, font=f_contact)
     contact_h = f_contact.size
@@ -820,10 +820,10 @@ def build_simple_branded_video(video_bytes):
     # never covers the whole frame and can't get cropped on any screen size.
     vf = (
         f"drawtext=fontfile='{font_path}':text='{name_esc}':"
-        f"x=10:y=10:fontsize=main_h*0.035:fontcolor=white:"
+        f"x=10:y=10:fontsize=main_h*0.026:fontcolor=white:"
         f"box=1:boxcolor=0xED8049@0.9:boxborderw=10,"
         f"drawtext=fontfile='{font_path}':text='{contact_esc}':"
-        f"x=10:y=h-th-30:fontsize=main_h*0.028:fontcolor=white:"
+        f"x=10:y=h-th-30:fontsize=main_h*0.020:fontcolor=white:"
         f"box=1:boxcolor=0x10131C@0.85:boxborderw=10"
     )
     try:
@@ -942,7 +942,7 @@ def _build_brand_bars(fields, video_w):
     iw = draw2.textlength(icon_glyph, font=f_icon)
     draw2.text((icon_cx - iw / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
 
-    f_contact = _font("bold", int(W * 0.042))
+    f_contact = _font("bold", int(W * 0.034))
     contact_display = f"{CONTACT_NUMBER}  •  {BRAND_WEBSITE}"
     draw2.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), contact_display, font=f_contact, fill="white")
 
