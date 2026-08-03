@@ -483,10 +483,9 @@ _SYSTEM_FONT_FALLBACKS = {
 
 def build_signed_pdf_url(public_id):
     """
-    Builds a SIGNED Cloudinary delivery URL for a raw PDF resource.
-    NOTE: no separate format="pdf" here — for resource_type="raw" the
-    extension must live IN public_id itself (see the 3 upload call sites),
-    otherwise the URL points at a public_id Cloudinary never stored.
+    Builds a delivery URL for a raw PDF resource. Signed so it bypasses
+    Cloudinary's PDF/ZIP security restriction; access_mode="public" is
+    also set on upload so the resource itself isn't gated as "authenticated".
     """
     url, _ = cloudinary.utils.cloudinary_url(
         public_id,
@@ -496,6 +495,8 @@ def build_signed_pdf_url(public_id):
         secure=True
     )
     return url
+
+
 
 def _font(weight, size):
     """Robust font loader. Tries your bundled fonts, then common Linux
@@ -3851,9 +3852,10 @@ def upload_project():
         if pdf_file and pdf_file.filename:
             pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
-                pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False
-            )
+             pdf_file, resource_type="raw",
+             public_id=pdf_public_id, use_filename=False, unique_filename=False,
+             access_mode="public"
+           )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
         # Save in DB
@@ -3956,8 +3958,9 @@ def upload_inventory():
             pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
              pdf_file, resource_type="raw",
-             public_id=pdf_public_id, use_filename=False, unique_filename=False
-        )
+             public_id=pdf_public_id, use_filename=False, unique_filename=False,
+             access_mode="public"
+           )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
         inventory_data = {
@@ -4467,9 +4470,10 @@ def upload_project_v2():
         if pdf_file and pdf_file.filename:
             pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
-                pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False
-            )
+             pdf_file, resource_type="raw",
+             public_id=pdf_public_id, use_filename=False, unique_filename=False,
+             access_mode="public"
+           )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
         starting_price = f("startingPrice", "")
