@@ -34,6 +34,7 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import cloudinary.utils
+from supabase import create_client
 import subprocess
 import shutil
 # NEW: branding overlay for images
@@ -49,6 +50,17 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET"),
     secure=True
 )
+
+# NEW: Supabase Storage config - reads from .env
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_PDF_BUCKET = "documents"  # must exist + be set Public in the Supabase dashboard
+
+supabase = None
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+else:
+    print("[startup] Supabase not configured — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing in .env")
 
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=60)
@@ -481,21 +493,26 @@ _SYSTEM_FONT_FALLBACKS = {
 }
 
 
-def build_signed_pdf_url(public_id):
+def upload_pdf_to_supabase(pdf_file, folder):
     """
-    Builds a delivery URL for a raw PDF resource. Signed so it bypasses
-    Cloudinary's PDF/ZIP security restriction; access_mode="public" is
-    also set on upload so the resource itself isn't gated as "authenticated".
+    Uploads a PDF file (Werkzeug FileStorage from request.files) to Supabase
+    Storage and returns its public URL. `folder` groups files, e.g.
+    "inventory" or "projects" — purely cosmetic path organization.
+    Raises RuntimeError if Supabase isn't configured.
     """
-    url, _ = cloudinary.utils.cloudinary_url(
-        public_id,
-        resource_type="raw",
-        type="upload",
-        sign_url=True,
-        secure=True
-    )
-    return url
+    if not supabase:
+        raise RuntimeError("Supabase not configured — check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in .env")
 
+    file_bytes = pdf_file.read()
+    object_path = f"{folder}/{secrets.token_hex(8)}.pdf"
+
+    supabase.storage.from_(SUPABASE_PDF_BUCKET).upload(
+        object_path,
+        file_bytes,
+        {"content-type": "application/pdf"}
+    )
+
+    return supabase.storage.from_(SUPABASE_PDF_BUCKET).get_public_url(object_path)
 
 
 def _font(weight, size):
@@ -3846,17 +3863,11 @@ def upload_project():
         file_url = upload_result.get("secure_url")
         public_id = upload_result.get("public_id")
 
-        # NEW: optional PDF / brochure upload for the project
+        # PDF / brochure upload for the project — now goes to Supabase Storage
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
-            cloudinary.uploader.upload(
-             pdf_file, resource_type="raw",
-             public_id=pdf_public_id, use_filename=False, unique_filename=False,
-             access_mode="public"
-           )
-            pdf_url = build_signed_pdf_url(pdf_public_id)
+            pdf_url = upload_pdf_to_supabase(pdf_file, folder="projects")
 
         # Save in DB
         project_data = {
@@ -3955,13 +3966,7 @@ def upload_inventory():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}.pdf"
-            cloudinary.uploader.upload(
-             pdf_file, resource_type="raw",
-             public_id=pdf_public_id, use_filename=False, unique_filename=False,
-             access_mode="public"
-           )
-            pdf_url = build_signed_pdf_url(pdf_public_id)
+            pdf_url = upload_pdf_to_supabase(pdf_file, folder="inventory")
 
         inventory_data = {
             "listingBasis": f("listingBasis", ""),
@@ -4468,13 +4473,7 @@ def upload_project_v2():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
-            cloudinary.uploader.upload(
-             pdf_file, resource_type="raw",
-             public_id=pdf_public_id, use_filename=False, unique_filename=False,
-             access_mode="public"
-           )
-            pdf_url = build_signed_pdf_url(pdf_public_id)
+            pdf_url = upload_pdf_to_supabase(pdf_file, folder="projects")
 
         starting_price = f("startingPrice", "")
 
