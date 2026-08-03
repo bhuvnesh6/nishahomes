@@ -480,18 +480,18 @@ _SYSTEM_FONT_FALLBACKS = {
     ],
 }
 
+
 def build_signed_pdf_url(public_id):
     """
     Builds a SIGNED Cloudinary delivery URL for a raw PDF resource.
-    Cloudinary blocks *unsigned* delivery of raw PDF/ZIP resources by default
-    (a 2018 security restriction) — a signed URL bypasses that without
-    touching any Cloudinary account settings.
+    NOTE: no separate format="pdf" here — for resource_type="raw" the
+    extension must live IN public_id itself (see the 3 upload call sites),
+    otherwise the URL points at a public_id Cloudinary never stored.
     """
     url, _ = cloudinary.utils.cloudinary_url(
         public_id,
         resource_type="raw",
         type="upload",
-        format="pdf",
         sign_url=True,
         secure=True
     )
@@ -548,17 +548,19 @@ def build_banner_image(image_bytes, fields):
     Returns branded JPEG bytes styled after the reference design:
     orange top bar -> the ORIGINAL, UNCROPPED photo -> a solid navy info
     panel appended below the photo (title / location / price / config) ->
-    divider -> contact bar. Nothing is ever drawn on top of the photo
-    itself except the small "For Sale" pill, so the property photo is
-    never obscured.
-    """
-    import textwrap
+    divider -> contact bar.
 
+    Title/locality/config lines are wrapped and truncated using REAL
+    pixel measurement (draw.textlength), not an estimated "chars per
+    line" — the estimate was undersizing for bold/caps text and letting
+    lines run off the right edge. panel_h is now measured from the
+    actual content instead of a fixed W*0.40, so nothing gets clipped
+    or painted over by the contact bar below it.
+    """
     CONTACT_NUMBER = "+91 73035 15710"   # fixed branding contact number
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    # Normalize width so font sizing is consistent regardless of source resolution
     TARGET_W = 1080
     if img.width != TARGET_W:
         new_h = int(img.height * (TARGET_W / img.width))
@@ -566,8 +568,78 @@ def build_banner_image(image_bytes, fields):
     W, H = img.size
 
     top_bar_h = int(W * 0.095)
-    panel_h   = int(W * 0.40)
     contact_h = int(W * 0.11)
+    pad_x = int(W * 0.045)
+    panel_pad_top = int(W * 0.09)
+    panel_pad_bottom = int(W * 0.035)
+    max_text_w = W - (pad_x * 2)
+
+    f_title = _font("bold", int(W * 0.052))
+    f_meta  = _font("regular", int(W * 0.030))
+    f_price = _font("bold", int(W * 0.062))
+    f_words = _font("regular", int(W * 0.026))
+
+    dummy = ImageDraw.Draw(Image.new("RGB", (1, 1)))  # for pre-measuring text before the canvas exists
+
+    def _ellipsize(text, font, max_w):
+        if not text:
+            return text
+        if dummy.textlength(text, font=font) <= max_w:
+            return text
+        while text and dummy.textlength(text + "…", font=font) > max_w:
+            text = text[:-1]
+        return text + "…"
+
+    def _wrap_title(text, font, max_w, max_lines):
+        """Greedy word-wrap measured in real pixels, capped at max_lines,
+        ellipsizing the last line if content still remains."""
+        words = (text or "").split()
+        if not words:
+            return [""]
+        lines, current, i = [], "", 0
+        while i < len(words):
+            trial = (current + " " + words[i]).strip()
+            if dummy.textlength(trial, font=font) <= max_w or not current:
+                current = trial
+                i += 1
+            else:
+                lines.append(current)
+                current = ""
+                if len(lines) == max_lines:
+                    break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+            i = len(words)
+        if i < len(words) and lines:
+            last = lines[-1]
+            while last and dummy.textlength(last + "…", font=font) > max_w:
+                last = last[:-1]
+            lines[-1] = last + "…"
+        return lines
+
+    # ---- Pre-compute every line of panel text BEFORE we know panel_h ----
+    title_lines = _wrap_title(fields.get("propertyTitle") or "", f_title, max_text_w, 2)
+    locality_line = _ellipsize("📍 " + (fields.get("locality") or ""), f_meta, max_text_w)
+    price_line = _format_price_display(fields.get("price"))
+    words_line = _indian_price_words(fields.get("price"))
+    sub_line = _ellipsize(" · ".join(filter(None, [
+        fields.get("configuration"),
+        fields.get("superArea") and f'{fields["superArea"]} sq.ft'
+    ])), f_meta, max_text_w)
+
+    # ---- Measure the exact height the content needs, size panel_h to fit ----
+    content_h = len(title_lines) * int(f_title.size * 1.22)
+    content_h += int(W * 0.02)
+    content_h += int(f_meta.size * 1.6)
+    content_h += int(f_price.size * 1.05)
+    if words_line:
+        content_h += int(f_words.size * 1.5)
+    else:
+        content_h += int(W * 0.01)
+    if sub_line:
+        content_h += int(f_meta.size * 1.2)
+
+    panel_h = max(int(W * 0.28), content_h + panel_pad_top + panel_pad_bottom)
     total_H = top_bar_h + H + panel_h + contact_h
 
     canvas = Image.new("RGB", (W, total_H), BRAND_NAVY_SOLID)
@@ -593,43 +665,30 @@ def build_banner_image(image_bytes, fields):
     draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2, fill=(255, 255, 255, 245))
     draw.text((px + pill_pad_x, py + pill_h * 0.20), deal, font=f_pill, fill=BRAND_ORANGE)
 
-    # ---------- INFO PANEL (solid navy, BELOW the photo) ----------
+    # ---------- INFO PANEL (height = panel_h measured above) ----------
     panel_top = top_bar_h + H
     draw.rectangle([0, panel_top, W, panel_top + panel_h], fill=BRAND_NAVY_SOLID)
 
-    pad_x = int(W * 0.045)
-    y = panel_top + int(panel_h * 0.10)
-
-    f_title = _font("bold", int(W * 0.052))
-    title = fields.get("propertyTitle") or ""
-    max_chars = max(10, int(W / (f_title.size * 0.52)))
-    for line in textwrap.wrap(title, width=max_chars)[:2]:
+    y = panel_top + panel_pad_top
+    for line in title_lines:
         draw.text((pad_x, y), line, font=f_title, fill="white")
         y += int(f_title.size * 1.22)
 
-    y += int(panel_h * 0.025)
-    f_meta = _font("regular", int(W * 0.030))
-    draw.text((pad_x, y), "📍 " + (fields.get("locality") or ""), font=f_meta, fill=(210, 214, 224))
+    y += int(W * 0.02)
+    draw.text((pad_x, y), locality_line, font=f_meta, fill=(210, 214, 224))
     y += int(f_meta.size * 1.6)
 
-    f_price = _font("bold", int(W * 0.062))
-    draw.text((pad_x, y), _format_price_display(fields.get("price")), font=f_price, fill=BRAND_ORANGE)
+    draw.text((pad_x, y), price_line, font=f_price, fill=BRAND_ORANGE)
     y += int(f_price.size * 1.05)
 
-    words = _indian_price_words(fields.get("price"))
-    if words:
-        f_words = _font("regular", int(W * 0.026))
-        draw.text((pad_x, y), f"({words})", font=f_words, fill=(180, 186, 198))
+    if words_line:
+        draw.text((pad_x, y), f"({words_line})", font=f_words, fill=(180, 186, 198))
         y += int(f_words.size * 1.5)
     else:
         y += int(W * 0.01)
 
-    sub = " · ".join(filter(None, [
-        fields.get("configuration"),
-        fields.get("superArea") and f'{fields["superArea"]} sq.ft'
-    ]))
-    if sub:
-        draw.text((pad_x, y), sub, font=f_meta, fill=(210, 214, 224))
+    if sub_line:
+        draw.text((pad_x, y), sub_line, font=f_meta, fill=(210, 214, 224))
 
     # ---------- DIVIDER + CONTACT BAR ----------
     divider_y = panel_top + panel_h
@@ -640,9 +699,9 @@ def build_banner_image(image_bytes, fields):
     icon_cx, icon_cy = pad_x + icon_r, divider_y + contact_h // 2
     draw.ellipse([icon_cx - icon_r, icon_cy - icon_r, icon_cx + icon_r, icon_cy + icon_r], fill=BRAND_ORANGE)
     f_icon = _font("bold", int(icon_r * 1.1))
-    icon_glyph = "\u260E"  # ☎ — if this doesn't render on your server's fonts, swap for "Call:"
-    iw = draw.textlength(icon_glyph, font=f_icon)
-    draw.text((icon_cx - iw / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
+    icon_glyph = "\u260E"
+    icon_glyph_w = draw.textlength(icon_glyph, font=f_icon)
+    draw.text((icon_cx - icon_glyph_w / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
 
     f_contact = _font("bold", int(W * 0.042))
     draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), CONTACT_NUMBER, font=f_contact, fill="white")
@@ -714,9 +773,9 @@ def build_simple_branded_video(video_bytes):
 
     vf = (
         f"drawbox=x=0:y=0:w=iw:h=ih*0.07:color=0xED8049@0.85:t=fill,"
-        f"drawtext=fontfile='{font_path}':text='{name_esc}':x=iw*0.03:y=ih*0.015:fontsize=iw*0.035:fontcolor=white,"
+        f"drawtext=fontfile='{font_path}':text='{name_esc}':x=main_w*0.03:y=main_h*0.015:fontsize=main_w*0.035:fontcolor=white,"
         f"drawbox=x=0:y=ih*0.93:w=iw:h=ih*0.07:color=0x10131C@0.82:t=fill,"
-        f"drawtext=fontfile='{font_path}':text='{contact_esc}':x=iw*0.03:y=ih*0.955:fontsize=iw*0.03:fontcolor=white"
+        f"drawtext=fontfile='{font_path}':text='{contact_esc}':x=main_w*0.03:y=main_h*0.955:fontsize=main_w*0.03:fontcolor=white"
     )
     try:
         cmd = ["ffmpeg", "-y", "-i", tmp_in.name, "-vf", vf,
@@ -3790,11 +3849,10 @@ def upload_project():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}"
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
                 pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False,
-                format="pdf"
+                public_id=pdf_public_id, use_filename=False, unique_filename=False
             )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
@@ -3895,12 +3953,11 @@ def upload_inventory():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}"
+            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
-                pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False,
-                format="pdf"
-            )
+             pdf_file, resource_type="raw",
+             public_id=pdf_public_id, use_filename=False, unique_filename=False
+        )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
         inventory_data = {
@@ -4408,11 +4465,10 @@ def upload_project_v2():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}"
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
             cloudinary.uploader.upload(
                 pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False,
-                format="pdf"
+                public_id=pdf_public_id, use_filename=False, unique_filename=False
             )
             pdf_url = build_signed_pdf_url(pdf_public_id)
 
