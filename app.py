@@ -172,6 +172,12 @@ def filter_by_july_range(docs):
     kept = []
     for d in docs:
         parsed = parse_lead_date(d.get("Date"))
+        # NEW: fall back to "Created At" (written by /add-lead) if "Date"
+        # is missing or unparseable — this covers leads created before
+        # /add-lead started also writing "Date", so they don't silently
+        # vanish from /api/leads and friends.
+        if not parsed:
+            parsed = parse_created_at_str(d.get("Created At"))
         if not parsed:
             continue
         if JULY_2026_START <= parsed <= now:
@@ -2783,7 +2789,16 @@ def add_lead():
         # once — the first time this lead is created — and never gets
         # overwritten on later upserts/updates to the same phone number.
         data.pop("Created At", None)  # never let incoming payload override it
-        created_at_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.utcnow()
+        created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+        # NEW: also write "Date" (DD-MM-YYYY) on first insert — this is the
+        # field parse_lead_date()/filter_by_july_range() actually filter on
+        # for /api/leads, /api/rental-leads, /api/selling-leads, /api/agent-leads.
+        # Without it, leads created via this endpoint were silently excluded
+        # from every list even though they existed in Mongo.
+        if not str(data.get("Date", "")).strip():
+            data["Date"] = now.strftime("%d-%m-%Y")
 
         # 4. Upsert (update if exists, insert if not)
         result = collection.update_one(
