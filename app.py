@@ -33,6 +33,7 @@ import secrets
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+import cloudinary.utils
 import subprocess
 import shutil
 # NEW: branding overlay for images
@@ -479,6 +480,23 @@ _SYSTEM_FONT_FALLBACKS = {
     ],
 }
 
+def build_signed_pdf_url(public_id):
+    """
+    Builds a SIGNED Cloudinary delivery URL for a raw PDF resource.
+    Cloudinary blocks *unsigned* delivery of raw PDF/ZIP resources by default
+    (a 2018 security restriction) — a signed URL bypasses that without
+    touching any Cloudinary account settings.
+    """
+    url, _ = cloudinary.utils.cloudinary_url(
+        public_id,
+        resource_type="raw",
+        type="upload",
+        format="pdf",
+        sign_url=True,
+        secure=True
+    )
+    return url
+
 def _font(weight, size):
     """Robust font loader. Tries your bundled fonts, then common Linux
     system fonts, and only as an absolute last resort falls back to PIL's
@@ -706,7 +724,9 @@ def build_simple_branded_video(video_bytes):
                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp_out.name]
         result = subprocess.run(cmd, check=True, capture_output=True)
         with open(tmp_out.name, "rb") as f:
-            return f.read()
+            video_bytes_out = f.read()
+        print(f"[branding] video branding SUCCEEDED — {len(video_bytes_out)} bytes")
+        return io.BytesIO(video_bytes_out)   # <-- was: return f.read() (raw bytes broke cloudinary upload)
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
         print(f"[branding] ffmpeg video branding FAILED — stderr:\n{stderr}")
@@ -3770,12 +3790,13 @@ def upload_project():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
-            pdf_upload = cloudinary.uploader.upload(
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}"
+            cloudinary.uploader.upload(
                 pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False
+                public_id=pdf_public_id, use_filename=False, unique_filename=False,
+                format="pdf"
             )
-            pdf_url = pdf_upload.get("secure_url")
+            pdf_url = build_signed_pdf_url(pdf_public_id)
 
         # Save in DB
         project_data = {
@@ -3861,7 +3882,9 @@ def upload_inventory():
                     branded_video = build_simple_branded_video(file.read())
                     up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/inventory")
                 except Exception as vid_err:
-                    print(f"[branding] video branding failed, uploading original: {vid_err}")
+                    import traceback
+                    print(f"[branding] video branding failed, uploading original instead: {vid_err}")
+                    traceback.print_exc()
                     file.seek(0)
                     up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
             else:
@@ -3872,12 +3895,13 @@ def upload_inventory():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}.pdf"
-            up = cloudinary.uploader.upload(
+            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}"
+            cloudinary.uploader.upload(
                 pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False
+                public_id=pdf_public_id, use_filename=False, unique_filename=False,
+                format="pdf"
             )
-            pdf_url = up.get("secure_url")
+            pdf_url = build_signed_pdf_url(pdf_public_id)
 
         inventory_data = {
             "listingBasis": f("listingBasis", ""),
@@ -4370,7 +4394,9 @@ def upload_project_v2():
                     branded_video = build_simple_branded_video(file.read())
                     up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/projects")
                 except Exception as vid_err:
-                    print(f"[branding] video branding failed, uploading original: {vid_err}")
+                    import traceback
+                    print(f"[branding] video branding failed, uploading original instead: {vid_err}")
+                    traceback.print_exc()
                     file.seek(0)
                     up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
             else:
@@ -4382,12 +4408,13 @@ def upload_project_v2():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
-            up = cloudinary.uploader.upload(
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}"
+            cloudinary.uploader.upload(
                 pdf_file, resource_type="raw",
-                public_id=pdf_public_id, use_filename=False, unique_filename=False
+                public_id=pdf_public_id, use_filename=False, unique_filename=False,
+                format="pdf"
             )
-            pdf_url = up.get("secure_url")
+            pdf_url = build_signed_pdf_url(pdf_public_id)
 
         starting_price = f("startingPrice", "")
 
