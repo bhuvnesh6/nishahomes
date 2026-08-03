@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nisha Homes — Property</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--navy:#10131C;--navy2:#1A1F2E;--orange:#ED8049;--bg:#F6F4EF;--text:#1A1F2E;--soft:#667085;--border:#E7E3D9;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text)}
+  .topbar{background:linear-gradient(180deg,var(--navy),var(--navy2));padding:16px 20px;color:#fff;font-family:'Playfair Display',serif;font-weight:900;font-size:1.2rem}
+  .topbar span{color:var(--orange)}
+  .wrap{max-width:760px;margin:0 auto;padding-bottom:60px}
+  .banner{width:100%;display:block;background:#eee}
+  .body{padding:22px 20px}
+  h1{font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--navy2);margin-bottom:6px}
+  .loc{color:var(--soft);font-weight:600;margin-bottom:14px}
+  .price{font-size:1.4rem;font-weight:800;color:var(--orange);margin-bottom:14px}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+  .meta span{background:#fff;border:1px solid var(--border);border-radius:100px;padding:6px 14px;font-size:0.8rem;font-weight:600;color:var(--soft)}
+  .desc{line-height:1.65;color:var(--text);margin-bottom:22px}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:22px}
+  .gallery img,.gallery video{width:100%;height:120px;object-fit:cover;border-radius:10px;cursor:pointer}
+  .pdf-link{display:inline-block;margin-bottom:22px;color:var(--orange);font-weight:700}
+  .contact-bar{position:sticky;bottom:0;background:var(--navy);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff}
+  .contact-bar a{background:var(--orange);color:#fff;padding:11px 20px;border-radius:100px;font-weight:700;text-decoration:none}
+  .loading,.notfound{padding:60px 20px;text-align:center;color:var(--soft)}
+</style>
+</head>
+<body>
+  <div class="topbar">Nisha<span>Homes</span></div>
+  <div class="wrap" id="content">
+    <div class="loading">Loading property…</div>
+  </div>
+
+<script>
+const UNIQUE_ID = "{{ unique_id }}";
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function isImg(u){return /\.(jpe?g|png|webp|gif)$/i.test((u||'').split('?')[0])}
+
+fetch(`/api/projects/by-unique/${UNIQUE_ID}`)
+  .then(r=>r.json())
+  .then(d=>{
+    const c = document.getElementById('content');
+    if(!d.success){ c.innerHTML = `<div class="notfound"><h2>Property not found</h2><p>This link may have expired or been removed.</p></div>`; return; }
+    const p = d.data;
+    const gallery = (p.mediaUrls||[]).filter(u=>u && u!==p.bannerUrl);
+    c.innerHTML = `
+      ${p.bannerUrl ? `<img class="banner" src="${esc(p.bannerUrl)}" alt="${esc(p.name)}">` : ''}
+      <div class="body">
+        <h1>${esc(p.name||'')}</h1>
+        <div class="loc">📍 ${esc(p.location||'')}</div>
+        <div class="price">${esc(p.budget||'')}</div>
+        <div class="meta">
+          ${p.configuration?`<span>${esc(p.configuration)}</span>`:''}
+          ${p.superArea?`<span>${esc(p.superArea)} sq.ft</span>`:''}
+          ${p.furnishing?`<span>${esc(p.furnishing)}</span>`:''}
+          ${p.possession?`<span>${esc(p.possession)}</span>`:''}
+          ${p.facing?`<span>${esc(p.facing)} facing</span>`:''}
+        </div>
+        ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ''}
+        ${gallery.length ? `<div class="gallery">${gallery.map(u=>isImg(u)
+            ? `<img src="${esc(u)}" onclick="window.open('${esc(u)}','_blank')">`
+            : `<video src="${esc(u)}" controls muted></video>`).join('')}</div>` : ''}
+        ${p.pdfUrl ? `<a class="pdf-link" href="${esc(p.pdfUrl)}" target="_blank">📄 View brochure / PDF</a>` : ''}
+      </div>
+      <div class="contact-bar">
+        <div>🏡 Nisha Homes<br><small>${esc(p.contact||'')}</small></div>
+        <a href="https://wa.me/${(p.contact||'').replace(/\D/g,'')}" target="_blank">WhatsApp Us</a>
+      </div>`;
+  })
+  .catch(()=>{ document.getElementById('content').innerHTML = `<div class="notfound"><h2>Something went wrong</h2></div>`; });
+</script>
+</body>
+</html>

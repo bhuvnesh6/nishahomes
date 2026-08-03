@@ -699,7 +699,11 @@ textarea,input,select{font-family:var(--font-body)}
       <label class="form-label">On behalf of</label>
       <select class="form-select" id="rOnBehalf"><option value="">Coordinator (self)</option></select>
     </div>
-    <div class="form-row2">
+    <div class="form-group" style="display:flex;align-items:center;gap:9px">
+      <input type="checkbox" id="rShowClientContact" style="width:18px;height:18px">
+      <label class="form-label" style="margin:0" for="rShowClientContact">Share client name &amp; phone with partners</label>
+    </div>
+    <div class="form-row2" id="rClientContactRow" style="display:none">
       <div class="form-group"><label class="form-label">Client name (optional)</label><input class="form-input" id="rClientName"></div>
       <div class="form-group"><label class="form-label">Client mobile (optional)</label><input class="form-input" id="rClientMobile" inputmode="tel"></div>
     </div>
@@ -732,6 +736,26 @@ textarea,input,select{font-family:var(--font-body)}
     </div>
     <div class="form-group"><label class="form-label">Additional notes</label><textarea class="form-textarea" id="rNotes"></textarea></div>
     <button class="submit-btn" id="reqSubmitBtn">Submit Requirement</button>
+  </div>
+</div>
+
+<!-- SHARE-AFTER-ADD MODAL -->
+<div class="modal-overlay" id="shareReqModal">
+  <div class="modal">
+    <button class="modal-close" id="closeShareReqModal">✕</button>
+    <h2>Requirement Added ✅</h2>
+    <p style="color:rgba(255,255,255,.6);font-size:0.85rem;margin-bottom:18px">Notify partners about this requirement.</p>
+    <button class="submit-btn" id="shareOneByOneBtn">👤 Share One by One</button>
+    <button class="ghost-btn" id="shareSheetBtn">📤 Share via Share Sheet</button>
+    <button class="danger-btn" id="skipShareBtn">Skip for now</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="oneByOneModal">
+  <div class="modal">
+    <button class="modal-close" id="closeOneByOneModal">✕</button>
+    <h2>Send to Partner</h2>
+    <div id="oneByOneList"></div>
   </div>
 </div>
 
@@ -923,6 +947,7 @@ function projectCardHTML(p){
       ${IS_ADMIN && !isPending ? `<button class="pc-action-btn" data-unapprove="${p._id}">↩️ Unapprove</button>` : ''}
       ${IS_STAFF && !isPending ? `<button class="pc-action-btn stage-btn" data-stage="${p._id}" data-stage-current="${esc(stage)}">📊 Stage</button>` : ''}
       ${!isPending ? `<button class="pc-action-btn" data-share-proj="${p._id}">📤 Share</button>` : ''}
+      ${p.uniqueId ? `<a href="/view/${p.uniqueId}" target="_blank" class="pc-action-btn" style="text-decoration:none;text-align:center">🔗 View</a>` : ''}
       ${canManage && !isProjectKind ? `<button class="pc-action-btn" data-edit='${JSON.stringify(p).replace(/'/g,"&#39;")}'>✏️ Edit</button>` : ''}
       ${canManage ? `<button class="pc-action-btn danger" data-del-proj="${p._id}">🗑 Delete</button>` : ''}
     </div>
@@ -931,9 +956,8 @@ function projectCardHTML(p){
 
 async function shareListingWA(id){
   const p = allProjects.find(x=>x._id===id); if(!p) return;
-
   if(!navigator.share){
-    toast('Sharing isn\'t supported on this browser. Please open this page on a mobile device (Chrome/Safari) to share.');
+    toast("Sharing isn't supported on this browser. Please open this page on mobile to share.");
     return;
   }
 
@@ -941,14 +965,7 @@ async function shareListingWA(id){
   const originalLabel = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Preparing…'; }
 
-  // Safe combined-size ceiling for the OS share sheet. Android/Chromium silently
-  // reject shares over roughly 50-100MB with NotAllowedError.
-  const MAX_SHARE_BYTES = 45 * 1024 * 1024; // ~45MB
-
-  const isImageUrl = (url) => /\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(url.split('?')[0]);
-
   try{
-    // 1. Get the formatted share text from the backend
     let text = '';
     try{
       const res = await fetch(`${BASE}/projects/share-text/${id}`, { credentials:'include' });
@@ -956,97 +973,36 @@ async function shareListingWA(id){
       text = d.success ? d.text : '';
     }catch(e){ console.error(e); }
     if(!text){
-      text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${p.description||''}`;
+      text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${location.origin}/view/${p.uniqueId||''}`;
     }
 
-    // 2. Only fetch ONE photo to attach as a file — every other photo goes
-    // in as a link, exactly like videos/PDF already do. Keeps the share
-    // payload small and avoids browsers silently rejecting big file sets.
-    const allMediaUrls = [...(p.mediaUrls || [])].filter(Boolean);
-    const imageUrls = allMediaUrls.filter(isImageUrl);
-    const videoUrls = allMediaUrls.filter(u => !isImageUrl(u));
-    const primaryImageUrl = imageUrls[0] || null;
-    const extraImageUrls = imageUrls.slice(1);
-    console.log('[share] image URL to attach:', primaryImageUrl);
-    console.log('[share] extra photo URLs (linked instead):', extraImageUrls);
-    console.log('[share] video URLs (linked instead):', videoUrls);
-
-    const fetchOne = async (url) => {
-      const resp = await fetch(url);
-      if(!resp.ok) throw new Error(`bad response ${resp.status} for ${url}`);
-      const blob = await resp.blob();
-      const filename = url.split('/').pop().split('?')[0] || 'file';
-      return new File([blob], filename, { type: blob.type || 'image/jpeg' });
-    };
-    const timeout = (ms) => new Promise((_, rej) => setTimeout(()=>rej(new Error('timeout')), ms));
-
+    const bannerUrl = p.bannerUrl || p.img || (p.mediaUrls && p.mediaUrls[0]) || '';
     let files = [];
-    if(primaryImageUrl){
+    if(bannerUrl){
       try{
-        const file = await Promise.race([fetchOne(primaryImageUrl), timeout(8000)]);
-        files = [file];
-        console.log('[share] fetched OK:', primaryImageUrl);
-      }catch(e){
-        console.warn('[share] FAILED to fetch primary image, linking it instead:', e);
-        extraImageUrls.unshift(primaryImageUrl);
-        files = [];
-      }
+        const resp = await fetch(bannerUrl);
+        const blob = await resp.blob();
+        const filename = bannerUrl.split('/').pop().split('?')[0] || 'banner.jpg';
+        files = [new File([blob], filename, { type: blob.type || 'image/jpeg' })];
+      }catch(e){ console.warn('[share] could not fetch banner image, sharing text only', e); }
     }
 
-    console.log('[share] files ready:', files.length, files.map(f=>f.name));
-
-    // 3. Defensive size check — a single photo rarely exceeds the ceiling,
-    // but keep the same safety net: drop it and link it instead.
-    let droppedUrls = [];
-    if(files.length){
-      let total = files.reduce((s,f)=>s+f.size, 0);
-      if(total > MAX_SHARE_BYTES){
-        const removed = files.pop();
-        console.warn('[share] dropped for size:', removed.name, removed.size);
-        droppedUrls.push(primaryImageUrl);
-      }
-    }
-
-    // Every other photo, all videos, and any photo dropped for size go in
-    // as links, since we only ever attach the one primary image as a file.
-    if(extraImageUrls.length){
-      text += `\n\nMore photos:\n${extraImageUrls.join('\n')}`;
-    }
-    if(videoUrls.length){
-      text += `\n\nVideo:\n${videoUrls.join('\n')}`;
-    }
-    if(droppedUrls.length){
-      text += `\n\nPhoto:\n${droppedUrls.join('\n')}`;
-    }
-
-    // 4. Build the share payload
     let shareData = { title: p.name, text };
-    if(files.length){
-      const canAttach = navigator.canShare && navigator.canShare({ files });
-      console.log('[share] canShare({files}) =', canAttach);
-      if(canAttach){
-        shareData = { title: p.name, text, files };
-      } else {
-        console.warn('[share] browser refused these files (unsupported type/size) — sharing text only');
-      }
+    if(files.length && navigator.canShare && navigator.canShare({ files })){
+      shareData = { title: p.name, text, files };
     }
 
     try{
       await navigator.share(shareData);
     }catch(shareErr){
-      if(shareData.files && shareData.files.length){
-        console.warn('[share] file share rejected, retrying text-only:', shareErr);
-        const fallbackText = `${text}\n\nPhotos:\n${imageUrls.join('\n')}`;
-        await navigator.share({ title: p.name, text: fallbackText });
-      } else {
+      if(shareData.files){
+        await navigator.share({ title: p.name, text });
+      } else if(shareErr.name !== 'AbortError'){
         throw shareErr;
       }
     }
-
   }catch(e){
-    if(e.name === 'AbortError'){
-      // user closed the sheet — not an error
-    } else {
+    if(e.name !== 'AbortError'){
       console.error('Share failed:', e);
       toast('Could not open the share sheet. Please try again.');
     }
@@ -1503,6 +1459,12 @@ function bindRequirementsTab(){
     if(IS_STAFF) openReqDetail(r); else openReqReadonly(r);
   }));
 }
+
+
+document.getElementById('rShowClientContact').addEventListener('change', function(){
+  document.getElementById('rClientContactRow').style.display = this.checked ? 'grid' : 'none';
+});
+
 function openReqReadonly(r){
   const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
   document.getElementById('reqDetailBody').innerHTML = `
@@ -1519,6 +1481,8 @@ document.getElementById('reqDetailModal').addEventListener('click', e=>{ if(e.ta
 /* ADD REQUIREMENT modal */
 function openReqAddModal(){
   document.getElementById('reqOnBehalfWrap').style.display = IS_STAFF ? 'block' : 'none';
+  document.getElementById('rShowClientContact').checked = false;
+  document.getElementById('rClientContactRow').style.display = 'none';
   if(IS_STAFF){
     const sel = document.getElementById('rOnBehalf');
     sel.innerHTML = '<option value="">Coordinator (self)</option>' + allPartners.map(p=>`<option value="${p['Employee number']}">${esc(p['Employee name'])} (${p['Employee number']})</option>`).join('');
@@ -1531,11 +1495,14 @@ document.getElementById('reqSubmitBtn').addEventListener('click', async ()=>{
   const g = id => document.getElementById(id).value.trim();
   const location = g('rLocation');
   if(!location){ toast('Enter a preferred location'); return; }
+  const showClientContact = document.getElementById('rShowClientContact').checked;
   const payload = {
     reqType: g('rType'), priority: g('rPriority'), propertyType: g('rPropType'), config: g('rConfig'),
     location, budgetMin: g('rBudgetMin'), budgetMax: g('rBudgetMax'), areaMin: g('rAreaMin'), areaMax: g('rAreaMax'),
     furnishing: g('rFurnish'), possession: g('rPossession'), notes: g('rNotes'),
-    clientName: g('rClientName'), clientMobile: g('rClientMobile')
+    showClientContact,
+    clientName: showClientContact ? g('rClientName') : '',
+    clientMobile: showClientContact ? g('rClientMobile') : ''
   };
   if(IS_STAFF){
     const sel = document.getElementById('rOnBehalf');
@@ -1552,10 +1519,9 @@ document.getElementById('reqSubmitBtn').addEventListener('click', async ()=>{
     const d = await res.json();
     if(!d.success){ toast(d.message||'Failed to submit'); return; }
     document.getElementById('reqModal').classList.remove('active');
-    document.getElementById('reqForm')?.reset?.();
-    toast('Requirement submitted');
     await loadRequirements();
     switchTab();
+    openShareReqModal(d.id);
   }catch(e){ console.error(e); toast('Failed to submit'); }
   finally{ hideLoader(); }
 });
@@ -1679,6 +1645,72 @@ function bindBroadcastsTab(){
     openRespondModal(r);
   }));
 }
+
+let shareReqId = null;
+
+function buildReqShareText(r){
+  const budget = [r.budgetMin, r.budgetMax].filter(Boolean).join(' – ');
+  return `NEW REQUIREMENT (Nisha Homes)\n${r.reqType||''} · ${r.config?r.config+' ':''}${r.propertyType||''}\n📍 ${r.location||''}${budget?('\n💰 ₹'+budget):''}\n\nHave matching inventory? Reply here.`;
+}
+
+function openShareReqModal(reqId){
+  shareReqId = reqId;
+  document.getElementById('shareReqModal').classList.add('active');
+}
+document.getElementById('closeShareReqModal').addEventListener('click', ()=>document.getElementById('shareReqModal').classList.remove('active'));
+document.getElementById('skipShareBtn').addEventListener('click', ()=>document.getElementById('shareReqModal').classList.remove('active'));
+document.getElementById('closeOneByOneModal').addEventListener('click', ()=>document.getElementById('oneByOneModal').classList.remove('active'));
+
+document.getElementById('shareOneByOneBtn').addEventListener('click', async ()=>{
+  document.getElementById('shareReqModal').classList.remove('active');
+  await loadPartnersData();
+  const activePartners = allPartners.filter(p=>p.Active !== false);
+  document.getElementById('oneByOneList').innerHTML = activePartners.length
+    ? activePartners.map(p=>`
+        <div class="partner-row" style="margin-bottom:8px">
+          <div class="partner-top">
+            <div><div class="partner-name">${esc(p['Employee name'])}</div>
+            <div class="partner-sub">${esc(p['Employee number'])}${p.Areas?(' · '+esc(p.Areas)):''}</div></div>
+            <button class="tag-btn active-tag" data-send-one="${p['Employee number']}">WhatsApp ↗</button>
+          </div>
+        </div>`).join('')
+    : `<p style="color:rgba(255,255,255,.55);font-size:0.85rem">No active partners found.</p>`;
+  document.getElementById('oneByOneModal').classList.add('active');
+
+  document.querySelectorAll('[data-send-one]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const num = b.dataset.sendOne;
+      let r = allRequirements.find(x=>x._id===shareReqId);
+      if(!r){ await loadRequirements(); r = allRequirements.find(x=>x._id===shareReqId) || {}; }
+      try{
+        await fetch(`${BASE}/requirements/broadcast/${shareReqId}`, {
+          method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+          body: JSON.stringify({ to: [num] })
+        });
+      }catch(e){ console.error(e); }
+      window.open(waLink(num, buildReqShareText(r)), '_blank');
+    });
+  });
+});
+
+document.getElementById('shareSheetBtn').addEventListener('click', async ()=>{
+  document.getElementById('shareReqModal').classList.remove('active');
+  let r = allRequirements.find(x=>x._id===shareReqId);
+  if(!r){ await loadRequirements(); r = allRequirements.find(x=>x._id===shareReqId) || {}; }
+  const text = buildReqShareText(r);
+  try{
+    await fetch(`${BASE}/requirements/broadcast/${shareReqId}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+      body: JSON.stringify({ to: 'all' })
+    });
+  }catch(e){ console.error(e); }
+  if(navigator.share){
+    try{ await navigator.share({ title: 'Nisha Homes Requirement', text }); }catch(e){ /* cancelled */ }
+  } else {
+    window.open(waLink('', text), '_blank');
+  }
+});
+
 function openRespondModal(r){
   const budget = [r.budgetMin,r.budgetMax].filter(Boolean).join(' – ');
   document.getElementById('respondBody').innerHTML = `

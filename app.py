@@ -28,7 +28,7 @@ import calendar
 import re
 import json
 import fitz  # PyMuPDF — pip install pymupdf
-
+import secrets
 # NEW: Cloudinary (used for Inventory / project image & video uploads)
 import cloudinary
 import cloudinary.uploader
@@ -457,6 +457,15 @@ FONT_REG  = os.path.join(FONT_DIR, "DejaVuSans.ttf")
 BRAND_ORANGE = (237, 128, 73)
 BRAND_NAVY_SOLID = (16, 19, 28)   # solid, not the old semi-transparent tuple
 
+
+# --- add right after BRAND_NAVY_SOLID = (16, 19, 28) ---
+BRAND_CONTACT_NUMBER = "+91 73035 15710"   # <-- change this ONE line if the number is different
+BRAND_NAME = "NISHA HOMES"
+
+def generate_unique_id():
+    """Short, URL-safe id used for the public /view/<id> page."""
+    return secrets.token_urlsafe(8).replace("_", "").replace("-", "")[:10]
+
 _SYSTEM_FONT_FALLBACKS = {
     "bold": [
         FONT_BOLD,
@@ -516,7 +525,7 @@ def _indian_price_words(price_str):
     return " ".join(parts) or None
 
 
-def build_branded_image(image_bytes, fields):
+def build_banner_image(image_bytes, fields):
     """
     Returns branded JPEG bytes styled after the reference design:
     orange top bar -> the ORIGINAL, UNCROPPED photo -> a solid navy info
@@ -624,6 +633,63 @@ def build_branded_image(image_bytes, fields):
     canvas.save(out, format="JPEG", quality=92)
     out.seek(0)
     return out
+
+def build_simple_branded_image(image_bytes):
+    """
+    Light branding for every photo EXCEPT the banner: two thin translucent
+    strips drawn directly on the original photo (logo top, number bottom).
+    Canvas size is NEVER changed.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    W, H = img.size
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    strip_h = max(int(H * 0.07), 34)
+
+    draw.rectangle([0, 0, W, strip_h], fill=(*BRAND_ORANGE, 235))
+    f_logo = _font("bold", int(strip_h * 0.5))
+    draw.text((int(W * 0.03), strip_h * 0.22), BRAND_NAME, font=f_logo, fill="white")
+
+    draw.rectangle([0, H - strip_h, W, H], fill=(*BRAND_NAVY_SOLID, 210))
+    f_contact = _font("regular", int(strip_h * 0.42))
+    draw.text((int(W * 0.03), H - strip_h + strip_h * 0.28), BRAND_CONTACT_NUMBER, font=f_contact, fill="white")
+
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=92)
+    out.seek(0)
+    return out
+
+
+def build_simple_branded_video(video_bytes):
+    """Same light branding, burned into a video via ffmpeg. Frame size unchanged."""
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg not installed on this server — cannot brand video")
+
+    tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tmp_in.write(video_bytes); tmp_in.close()
+    tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tmp_out.close()
+
+    font_path = FONT_BOLD if os.path.exists(FONT_BOLD) else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    contact_esc = BRAND_CONTACT_NUMBER.replace(":", "\\:")
+
+    vf = (
+        f"drawbox=x=0:y=0:w=iw:h=ih*0.07:color=0xED8049@0.85:t=fill,"
+        f"drawtext=fontfile={font_path}:text='{BRAND_NAME}':x=iw*0.03:y=ih*0.015:fontsize=iw*0.035:fontcolor=white,"
+        f"drawbox=x=0:y=ih*0.93:w=iw:h=ih*0.07:color=0x10131C@0.82:t=fill,"
+        f"drawtext=fontfile={font_path}:text='{contact_esc}':x=iw*0.03:y=ih*0.955:fontsize=iw*0.03:fontcolor=white"
+    )
+    try:
+        cmd = ["ffmpeg", "-y", "-i", tmp_in.name, "-vf", vf,
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-c:a", "copy", "-movflags", "+faststart", tmp_out.name]
+        subprocess.run(cmd, check=True, capture_output=True)
+        with open(tmp_out.name, "rb") as f:
+            return f.read()
+    finally:
+        for p in (tmp_in.name, tmp_out.name):
+            try: os.remove(p)
+            except Exception: pass
 
 def _get_video_dimensions(path):
     """Uses ffprobe (bundled with ffmpeg) to get (width, height) of a video."""
@@ -3221,9 +3287,9 @@ def get_requirements():
         return jsonify({"success": False, "data": []}), 401
 
     role = session.get("role")
+    num = session.get("employee_number")
     query = {}
     if role == "partner":
-        num = session.get("employee_number")
         query = {"$or": [
             {"submittedByNumber": num},
             {"broadcastTo": "all"},
@@ -3231,7 +3297,14 @@ def get_requirements():
         ]}
 
     docs = list(requirements_collection.find(query).sort("createdAt", -1))
-    return jsonify({"success": True, "data": [serialize_doc(d) for d in docs]}), 200
+    result = []
+    for d in docs:
+        d = serialize_doc(d)
+        if role == "partner" and d.get("submittedByNumber") != num and not d.get("showClientContact"):
+            d.pop("clientName", None)
+            d.pop("clientMobile", None)
+        result.append(d)
+    return jsonify({"success": True, "data": result}), 200
 
 
 @app.route("/api/requirements/add", methods=["POST"])
@@ -3266,8 +3339,11 @@ def add_requirement():
         "possession": data.get("possession", ""),
         "notes": data.get("notes", ""),
         "priority": data.get("priority", "Medium"),
+        "priority": data.get("priority", "Medium"),
         "clientName": data.get("clientName", ""),
         "clientMobile": data.get("clientMobile", ""),
+        "showClientContact": bool(data.get("showClientContact", False)),   # <-- ADD THIS LINE
+        "submittedByNumber": submitted_by_number,
         "submittedByNumber": submitted_by_number,
         "submittedByName": submitted_by_name,
         "status": "new",
@@ -3477,38 +3553,19 @@ def project_share_text(project_id):
 
 
 def build_whatsapp_share_text(p, settings):
-    L = []
-    L.append(p.get("name") or p.get("propertyTitle") or "")
-    L.append(f"📍 {p.get('location') or p.get('locality') or ''}")
-    L.append(f"💰 {p.get('budget') or p.get('startingPrice') or ''}")
-    if p.get("configuration"): L.append(f"🛏️ {p['configuration']}")
-    area = []
-    if p.get("superArea"):  area.append(f"{p['superArea']} sq.ft built-up")
-    if p.get("carpetArea"): area.append(f"carpet {p['carpetArea']} sq.ft")
-    if area: L.append("📐 " + " · ".join(area))
-    if p.get("furnishing"): L.append(f"🛋️ {p['furnishing']}")
-    if p.get("possession"): L.append(f"🏗️ {p['possession']}")
-    if p.get("facing"):     L.append(f"🧭 {p['facing']}-facing")
-    if p.get("floor"):      L.append(f"🏢 Floor {p['floor']}")
-    if p.get("bathrooms"):  L.append(f"🛁 {p['bathrooms']} bathrooms")
-    if p.get("parking"):    L.append(f"🅿️ {p['parking']} parking")
-    L.append("─" * 20)
-    if p.get("description"): L.append(p["description"])
-    L.append("─" * 20)
-
-    # Fixed CTA + contact block
-    L.append("📅 Schedule Your Private Site Visit")
-    L.append("🏡 Request Complete Property Details")
-    L.append("🔗 View for exclusive listings: https://www.squareyards.com/agent/nisha/492906")
-    L.append("━" * 16)
-    L.append("🏡 Nisha Homes")
-    L.append("Your Trusted Real Estate Advisor")
-    L.append("💬 Nisha Homes Main Office")
-    L.append("https://wa.me/917303515710")
-    L.append("👤 Business Coordinator")
-    L.append("https://wa.me/918130505710")
-    L.append("━" * 16)
-
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://api.phishnix.site")
+    view_url = f"{base_url}/view/{p.get('uniqueId', '')}"
+    L = [
+        p.get("name") or p.get("propertyTitle") or "",
+        f"📍 {p.get('location') or p.get('locality') or ''}",
+        f"💰 {p.get('budget') or p.get('startingPrice') or ''}",
+        "",
+        "🔗 See complete details of this property here:",
+        view_url,
+        "",
+        "🏡 Nisha Homes — Your Trusted Real Estate Advisor",
+        f"💬 {BRAND_CONTACT_NUMBER}",
+    ]
     return "\n".join(L)
 
 # =============================
@@ -3755,23 +3812,27 @@ def upload_inventory():
         }
 
         media_urls, media_public_ids = [], []
-        for file in request.files.getlist("photos"):
-            if not file or not file.filename:
-                continue
+        banner_url, banner_public_id = None, None
+        photo_files = [f for f in request.files.getlist("photos") if f and f.filename]
+
+        for idx, file in enumerate(photo_files):
+            raw = file.read()
             if branding:
-                branded = build_branded_image(file.read(), brand_fields)
-                up = cloudinary.uploader.upload(branded, resource_type="image", folder="nishahomes/inventory")
+                processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
+                up = cloudinary.uploader.upload(processed, resource_type="image", folder="nishahomes/inventory")
             else:
-                up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/inventory")
+                up = cloudinary.uploader.upload(raw, resource_type="image", folder="nishahomes/inventory")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
+            if idx == 0:
+                banner_url, banner_public_id = up.get("secure_url"), up.get("public_id")
 
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
             if branding:
                 try:
-                    branded_video = build_branded_video(file.read(), brand_fields)
+                    branded_video = build_simple_branded_video(file.read())
                     up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/inventory")
                 except Exception as vid_err:
                     print(f"[branding] video branding failed, uploading original: {vid_err}")
@@ -3810,10 +3871,12 @@ def upload_inventory():
             "quickNotes": f("quickNotes", ""),
             "description": f("description", ""),
             "img": media_urls[0] if media_urls else None,
+            "bannerUrl": banner_url or (media_urls[0] if media_urls else None),
             "mediaUrls": media_urls,
             "mediaPublicIds": media_public_ids,
             "pdfUrl": pdf_url,
             "type": "inventory",
+            "uniqueId": generate_unique_id(),
             "status": "pending" if session.get("role") == "partner" else "approved",
             "ownerNumber": session.get("employee_number"),
             "ownerName": session.get("employee_name"),
@@ -3964,6 +4027,46 @@ def approve_project(project_id):
 @app.route("/add-project")
 def add_project_page():
     return render_template("upload_project.html")
+
+
+@app.route("/view/<unique_id>")
+def view_property(unique_id):
+    p = projects_collection.find_one({"uniqueId": unique_id, "status": "approved"})
+    if not p:
+        return render_template("property_not_found.html"), 404
+    return render_template("view_property.html", unique_id=unique_id)
+
+
+@app.route("/api/projects/by-unique/<unique_id>")
+def get_project_by_unique(unique_id):
+    p = projects_collection.find_one({"uniqueId": unique_id, "status": "approved"})
+    if not p:
+        return jsonify({"success": False, "message": "Not found"}), 404
+
+    data = {
+        "name": p.get("name") or p.get("propertyTitle"),
+        "location": p.get("location") or p.get("locality"),
+        "category": p.get("category") or p.get("propertyType"),
+        "configuration": p.get("configuration"),
+        "furnishing": p.get("furnishing"),
+        "budget": p.get("budget") or p.get("startingPrice"),
+        "description": p.get("description"),
+        "possession": p.get("possession"),
+        "carpetArea": p.get("carpetArea"),
+        "superArea": p.get("superArea"),
+        "bathrooms": p.get("bathrooms"),
+        "facing": p.get("facing"),
+        "parking": p.get("parking"),
+        "floor": p.get("floor"),
+        "dealType": p.get("dealType"),
+        "bannerUrl": p.get("bannerUrl") or p.get("img") or p.get("mediaUrl"),
+        "mediaUrls": p.get("mediaUrls") or ([p.get("mediaUrl")] if p.get("mediaUrl") else []),
+        "pdfUrl": p.get("pdfUrl"),
+        "type": p.get("type"),
+        "contact": BRAND_CONTACT_NUMBER,
+    }
+    return jsonify({"success": True, "data": data}), 200
+
 
 
 @app.route("/add-inventory")
@@ -4214,16 +4317,19 @@ def upload_project_v2():
         media_urls, media_public_ids = [], []
         has_image, has_video = False, False
 
-        for file in request.files.getlist("photos"):
-            if not file or not file.filename:
-                continue
+        banner_url = None
+        photo_files = [f for f in request.files.getlist("photos") if f and f.filename]
+        for idx, file in enumerate(photo_files):
+            raw = file.read()
             if branding:
-                branded = build_branded_image(file.read(), brand_fields)
-                up = cloudinary.uploader.upload(branded, resource_type="image", folder="nishahomes/projects")
+                processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
+                up = cloudinary.uploader.upload(processed, resource_type="image", folder="nishahomes/projects")
             else:
-                up = cloudinary.uploader.upload(file, resource_type="image", folder="nishahomes/projects")
+                up = cloudinary.uploader.upload(raw, resource_type="image", folder="nishahomes/projects")
             media_urls.append(up.get("secure_url"))
             media_public_ids.append(up.get("public_id"))
+            if idx == 0:
+                banner_url = up.get("secure_url")
             has_image = True
 
         for file in request.files.getlist("videos"):
@@ -4231,7 +4337,7 @@ def upload_project_v2():
                 continue
             if branding:
                 try:
-                    branded_video = build_branded_video(file.read(), brand_fields)
+                    branded_video = build_simple_branded_video(file.read())
                     up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/projects")
                 except Exception as vid_err:
                     print(f"[branding] video branding failed, uploading original: {vid_err}")
@@ -4265,10 +4371,12 @@ def upload_project_v2():
             "videoLinks": video_links,
             "img": media_urls[0] if media_urls else None,
             "mediaUrl": media_urls[0] if media_urls else None,
+            "bannerUrl": banner_url or (media_urls[0] if media_urls else None),
             "mediaUrls": media_urls,
             "mediaPublicIds": media_public_ids,
             "type": "video" if (has_video and not has_image) else "image",
             "pdfUrl": pdf_url,
+            "uniqueId": generate_unique_id(),
             "status": "approved",
             "ownerNumber": session.get("employee_number"),
             "ownerName": session.get("employee_name"),
