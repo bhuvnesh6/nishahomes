@@ -660,36 +660,62 @@ def build_simple_branded_image(image_bytes):
     return out
 
 
+def _resolve_video_font_path():
+    """Same fallback chain used elsewhere, but actually checked for video branding."""
+    for path in _SYSTEM_FONT_FALLBACKS["bold"]:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _ffmpeg_escape_text(text):
+    """Escapes characters that break ffmpeg's drawtext filter syntax."""
+    return (text or "").replace("\\", "\\\\").replace(":", "\\:").replace("'", "\u2019").replace(",", "\\,")
+
+
 def build_simple_branded_video(video_bytes):
     """Same light branding, burned into a video via ffmpeg. Frame size unchanged."""
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg not installed on this server — cannot brand video")
+
+    font_path = _resolve_video_font_path()
+    if not font_path:
+        raise RuntimeError(
+            "No usable font file found on server for video branding "
+            "(checked bundled fonts + DejaVu/Liberation system paths). "
+            "Install fonts, e.g. `apt-get install -y fonts-dejavu-core`."
+        )
 
     tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tmp_in.write(video_bytes); tmp_in.close()
     tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tmp_out.close()
 
-    font_path = FONT_BOLD if os.path.exists(FONT_BOLD) else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    contact_esc = BRAND_CONTACT_NUMBER.replace(":", "\\:")
+    name_esc = _ffmpeg_escape_text(BRAND_NAME)
+    contact_esc = _ffmpeg_escape_text(BRAND_CONTACT_NUMBER)
 
     vf = (
         f"drawbox=x=0:y=0:w=iw:h=ih*0.07:color=0xED8049@0.85:t=fill,"
-        f"drawtext=fontfile={font_path}:text='{BRAND_NAME}':x=iw*0.03:y=ih*0.015:fontsize=iw*0.035:fontcolor=white,"
+        f"drawtext=fontfile='{font_path}':text='{name_esc}':x=iw*0.03:y=ih*0.015:fontsize=iw*0.035:fontcolor=white,"
         f"drawbox=x=0:y=ih*0.93:w=iw:h=ih*0.07:color=0x10131C@0.82:t=fill,"
-        f"drawtext=fontfile={font_path}:text='{contact_esc}':x=iw*0.03:y=ih*0.955:fontsize=iw*0.03:fontcolor=white"
+        f"drawtext=fontfile='{font_path}':text='{contact_esc}':x=iw*0.03:y=ih*0.955:fontsize=iw*0.03:fontcolor=white"
     )
     try:
         cmd = ["ffmpeg", "-y", "-i", tmp_in.name, "-vf", vf,
                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-               "-c:a", "copy", "-movflags", "+faststart", tmp_out.name]
-        subprocess.run(cmd, check=True, capture_output=True)
+               "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp_out.name]
+        result = subprocess.run(cmd, check=True, capture_output=True)
         with open(tmp_out.name, "rb") as f:
             return f.read()
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        print(f"[branding] ffmpeg video branding FAILED — stderr:\n{stderr}")
+        raise
     finally:
         for p in (tmp_in.name, tmp_out.name):
             try: os.remove(p)
             except Exception: pass
+
 
 def _get_video_dimensions(path):
     """Uses ffprobe (bundled with ffmpeg) to get (width, height) of a video."""
@@ -3744,10 +3770,10 @@ def upload_project():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
             pdf_upload = cloudinary.uploader.upload(
-                pdf_file,
-                resource_type="raw",
-                folder="nishahomes/projects/docs"
+                pdf_file, resource_type="raw",
+                public_id=pdf_public_id, use_filename=False, unique_filename=False
             )
             pdf_url = pdf_upload.get("secure_url")
 
@@ -3846,7 +3872,11 @@ def upload_inventory():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            up = cloudinary.uploader.upload(pdf_file, resource_type="raw", folder="nishahomes/inventory/docs")
+            pdf_public_id = f"nishahomes/inventory/docs/{secrets.token_hex(8)}.pdf"
+            up = cloudinary.uploader.upload(
+                pdf_file, resource_type="raw",
+                public_id=pdf_public_id, use_filename=False, unique_filename=False
+            )
             pdf_url = up.get("secure_url")
 
         inventory_data = {
@@ -4352,7 +4382,11 @@ def upload_project_v2():
         pdf_url = None
         pdf_file = request.files.get("pdf")
         if pdf_file and pdf_file.filename:
-            up = cloudinary.uploader.upload(pdf_file, resource_type="raw", folder="nishahomes/projects/docs")
+            pdf_public_id = f"nishahomes/projects/docs/{secrets.token_hex(8)}.pdf"
+            up = cloudinary.uploader.upload(
+                pdf_file, resource_type="raw",
+                public_id=pdf_public_id, use_filename=False, unique_filename=False
+            )
             pdf_url = up.get("secure_url")
 
         starting_price = f("startingPrice", "")
