@@ -471,8 +471,8 @@ BRAND_ORANGE = (237, 128, 73)
 BRAND_NAVY_SOLID = (16, 19, 28)   # solid, not the old semi-transparent tuple
 
 
-# --- add right after BRAND_NAVY_SOLID = (16, 19, 28) ---
-BRAND_CONTACT_NUMBER = "+91 73035 15710"   # <-- change this ONE line if the number is different
+BRAND_CONTACT_NUMBER = "91 73035 15710"   # <-- change this ONE line if the number is different
+BRAND_WEBSITE = "nishahomes.com"           # <-- change this ONE line if the website changes
 BRAND_NAME = "NISHA HOMES"
 
 def generate_unique_id():
@@ -722,32 +722,58 @@ def build_banner_image(image_bytes, fields):
     draw.text((icon_cx - icon_glyph_w / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
 
     f_contact = _font("bold", int(W * 0.042))
-    draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), CONTACT_NUMBER, font=f_contact, fill="white")
+    contact_display = f"{CONTACT_NUMBER}  •  {BRAND_WEBSITE}"
+    draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), contact_display, font=f_contact, fill="white")
 
     out = io.BytesIO()
     canvas.save(out, format="JPEG", quality=92)
     out.seek(0)
     return out
 
+
 def build_simple_branded_image(image_bytes):
     """
-    Light branding for every photo EXCEPT the banner: two thin translucent
-    strips drawn directly on the original photo (logo top, number bottom).
-    Canvas size is NEVER changed.
+    Light branding for every photo EXCEPT the banner: small corner badges
+    (logo top-left, contact+website bottom-left) instead of full-width
+    strips — nothing gets cropped or covers the photo. Canvas size is
+    NEVER changed.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     W, H = img.size
     draw = ImageDraw.Draw(img, "RGBA")
 
-    strip_h = max(int(H * 0.07), 34)
+    margin = 10   # distance of badge from the edges (top/left)
+    pad = 10      # padding inside each badge around the text
 
-    draw.rectangle([0, 0, W, strip_h], fill=(*BRAND_ORANGE, 235))
-    f_logo = _font("bold", int(strip_h * 0.5))
-    draw.text((int(W * 0.03), strip_h * 0.22), BRAND_NAME, font=f_logo, fill="white")
+    # ---- TOP-LEFT: brand name badge ----
+    f_logo = _font("bold", max(int(W * 0.028), 16))
+    logo_w = draw.textlength(BRAND_NAME, font=f_logo)
+    logo_h = f_logo.size
 
-    draw.rectangle([0, H - strip_h, W, H], fill=(*BRAND_NAVY_SOLID, 210))
-    f_contact = _font("regular", int(strip_h * 0.42))
-    draw.text((int(W * 0.03), H - strip_h + strip_h * 0.28), BRAND_CONTACT_NUMBER, font=f_contact, fill="white")
+    bx, by = margin, margin
+    badge_w = logo_w + pad * 2
+    badge_h = logo_h + pad * 2
+    draw.rounded_rectangle(
+        [bx, by, bx + badge_w, by + badge_h],
+        radius=8, fill=(*BRAND_ORANGE, 235)
+    )
+    draw.text((bx + pad, by + pad - 2), BRAND_NAME, font=f_logo, fill="white")
+
+    # ---- BOTTOM-LEFT: contact + website badge ----
+    f_contact = _font("regular", max(int(W * 0.022), 13))
+    contact_text = f"{BRAND_CONTACT_NUMBER}  |  {BRAND_WEBSITE}"
+    contact_w = draw.textlength(contact_text, font=f_contact)
+    contact_h = f_contact.size
+
+    cbadge_w = contact_w + pad * 2
+    cbadge_h = contact_h + pad * 2
+    cx = margin
+    cy = H - margin - cbadge_h
+    draw.rounded_rectangle(
+        [cx, cy, cx + cbadge_w, cy + cbadge_h],
+        radius=8, fill=(*BRAND_NAVY_SOLID, 210)
+    )
+    draw.text((cx + pad, cy + pad - 2), contact_text, font=f_contact, fill="white")
 
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=92)
@@ -787,13 +813,18 @@ def build_simple_branded_video(video_bytes):
     tmp_out.close()
 
     name_esc = _ffmpeg_escape_text(BRAND_NAME)
-    contact_esc = _ffmpeg_escape_text(BRAND_CONTACT_NUMBER)
+    contact_esc = _ffmpeg_escape_text(f"{BRAND_CONTACT_NUMBER} | {BRAND_WEBSITE}")
 
+    # box=1 + boxborderw draws a background box sized to the text itself
+    # (plus the given border/padding), instead of a full-width bar — so it
+    # never covers the whole frame and can't get cropped on any screen size.
     vf = (
-        f"drawbox=x=0:y=0:w=iw:h=ih*0.07:color=0xED8049@0.85:t=fill,"
-        f"drawtext=fontfile='{font_path}':text='{name_esc}':x=main_w*0.03:y=main_h*0.015:fontsize=main_w*0.035:fontcolor=white,"
-        f"drawbox=x=0:y=ih*0.93:w=iw:h=ih*0.07:color=0x10131C@0.82:t=fill,"
-        f"drawtext=fontfile='{font_path}':text='{contact_esc}':x=main_w*0.03:y=main_h*0.955:fontsize=main_w*0.03:fontcolor=white"
+        f"drawtext=fontfile='{font_path}':text='{name_esc}':"
+        f"x=10:y=10:fontsize=main_h*0.035:fontcolor=white:"
+        f"box=1:boxcolor=0xED8049@0.9:boxborderw=10,"
+        f"drawtext=fontfile='{font_path}':text='{contact_esc}':"
+        f"x=10:y=h-th-30:fontsize=main_h*0.028:fontcolor=white:"
+        f"box=1:boxcolor=0x10131C@0.85:boxborderw=10"
     )
     try:
         cmd = ["ffmpeg", "-y", "-i", tmp_in.name, "-vf", vf,
@@ -912,7 +943,8 @@ def _build_brand_bars(fields, video_w):
     draw2.text((icon_cx - iw / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
 
     f_contact = _font("bold", int(W * 0.042))
-    draw2.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), CONTACT_NUMBER, font=f_contact, fill="white")
+    contact_display = f"{CONTACT_NUMBER}  •  {BRAND_WEBSITE}"
+    draw2.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), contact_display, font=f_contact, fill="white")
 
     top_buf = io.BytesIO(); top_img.save(top_buf, format="PNG"); top_buf.seek(0)
     bottom_buf = io.BytesIO(); bottom_img.save(bottom_buf, format="PNG"); bottom_buf.seek(0)
@@ -3688,6 +3720,7 @@ def build_whatsapp_share_text(p, settings):
         "",
         "🏡 Nisha Homes — Your Trusted Real Estate Advisor",
         f"💬 {BRAND_CONTACT_NUMBER}",
+        f"🌐 https://{BRAND_WEBSITE}",
     ]
     return "\n".join(L)
 
