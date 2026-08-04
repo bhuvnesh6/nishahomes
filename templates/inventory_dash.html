@@ -339,6 +339,12 @@ textarea,input,select{font-family:var(--font-body)}
 .req-loc{font-size:0.8rem;color:var(--accent-deep);margin-top:3px;font-weight:600}
 .req-meta{font-size:0.78rem;color:var(--text-soft);margin-top:7px;font-weight:600}
 .req-foot{display:flex;justify-content:space-between;align-items:center;margin-top:13px;padding-top:11px;border-top:1px solid var(--border);font-size:0.72rem;color:var(--text-soft)}
+.req-share-btn{
+  width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--bg);border:1px solid var(--border);color:var(--text-soft);font-size:0.8rem;
+  transition:var(--transition);flex-shrink:0;
+}
+.req-share-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent);transform:scale(1.08)}
 
 .partner-row{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px 18px;margin-bottom:11px;
@@ -1412,7 +1418,13 @@ function reqCardHTML(r){
     <div class="req-title">${esc((r.config?r.config+' ':'')+r.propertyType)}</div>
     <div class="req-loc">📍 ${esc(r.location)}</div>
     <div class="req-meta">${budget?('₹'+esc(budget)):''}</div>
-    <div class="req-foot"><span>${fmtDate(r.createdAt)}</span><span>${(r.responses||[]).length} response(s)</span></div>
+    <div class="req-foot">
+      <span>${fmtDate(r.createdAt)}</span>
+      <span style="display:flex;align-items:center;gap:10px">
+        <span>${(r.responses||[]).length} response(s)</span>
+        <button class="req-share-btn" data-share-req="${r._id}" title="Share this requirement">📤</button>
+      </span>
+    </div>
   </div>`;
 }
 function requirementsTabHTML(){
@@ -1457,6 +1469,10 @@ function bindRequirementsTab(){
   document.querySelectorAll('[data-req-open]').forEach(c=>c.addEventListener('click', ()=>{
     const r = allRequirements.find(x=>x._id===c.dataset.reqOpen);
     if(IS_STAFF) openReqDetail(r); else openReqReadonly(r);
+  }));
+  document.querySelectorAll('[data-share-req]').forEach(b=>b.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    openShareReqModal(b.dataset.shareReq);
   }));
 }
 
