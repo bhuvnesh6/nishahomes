@@ -1427,7 +1427,7 @@ def add_team_member():
                     "name": name,
                     "number": number,
                     "password": password,
-                    "login_url": "https://api.phishnix.site",
+                    "login_url": "https://crm.nishahomes.com/",
                     "message": f"Welcome {name}, your account has been created"
                 },
                 timeout=5
@@ -3736,7 +3736,7 @@ def project_share_text(project_id):
 
 
 def build_whatsapp_share_text(p, settings):
-    base_url = os.getenv("PUBLIC_BASE_URL", "https://api.phishnix.site")
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
     view_url = f"{base_url}/view/{p.get('uniqueId', '')}"
     L = [
         p.get("name") or p.get("propertyTitle") or "",

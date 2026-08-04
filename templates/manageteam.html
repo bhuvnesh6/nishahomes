@@ -842,7 +842,7 @@
 </div>
 
 <script>
-const API = 'https://api.phishnix.site/api';
+const API = 'https://crm.nishahomes.com/api';
 
 const list = document.getElementById('teamList');
 const countBadge = document.getElementById('memberCount');
@@ -1084,7 +1084,7 @@ async function submitCallLog() {
   showToast('loading', 'Saving log...');
 
   try {
-    const res = await fetch('https://api.phishnix.site/api/modify-document', {
+    const res = await fetch('https://crm.nishahomes.com/api/modify-document', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1132,7 +1132,7 @@ async function submitTask() {
   showToast('loading', 'Adding task...');
 
   try {
-    const res = await fetch(`https://api.phishnix.site/add-task`, {
+    const res = await fetch(`https://crm.nishahomes.com/add-task`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -1231,7 +1231,7 @@ function shareCredsWA() {
 👤 Name: ${credsCurrentName}
 🆔 Employee ID: ${credsCurrentPhone}
 🔒 Password: ${password}
-🔗 Login: https://api.phishnix.site`;
+🔗 Login: https://crm.nishahomes.com/`;
 
   window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
 }

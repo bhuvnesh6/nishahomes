@@ -713,7 +713,7 @@ nav {
 </div>
 
 <script>
-const BASE = "https://api.phishnix.site/";
+const BASE = "https://crm.nishahomes.com/";
 
 /* ─── HELPERS ─── */
 function showToast(msg, type = "success") {
@@ -874,7 +874,7 @@ async function loadTemplates() {
   } catch (err) {
     renderCards([]);
     document.getElementById("errorBanner").style.display = "block";
-    document.getElementById("errorMsg").textContent = "Could not connect to server. Start the backend at https://api.phishnix.site/api";
+    document.getElementById("errorMsg").textContent = "Could not connect to server. Start the backend at https://crm.nishahomes.com/api";
   } finally {
     hideLoader();
   }
@@ -884,7 +884,7 @@ async function loadTemplates() {
 async function deleteTemplate(id) {
   if (!confirm("⚠️ Delete this template?")) return;
   try {
-    const res = await fetch(`https://api.phishnix.site/api/wp-template/${id}`, { method: "DELETE" });
+    const res = await fetch(`https://crm.nishahomes.com/api/wp-template/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.success) { showToast("Template deleted"); loadTemplates(); }
     else { showToast(data.error || "Delete failed", "error"); }

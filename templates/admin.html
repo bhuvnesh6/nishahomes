@@ -1873,7 +1873,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   /* ═══════════════════════════════════
    CONFIG
 ═══════════════════════════════════ */
-const BASE = 'https://api.phishnix.site/api';
+const BASE = 'https://crm.nishahomes.com/api';
 const API = {
   buying:  `${BASE}/leads`,
   rental:  `${BASE}/rental-leads`,
@@ -3332,7 +3332,7 @@ document.getElementById('confirmSendBtn').addEventListener('click',async()=>{
   const idx=document.getElementById('templateSelect').value;
   const tpl=wpTemplates[idx];
   const leads=Array.from(selectedLeads.values());
-  const mediaUrl=tpl.media?`https://api.phishnix.site/uploads/${tpl.media}`:'';
+  const mediaUrl=tpl.media?`https://crm.nishahomes.com/uploads/${tpl.media}`:'';
   try{
     await fetch('https://n8n.phishnix.site/webhook/nishahomesNotification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'tempWPmsg',templateName:tpl.name,message:tpl.message,mediaUrl,leads})});
     alert('Template sent 🚀');

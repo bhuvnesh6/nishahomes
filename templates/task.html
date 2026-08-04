@@ -462,7 +462,7 @@
         // 1. GET TEAM
         async function fetchTeam() {
             try {
-                const res = await fetch('https://api.phishnix.site/api/get-team-assign');
+                const res = await fetch('https://crm.nishahomes.com/api/get-team-assign');
                 const data = await res.json();
                 state.team = data;
 
@@ -498,7 +498,7 @@
             btn.textContent = "Processing...";
 
             try {
-                const res = await fetch('https://api.phishnix.site/api/get-team-assign', {
+                const res = await fetch('https://crm.nishahomes.com/api/get-team-assign', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -523,7 +523,7 @@
             try {
                 // Loop through all employees and fetch their leads/tasks
                 const taskPromises = state.team.map(emp => 
-                    fetch('https://api.phishnix.site/api/get-lead-single', {
+                    fetch('https://crm.nishahomes.com/api/get-lead-single', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
