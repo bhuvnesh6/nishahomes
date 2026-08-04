@@ -2575,6 +2575,91 @@ def dashboard_overview():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+def _normalize_lead_type_field(lt):
+    """Maps the raw LeadType FIELD on a doc to a filter bucket — same mapping
+    the frontend's normalizeLeadType() uses. NOT which collection it lives in."""
+    v = str(lt or "").strip().lower()
+    return {
+        "buyer_purchase": "buying",
+        "buyer_rental": "rental",
+        "seller": "selling",
+        "agent": "agent",
+    }.get(v, "other")
+
+
+@app.route("/api/dashboard-leads-by-type", methods=["GET"])
+def dashboard_leads_by_type():
+    """Powers the Dashboard KPI-card popups. Same period logic as
+    /api/dashboard-overview, but returns the actual lead list (merged with
+    endData call info) filtered by the LeadType FIELD instead of just counts.
+    type = all | buying | rental | selling | agent
+    """
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    period = request.args.get("period", "lifetime")
+    want_type = request.args.get("type", "all")
+    start, end = get_dashboard_period_range(period)
+
+    coll_names = ["Leads", "RentalLeads", "sellingLeads", "agentLeads"]
+    end_collection = db["endData"]
+
+    def _clean(v, default="-"):
+        if v is None or v == "":
+            return default
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return v
+
+    out = []
+    try:
+        for coll_name in coll_names:
+            for lead in db[coll_name].find():
+                created_dt = parse_created_at_str(lead.get("Created At"))
+                if start is not None:
+                    if not created_dt or created_dt < start or created_dt > end:
+                        continue
+
+                lead_type = _normalize_lead_type_field(lead.get("LeadType"))
+                if want_type != "all" and lead_type != want_type:
+                    continue
+
+                phone_raw = lead.get("Phone Number", "")
+                phone = normalize_number(phone_raw)
+                if phone and not phone.startswith("91"):
+                    phone = "91" + phone
+
+                ed = (end_collection.find_one({"Number": phone}) if phone else None) or {}
+
+                out.append({
+                    "id": str(lead["_id"]),
+                    "collection": coll_name,
+                    "leadType": lead_type,
+                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                    "phone": phone or _clean(phone_raw, ""),
+                    "date": _clean(lead.get("Date")),
+                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                    "propertyType": _clean(lead.get("Property Type")),
+                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                    "callStatus": _clean(ed.get("Call Status")),
+                    "customerResponse": _clean(ed.get("Customer Response")),
+                    "interestLevel": _clean(ed.get("Interest Level")),
+                    "callerRemarks": _clean(ed.get("Caller Remarks")),
+                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                    "nextCallDate": _clean(ed.get("Next Call Date")),
+                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                    "lastCallBy": _clean(ed.get("lastCallBy")),
+                    "lastCallAtFormatted": _clean(ed.get("lastCallAtFormatted")),
+                })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    return jsonify({"success": True, "period": period, "type": want_type,
+                     "count": len(out), "data": out}), 200
+
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
     try:
