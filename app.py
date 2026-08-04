@@ -2203,15 +2203,53 @@ def dashboard_stats():
 # doc for "Next Call Date", and buckets it into today / this week.
 # Visible to admin & emp; shows follow-ups set by ANY employee/admin.
 # =============================
+def get_followup_period_range(period):
+    """Returns (start_date, end_date) as date objects for filtering
+    follow-ups by their Next Call Date (both bounds inclusive).
+    (None, None) means no restriction — "lifetime" = every follow-up
+    that has a Next Call Date, whenever it falls."""
+    today = datetime.utcnow().date()
+
+    if period == "today":
+        return today, today
+
+    if period == "this_week":
+        start = today - timedelta(days=today.weekday())  # Monday
+        return start, start + timedelta(days=6)           # Sunday
+
+    if period == "this_month":
+        start = today.replace(day=1)
+        end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+        return start, end
+
+    if period == "last_month":
+        first_of_this_month = today.replace(day=1)
+        last_month_end = first_of_this_month - timedelta(days=1)
+        return last_month_end.replace(day=1), last_month_end
+
+    if period == "last_3_months":
+        month = today.month - 2
+        year = today.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        start = datetime(year, month, 1).date()
+        end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+        return start, end
+
+    return None, None  # "lifetime"
+
+
+
 @app.route("/api/dashboard-followups", methods=["GET"])
 def dashboard_followups():
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
 
-    today = datetime.utcnow().date()
+    period = request.args.get("period", "today")
+    range_start, range_end = get_followup_period_range(period)
+
     now = datetime.utcnow()
-    week_start = today - timedelta(days=today.weekday())   # Monday
-    week_end = week_start + timedelta(days=6)               # Sunday
 
     def parse_followup_date(s):
         if not s:
@@ -2230,18 +2268,15 @@ def dashboard_followups():
         "selling": "sellingLeads", "agent": "agentLeads"
     }
 
-    today_list, week_list = [], []
+    followups_list = []
 
     try:
         for lead_type, coll_name in collections.items():
             for lead in db[coll_name].find():
-                # NEW: only consider leads dated July 2026 -> now (same rule as filter_by_july_range)
                 lead_date = parse_lead_date(lead.get("Date"))
                 if not lead_date or lead_date < JULY_2026_START or lead_date > now:
                     continue
 
-                # Verify via phone number against the Leads-family collection (this loop already
-                # scans the real lead docs, so a match here IS the phone-number verification)
                 phone = normalize_number(lead.get("Phone Number", ""))
                 if not phone:
                     continue
@@ -2252,30 +2287,34 @@ def dashboard_followups():
                 if not ed:
                     continue
 
-                # NEW: endData record itself must also fall in the July -> now window
                 ed_created = ed.get("lastUpdatedAt")
                 if isinstance(ed_created, datetime):
                     if ed_created < JULY_2026_START or ed_created > now:
                         continue
 
                 fdate = parse_followup_date(ed.get("Next Call Date"))
-                if not fdate or fdate < today:
-                    continue   # only today-forward, not overdue
+                if not fdate:
+                    continue
+
+                # CHANGED: single period window instead of today/this-week
+                # buckets. range_start/range_end are None for "lifetime".
+                if range_start is not None and not (range_start <= fdate <= range_end):
+                    continue
 
                 def _clean(v, default="-"):
-                    # NEW: guards against pandas/CSV-imported NaN floats, which Python's
-                    # jsonify serializes as the literal token `NaN` — invalid JSON that
-                    # breaks JSON.parse() in the browser. None/empty also fall back safely.
                     if v is None or v == "":
                         return default
                     if isinstance(v, float) and math.isnan(v):
                         return default
                     return v
 
+                # CHANGED: lead type corrected to the real LeadType field
+                actual_type = _normalize_lead_type_field(lead.get("LeadType"))
+
                 entry = {
                     "id": str(lead["_id"]),
                     "collection": coll_name,
-                    "leadType": lead_type,
+                    "leadType": actual_type,
                     "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
                     "phone": phone,
                     "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
@@ -2283,7 +2322,6 @@ def dashboard_followups():
                     "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
                     "callStatus": _clean(ed.get("Call Status")),
                     "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
-                    # NEW: extra context for the follow-up popup
                     "propertyType": _clean(lead.get("Property Type") or ed.get("Property Type")),
                     "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
                     "customerResponse": _clean(ed.get("Customer Response")),
@@ -2292,11 +2330,7 @@ def dashboard_followups():
                     "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
                 }
 
-                # CHANGED: bucket exclusively — same-day goes to "today", everything else in-week to "week"
-                if fdate == today:
-                    today_list.append(entry)
-                elif week_start <= fdate <= week_end:
-                    week_list.append(entry)
+                followups_list.append(entry)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2304,10 +2338,9 @@ def dashboard_followups():
 
     return jsonify({
         "success": True,
-        "todayCount": len(today_list),
-        "weekCount": len(week_list),
-        "todayLeads": today_list,
-        "weekLeads": week_list
+        "period": period,
+        "count": len(followups_list),
+        "followups": followups_list
     }), 200
 
 
@@ -2397,7 +2430,7 @@ def dashboard_overview():
         "selling": "sellingLeads", "agent": "agentLeads"
     }
 
-    totals = {"buying": 0, "rental": 0, "selling": 0, "agent": 0}
+    totals = {"buying": 0, "rental": 0, "selling": 0, "agent": 0, "other": 0}
     trend_counts = {}       # "YYYY-MM-DD" -> count
     location_counts = {}    # location -> count
     qualifying_phones = {}  # normalized "91xxxxxxxxxx" -> leadType
@@ -2410,9 +2443,14 @@ def dashboard_overview():
                 if start is not None:
                     if not created_dt or created_dt < start or created_dt > end:
                         continue
-                # lifetime (start is None): include regardless of Created At
+                # lifetime (start is None): include regardless of Created At —
+                # leads with no Created At only ever show up under "lifetime"
 
-                totals[lead_type] += 1
+                # CHANGED: bucket by the lead's ACTUAL "LeadType" field
+                # (same mapping /api/dashboard-leads-by-type already uses),
+                # not by which collection the doc happens to live in.
+                actual_type = _normalize_lead_type_field(lead.get("LeadType"))
+                totals[actual_type] = totals.get(actual_type, 0) + 1
 
                 if created_dt:
                     d_str = created_dt.strftime("%Y-%m-%d")
@@ -2427,7 +2465,7 @@ def dashboard_overview():
                 if phone:
                     if not phone.startswith("91"):
                         phone = "91" + phone
-                    qualifying_phones[phone] = lead_type
+                    qualifying_phones[phone] = actual_type
 
         total_leads = sum(totals.values())
 
@@ -3825,21 +3863,7 @@ def ai_generate_property():
         form_type = request.form.get("form_type", "inventory")
         combined_text = []
 
-        for f in request.files.getlist("images"):
-            if not f or not f.filename:
-                continue
-            ext = os.path.splitext(f.filename)[-1] or ".png"
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-            tmp.close()
-            f.save(tmp.name)
-            try:
-                txt = extract_text_from_image(tmp.name)
-                if txt:
-                    combined_text.append(txt)
-            except Exception as img_err:
-                print(f"[ai-generate] image OCR failed: {img_err}")
-            finally:
-                os.remove(tmp.name)
+    
 
         # NEW: reference screenshot(s) — OCR'd for context only, NEVER uploaded/saved
         # to Cloudinary or Mongo. Purely used to extract extra text for Mistral.
