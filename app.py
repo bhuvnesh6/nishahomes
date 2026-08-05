@@ -2471,7 +2471,7 @@ def dashboard_overview():
 
         # ---- Pipeline health / status breakdown / intent / follow-ups ----
         end_collection = db["endData"]
-        followup_count = pending_count = done_count = 0
+        followup_count = pending_count = done_count = lost_count = 0
         status_counts = {}
         intent_buckets = {"Hot": [], "Warm": [], "Cold": []}
         today_list, week_list = [], []
@@ -2587,7 +2587,8 @@ def dashboard_overview():
                 "followup_count": followup_count,
                 "pending_count": pending_count,
                 "done_count": done_count,
-                "calls_period_total": calls_period_total
+                "calls_period_total": calls_period_total,
+                "lost_count": lost_count
             },
             "team_activity": {"by_employee": by_employee},
             "intent": {
@@ -2624,6 +2625,23 @@ def _normalize_lead_type_field(lt):
         "agent": "agent",
     }.get(v, "other")
 
+
+# =============================
+# "LOST" LEADS — unreachable call statuses OR explicit "Not Interested"
+# response, used by the Dashboard's Lost KPI card.
+# =============================
+LOST_CALL_STATUSES = {
+    "Call Disconnected", "Call Not Picked", "Invalid Number", "Line Busy",
+    "No Response", "Number Switched Off", "Wrong Number"
+}
+
+def _is_lost_lead(ed):
+    """True if this endData doc counts as a 'lost' lead — either the call
+    status is one of the unreachable statuses, or the customer explicitly
+    said Not Interested."""
+    call_status = (ed.get("Call Status") or "").strip()
+    customer_response = (ed.get("Customer Response") or "").strip()
+    return call_status in LOST_CALL_STATUSES or customer_response == "Not Interested"
 
 @app.route("/api/dashboard-leads-by-type", methods=["GET"])
 def dashboard_leads_by_type():
@@ -2696,6 +2714,88 @@ def dashboard_leads_by_type():
         return jsonify({"success": False, "message": str(e)}), 500
 
     return jsonify({"success": True, "period": period, "type": want_type,
+                     "count": len(out), "data": out}), 200
+
+
+@app.route("/api/dashboard-lost-leads", methods=["GET"])
+def dashboard_lost_leads():
+    """Powers the 'Lost' KPI card popup. Same period logic as
+    /api/dashboard-overview, but returns leads whose endData Call Status is
+    one of the unreachable statuses, or whose Customer Response is
+    'Not Interested'. status=<exact status | 'Not Interested' | 'all'>
+    narrows to just that reason.
+    """
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    period = request.args.get("period", "lifetime")
+    want_status = request.args.get("status", "all")
+    start, end = get_dashboard_period_range(period)
+
+    coll_names = ["Leads", "RentalLeads", "sellingLeads", "agentLeads"]
+    end_collection = db["endData"]
+
+    def _clean(v, default="-"):
+        if v is None or v == "":
+            return default
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return v
+
+    out = []
+    try:
+        for coll_name in coll_names:
+            for lead in db[coll_name].find():
+                created_dt = parse_created_at_str(lead.get("Created At"))
+                if start is not None:
+                    if not created_dt or created_dt < start or created_dt > end:
+                        continue
+
+                phone_raw = lead.get("Phone Number", "")
+                phone = normalize_number(phone_raw)
+                if phone and not phone.startswith("91"):
+                    phone = "91" + phone
+
+                ed = (end_collection.find_one({"Number": phone}) if phone else None) or {}
+                if not ed or not _is_lost_lead(ed):
+                    continue
+
+                call_status = (ed.get("Call Status") or "").strip()
+                customer_response = (ed.get("Customer Response") or "").strip()
+
+                if want_status == "Not Interested":
+                    if customer_response != "Not Interested":
+                        continue
+                elif want_status != "all":
+                    if call_status != want_status:
+                        continue
+
+                lead_type = _normalize_lead_type_field(lead.get("LeadType"))
+
+                out.append({
+                    "id": str(lead["_id"]),
+                    "collection": coll_name,
+                    "leadType": lead_type,
+                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                    "phone": phone or _clean(phone_raw, ""),
+                    "date": _clean(lead.get("Date")),
+                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                    "propertyType": _clean(lead.get("Property Type")),
+                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                    "callStatus": _clean(ed.get("Call Status")),
+                    "customerResponse": _clean(ed.get("Customer Response")),
+                    "callerRemarks": _clean(ed.get("Caller Remarks")),
+                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                    "nextCallDate": _clean(ed.get("Next Call Date")),
+                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    return jsonify({"success": True, "period": period, "status": want_status,
                      "count": len(out), "data": out}), 200
 
 @app.route("/api/delete-lead", methods=["DELETE"])

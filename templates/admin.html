@@ -1269,11 +1269,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         </div>
         <div class="kpi-card warm">
           <div class="kpi-top">
-            <div class="kpi-icon">📋</div>
+            <div class="kpi-icon">🚫</div>
           </div>
-          <div class="kpi-label">Selling</div>
-          <div class="kpi-value" id="dashSelling" onclick="openDashLeadsModal('selling')">—</div>
-          <div class="kpi-change" id="dashSellingChange">—</div>
+          <div class="kpi-label">Lost</div>
+          <div class="kpi-value" id="dashLost" onclick="openLostLeadsModal('all')">—</div>
+          <div class="kpi-change" id="dashLostChange">—</div>
         </div>
       </div>
     </div>
@@ -1838,6 +1838,29 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
     <div id="dashLeadsCount" style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-bottom:10px"></div>
     <div id="dashLeadsList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="lostLeadsModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-close" onclick="closeLostLeadsModal()">✕</button>
+    <h2>Lost Leads</h2>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input type="text" class="form-input" id="lostLeadsSearch" placeholder="Search name, phone, location…" style="flex:1;min-width:160px">
+      <select class="form-select" id="lostLeadsStatusFilter" style="width:auto">
+        <option value="all">All Reasons</option>
+        <option value="Call Disconnected">Call Disconnected</option>
+        <option value="Call Not Picked">Call Not Picked</option>
+        <option value="Invalid Number">Invalid Number</option>
+        <option value="Line Busy">Line Busy</option>
+        <option value="No Response">No Response</option>
+        <option value="Number Switched Off">Number Switched Off</option>
+        <option value="Wrong Number">Wrong Number</option>
+        <option value="Not Interested">Not Interested</option>
+      </select>
+    </div>
+    <div id="lostLeadsCount" style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-bottom:10px"></div>
+    <div id="lostLeadsList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -2942,8 +2965,8 @@ async function loadDashboardOverview(period){
     document.getElementById('dashBuyingChange').textContent = 'Buying';
     document.getElementById('dashRental').textContent = d.totals.rental||0;
     document.getElementById('dashRentalChange').textContent = 'Rental';
-    document.getElementById('dashSelling').textContent = d.totals.selling||0;
-    document.getElementById('dashSellingChange').textContent = 'Selling';
+    document.getElementById('dashLost').textContent = d.pipeline.lost_count||0;
+    document.getElementById('dashLostChange').textContent = 'Lost';
 
     // Pipeline health
     document.getElementById('dashFollowup').textContent = d.pipeline.followup_count;
@@ -3838,12 +3861,83 @@ function renderDashLeadsList(){
     </div>`;
   }).join('');
 }
+
 document.getElementById('dashLeadsSearch').addEventListener('input', renderDashLeadsList);
 document.getElementById('dashLeadsBudgetSort').addEventListener('change', renderDashLeadsList);
 
 /* ═══════════════════════════════════
+   DASHBOARD "LOST" LEADS POPUP
+═══════════════════════════════════ */
+let lostLeadsData = [];
+
+async function openLostLeadsModal(status){
+  document.getElementById('lostLeadsSearch').value = '';
+  document.getElementById('lostLeadsStatusFilter').value = status || 'all';
+  document.getElementById('lostLeadsList').innerHTML = '<div class="loader" style="margin:20px auto"></div>';
+  document.getElementById('lostLeadsCount').textContent = '';
+  document.getElementById('lostLeadsModal').classList.add('active');
+  await fetchLostLeads();
+}
+
+async function fetchLostLeads(){
+  const status = document.getElementById('lostLeadsStatusFilter').value;
+  try{
+    const res = await fetch(`${BASE}/dashboard-lost-leads?period=${encodeURIComponent(currentDashPeriod)}&status=${encodeURIComponent(status)}`);
+    const d = await res.json();
+    lostLeadsData = (d.success && d.data) ? d.data : [];
+    renderLostLeadsList();
+  }catch(e){
+    console.error(e);
+    document.getElementById('lostLeadsList').innerHTML = '<p style="color:#ff6b6b">Failed to load leads</p>';
+  }
+}
+
+function closeLostLeadsModal(){ document.getElementById('lostLeadsModal').classList.remove('active'); }
+document.getElementById('lostLeadsModal').addEventListener('click', e=>{ if(e.target.id==='lostLeadsModal') closeLostLeadsModal(); });
+document.getElementById('lostLeadsStatusFilter').addEventListener('change', fetchLostLeads);
+document.getElementById('lostLeadsSearch').addEventListener('input', renderLostLeadsList);
+
+function renderLostLeadsList(){
+  const q = (document.getElementById('lostLeadsSearch').value||'').toLowerCase();
+  const list = lostLeadsData.filter(l =>
+    !q || (l.name||'').toLowerCase().includes(q) ||
+    (l.phone||'').toLowerCase().includes(q) ||
+    (l.location||'').toLowerCase().includes(q)
+  );
+  document.getElementById('lostLeadsCount').textContent = `${list.length} lead${list.length!==1?'s':''}`;
+  const box = document.getElementById('lostLeadsList');
+  if(!list.length){ box.innerHTML = '<p style="color:rgba(255,255,255,0.5)">No leads found</p>'; return; }
+
+  box.innerHTML = list.map(l=>{
+    const rawPhone = digitsOnly(l.phone||'');
+    const reasonLabel = l.callStatus!=='-' ? l.callStatus : (l.customerResponse!=='-' ? l.customerResponse : 'Lost');
+    return `
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.08)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;font-size:0.9rem">
+        <span style="color:#fff;font-weight:700">${escHtml(l.name)}</span>
+        <span class="badge" style="background:rgba(239,68,68,.12);color:#ef4444">${escHtml(reasonLabel)}</span>
+      </div>
+      <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:6px;line-height:1.6">
+        📞 ${escHtml(rawPhone)}<br>
+        📍 ${escHtml(l.location)}${l.propertyType!=='-'?' · 🏠 '+escHtml(l.propertyType):''}${l.budget!=='-'?' · 💰 '+escHtml(l.budget):''}
+      </div>
+      <div style="color:rgba(255,255,255,0.6);font-size:0.78rem;margin-top:4px">
+        Assigned to: <strong style="color:rgba(255,255,255,0.85)">${escHtml(l.assignedTo)}</strong>
+        ${l.customerResponse!=='-'?' · Response: '+escHtml(l.customerResponse):''}
+      </div>
+      ${l.callerRemarks!=='-'?`<div style="color:rgba(255,255,255,0.55);font-size:0.76rem;margin-top:4px;font-style:italic">"${escHtml(l.callerRemarks)}"</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <a href="tel:${rawPhone}" onclick="logCallClick('${rawPhone}','${escHtml(l.name)}','${l.leadType||''}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(16,185,129,0.12);border:1.5px solid #10B981;color:#34d399;font-size:0.8rem;font-weight:600;text-decoration:none">Call</a>
+        <a href="https://wa.me/${rawPhone}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">WhatsApp</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════
    INIT
 ═══════════════════════════════════ */
+
 window.addEventListener('load',()=>{
   setTimeout(()=>{
     hideLoader();
