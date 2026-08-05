@@ -2525,6 +2525,13 @@ def dashboard_overview():
                 call_status = ed.get("Call Status") or "No Log"
                 status_counts[call_status] = status_counts.get(call_status, 0) + 1
 
+                # NEW: count this lead as "lost" using the same rule as the
+                # Lost Leads popup (/api/dashboard-lost-leads). lost_count
+                # was declared above but never incremented, so the KPI card
+                # always showed 0 even though matching leads existed.
+                if _is_lost_lead(ed):
+                    lost_count += 1
+
                 bucket = map_interest_to_bucket(ed.get("Interest Level"))
                 if bucket:
                     intent_buckets[bucket].append({
