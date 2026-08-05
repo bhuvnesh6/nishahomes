@@ -2724,6 +2724,10 @@ def dashboard_lost_leads():
     one of the unreachable statuses, or whose Customer Response is
     'Not Interested'. status=<exact status | 'Not Interested' | 'all'>
     narrows to just that reason.
+
+    PERFORMANCE: batches the endData lookup into ONE query instead of one
+    find_one() per lead — with hundreds of leads the old per-lead lookup
+    was doing hundreds of round-trips to Mongo, which is why this was slow.
     """
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
@@ -2742,8 +2746,12 @@ def dashboard_lost_leads():
             return default
         return v
 
-    out = []
     try:
+        # ---- PASS 1: collect period-matching leads + their normalized phones,
+        # with ZERO Mongo calls to endData yet ----
+        candidate_leads = []   # list of (lead_doc, coll_name, phone)
+        phones_needed = set()
+
         for coll_name in coll_names:
             for lead in db[coll_name].find():
                 created_dt = parse_created_at_str(lead.get("Created At"))
@@ -2756,40 +2764,53 @@ def dashboard_lost_leads():
                 if phone and not phone.startswith("91"):
                     phone = "91" + phone
 
-                ed = (end_collection.find_one({"Number": phone}) if phone else None) or {}
-                if not ed or not _is_lost_lead(ed):
+                candidate_leads.append((lead, coll_name, phone, phone_raw))
+                if phone:
+                    phones_needed.add(phone)
+
+        # ---- PASS 2: ONE batched query for every endData doc we might need ----
+        end_data_map = {}
+        if phones_needed:
+            for ed in end_collection.find({"Number": {"$in": list(phones_needed)}}):
+                end_data_map[ed.get("Number")] = ed
+
+        # ---- PASS 3: filter + build output using the in-memory map ----
+        out = []
+        for lead, coll_name, phone, phone_raw in candidate_leads:
+            ed = end_data_map.get(phone)
+            if not ed or not _is_lost_lead(ed):
+                continue
+
+            call_status = (ed.get("Call Status") or "").strip()
+            customer_response = (ed.get("Customer Response") or "").strip()
+
+            if want_status == "Not Interested":
+                if customer_response != "Not Interested":
+                    continue
+            elif want_status != "all":
+                if call_status != want_status:
                     continue
 
-                call_status = (ed.get("Call Status") or "").strip()
-                customer_response = (ed.get("Customer Response") or "").strip()
+            lead_type = _normalize_lead_type_field(lead.get("LeadType"))
 
-                if want_status == "Not Interested":
-                    if customer_response != "Not Interested":
-                        continue
-                elif want_status != "all":
-                    if call_status != want_status:
-                        continue
-
-                lead_type = _normalize_lead_type_field(lead.get("LeadType"))
-
-                out.append({
-                    "id": str(lead["_id"]),
-                    "collection": coll_name,
-                    "leadType": lead_type,
-                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
-                    "phone": phone or _clean(phone_raw, ""),
-                    "date": _clean(lead.get("Date")),
-                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
-                    "propertyType": _clean(lead.get("Property Type")),
-                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
-                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
-                    "callStatus": _clean(ed.get("Call Status")),
-                    "customerResponse": _clean(ed.get("Customer Response")),
-                    "callerRemarks": _clean(ed.get("Caller Remarks")),
-                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
-                    "nextCallDate": _clean(ed.get("Next Call Date")),
-                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
-                })
+            out.append({
+                "id": str(lead["_id"]),
+                "collection": coll_name,
+                "leadType": lead_type,
+                "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                "phone": phone or _clean(phone_raw, ""),
+                "date": _clean(lead.get("Date")),
+                "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                "propertyType": _clean(lead.get("Property Type")),
+                "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                "callStatus": _clean(ed.get("Call Status")),
+                "customerResponse": _clean(ed.get("Customer Response")),
+                "callerRemarks": _clean(ed.get("Caller Remarks")),
+                "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                "nextCallDate": _clean(ed.get("Next Call Date")),
+                "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+            })
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2797,6 +2818,7 @@ def dashboard_lost_leads():
 
     return jsonify({"success": True, "period": period, "status": want_status,
                      "count": len(out), "data": out}), 200
+    
 
 @app.route("/api/delete-lead", methods=["DELETE"])
 def delete_lead():
