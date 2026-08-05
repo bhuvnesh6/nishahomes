@@ -795,9 +795,23 @@ def _ffmpeg_escape_text(text):
 
 
 def build_simple_branded_video(video_bytes):
-    """Same light branding, burned into a video via ffmpeg. Frame size unchanged."""
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError("ffmpeg not installed on this server — cannot brand video")
+    """
+    Light branding burned into a video via ffmpeg. Frame size unchanged.
+
+    Margins and font sizes are computed as a PERCENTAGE of the video's own
+    width/height (read via ffprobe) instead of fixed pixel offsets — so a
+    portrait 720p clip and a landscape 4K clip both get proportionally
+    correct, non-clipped branding instead of one fixed pixel value that
+    only looks right on one resolution.
+
+    - Top-left badge (brand name): nudged in from the corner, not flush
+      against the edge.
+    - Bottom-left badge (name + number): kept close to the left edge, but
+      with extra bottom clearance so descenders/text are never cut off.
+    - Font sizes are ~20% smaller than the previous version.
+    """
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise RuntimeError("ffmpeg/ffprobe not installed on this server — cannot brand video")
 
     font_path = _resolve_video_font_path()
     if not font_path:
@@ -812,28 +826,49 @@ def build_simple_branded_video(video_bytes):
     tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tmp_out.close()
 
-    name_esc = _ffmpeg_escape_text(BRAND_NAME)
-    contact_esc = _ffmpeg_escape_text(f"{BRAND_CONTACT_NUMBER} | {BRAND_WEBSITE}")
-
-    # box=1 + boxborderw draws a background box sized to the text itself
-    # (plus the given border/padding), instead of a full-width bar — so it
-    # never covers the whole frame and can't get cropped on any screen size.
-    vf = (
-        f"drawtext=fontfile='{font_path}':text='{name_esc}':"
-        f"x=10:y=10:fontsize=main_h*0.026:fontcolor=white:"
-        f"box=1:boxcolor=0xED8049@0.9:boxborderw=10,"
-        f"drawtext=fontfile='{font_path}':text='{contact_esc}':"
-        f"x=10:y=h-th-30:fontsize=main_h*0.020:fontcolor=white:"
-        f"box=1:boxcolor=0x10131C@0.85:boxborderw=10"
-    )
     try:
+        # Read the video's REAL dimensions so every margin below scales
+        # with its actual resolution/aspect ratio.
+        src_w, src_h = _get_video_dimensions(tmp_in.name)
+
+        # ---- Top-left brand-name badge: pushed in a bit from the corner ----
+        top_margin_x = max(14, int(src_w * 0.045))
+        top_margin_y = max(10, int(src_h * 0.03))
+
+        # ---- Bottom-left contact badge: close to the edge, but with real
+        # breathing room at the bottom so text never gets clipped ----
+        bottom_margin_x = max(10, int(src_w * 0.025))
+        bottom_margin_y = max(24, int(src_h * 0.065))
+
+        # Font sizes: ~20% smaller than the previous 0.026 / 0.020 of height
+        name_font_expr = f"main_h*{0.026 * 0.8:.4f}"
+        contact_font_expr = f"main_h*{0.020 * 0.8:.4f}"
+
+        name_esc = _ffmpeg_escape_text(BRAND_NAME)
+        contact_esc = _ffmpeg_escape_text(f"{BRAND_CONTACT_NUMBER} | {BRAND_WEBSITE}")
+
+        # box=1 + boxborderw draws a background box sized to the text itself
+        # (plus the given border/padding), instead of a full-width bar — so
+        # it never covers the whole frame and can't get cropped on any
+        # screen size. The bottom badge's y is measured from its own text
+        # height (th) plus bottom_margin_y, so it stays fully on-screen
+        # regardless of resolution.
+        vf = (
+            f"drawtext=fontfile='{font_path}':text='{name_esc}':"
+            f"x={top_margin_x}:y={top_margin_y}:fontsize={name_font_expr}:fontcolor=white:"
+            f"box=1:boxcolor=0xED8049@0.9:boxborderw=8,"
+            f"drawtext=fontfile='{font_path}':text='{contact_esc}':"
+            f"x={bottom_margin_x}:y=h-th-{bottom_margin_y}:fontsize={contact_font_expr}:fontcolor=white:"
+            f"box=1:boxcolor=0x10131C@0.85:boxborderw=8"
+        )
+
         cmd = ["ffmpeg", "-y", "-i", tmp_in.name, "-vf", vf,
                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp_out.name]
-        result = subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True)
         with open(tmp_out.name, "rb") as f:
             video_bytes_out = f.read()
-        print(f"[branding] video branding SUCCEEDED — {len(video_bytes_out)} bytes")
+        print(f"[branding] video branding SUCCEEDED — {len(video_bytes_out)} bytes ({src_w}x{src_h})")
         return io.BytesIO(video_bytes_out)   # <-- was: return f.read() (raw bytes broke cloudinary upload)
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
