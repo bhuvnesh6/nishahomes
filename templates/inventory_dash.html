@@ -125,6 +125,8 @@ img,video{max-width:100%}
 /* Hamburger — desktop hidden */
 .hamburger-btn{
   display:none;
+  margin-left:auto;      /* pushes it to the far right of the row */
+  margin-right:15px;     /* your requested gap from the edge */
   width:40px;height:40px;flex-shrink:0;
   align-items:center;justify-content:center;
   border-radius:var(--radius-sm);
@@ -138,7 +140,7 @@ img,video{max-width:100%}
 
 /* Mobile dropdown backdrop */
 .mobile-menu-backdrop{
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:940;
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:850; /* was 940 */
 }
 .mobile-menu-backdrop.active{display:block}
 
@@ -405,7 +407,7 @@ img,video{max-width:100%}
 }
 
 @media(max-width:768px){
-  .topbar{padding:0 12px;height:58px;min-height:58px;gap:8px;position:relative}
+  .topbar{padding:0 0 12px;height:58px;min-height:58px;gap:8px;position:relative}
   .topbar-title{font-size:0.98rem;max-width:46vw}
   .topbar-title span[style]{display:none}
   .topbar-role-badge{display:none}
