@@ -78,7 +78,19 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME")
 
-client = MongoClient(MONGO_URI)
+# PERF: tuned connection pool + fail-fast timeouts instead of Mongo defaults.
+# maxPoolSize raised a bit above default so concurrent requests aren't
+# queued waiting for a free connection; timeouts prevent a slow/unreachable
+# Mongo from hanging every request indefinitely.
+client = MongoClient(
+    MONGO_URI,
+    maxPoolSize=100,
+    minPoolSize=5,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=5000,
+    socketTimeoutMS=20000,
+    retryWrites=True
+)
 db = client[DB_NAME]
 dai_collection = db["DAI"]
 # CHANGED: was db["project"] - now uses "projects" per the Inventory feature
@@ -103,6 +115,79 @@ try:
 except Exception as _diag_err:
     print(f"[startup] Could NOT query teamAssign - Mongo connection problem: {_diag_err}")
 
+
+# =====================================================================
+# PERF: INDEXES
+# Every field these APIs filter/sort on gets an index here. create_index()
+# is idempotent — safe to call on every boot, it's a no-op if the index
+# already exists. Without these, Mongo does a full COLLSCAN on every
+# query below, which is the single biggest cost in this app as data grows.
+# =====================================================================
+def ensure_indexes():
+    try:
+        for coll_name in ["Leads", "RentalLeads", "sellingLeads", "agentLeads"]:
+            coll = db[coll_name]
+            coll.create_index("Phone Number")
+            coll.create_index("Date")
+            coll.create_index("Created At")
+            coll.create_index("LeadType")
+            coll.create_index("AssignToNumber")
+            coll.create_index("DateObj")  # NEW indexed range-query field, see backfill_date_obj()
+
+        db["endData"].create_index("Number")  # NOT unique — legacy data may have dupes; keep it that way
+        db["endData"].create_index("Call Status")
+        db["endData"].create_index("Interest Level")
+
+        db["callLogs"].create_index("DateOnly")
+        db["callLogs"].create_index("CreatedAt")
+        db["callLogs"].create_index("Number")
+        db["callLogs"].create_index("CalledBy")
+
+        db["teamAssign"].create_index("Employee number")
+        db["teamAssign"].create_index("roll")
+
+        projects_collection.create_index([("ownerNumber", 1), ("status", 1)])
+        projects_collection.create_index("kind")
+        projects_collection.create_index("status")
+        projects_collection.create_index("uniqueId")
+        projects_collection.create_index("createdAt")
+
+        db["requirements"].create_index("submittedByNumber")
+        db["requirements"].create_index("broadcastTo")
+        db["requirements"].create_index("status")
+        db["requirements"].create_index("createdAt")
+
+        db["DAI"].create_index("leadId")
+
+        print("[startup] Indexes ensured.")
+    except Exception as idx_err:
+        print(f"[startup] Index creation warning (non-fatal): {idx_err}")
+
+
+ensure_indexes()
+
+
+# =====================================================================
+# PERF: SIMPLE IN-MEMORY TTL CACHE
+# For read-heavy, rarely-changing data (settings, etc). Not distributed —
+# fine for a single-process deployment; if you scale to multiple workers
+# behind a load balancer, swap this for Redis.
+# =====================================================================
+_cache_store = {}
+
+def cached(key, ttl_seconds, compute_fn):
+    now = time.time()
+    hit = _cache_store.get(key)
+    if hit and (now - hit[0]) < ttl_seconds:
+        return hit[1]
+    value = compute_fn()
+    _cache_store[key] = (now, value)
+    return value
+
+def invalidate_cache(key):
+    _cache_store.pop(key, None)
+
+
 # Helper function
 def serialize_doc(doc):
     doc["_id"] = str(doc["_id"])
@@ -122,9 +207,14 @@ def format_ist(dt):
     ist = dt + timedelta(hours=5, minutes=30)
     return ist.strftime("%I:%M %p . %d/%m/%Y")
 
-def get_collection_data(collection_name):
+def get_collection_data(collection_name, projection=None):
+    """PERF: optional projection param — pass only the fields you need to
+    cut document transfer size for endpoints that don't need full docs."""
     collection = db[collection_name]
-    data = list(collection.find())
+    if projection:
+        data = list(collection.find({}, projection))
+    else:
+        data = list(collection.find())
     return [serialize_doc(doc) for doc in data]
 
 
@@ -181,14 +271,14 @@ def parse_lead_date(date_str):
 JULY_2026_START = datetime(2026, 7, 1)
 
 def filter_by_july_range(docs):
+    """Legacy in-Python filter — kept for any code path still using it.
+    Prefer get_filtered_leads() below, which pushes the range filter down
+    into Mongo using the indexed DateObj field instead of scanning +
+    parsing every document in Python."""
     now = datetime.utcnow()
     kept = []
     for d in docs:
         parsed = parse_lead_date(d.get("Date"))
-        # NEW: fall back to "Created At" (written by /add-lead) if "Date"
-        # is missing or unparseable — this covers leads created before
-        # /add-lead started also writing "Date", so they don't silently
-        # vanish from /api/leads and friends.
         if not parsed:
             parsed = parse_created_at_str(d.get("Created At"))
         if not parsed:
@@ -196,6 +286,71 @@ def filter_by_july_range(docs):
         if JULY_2026_START <= parsed <= now:
             kept.append(d)
     return kept
+
+
+def get_filtered_leads(collection_name):
+    """
+    PERF: fast path for the July-2026-onward lead lists.
+
+    Docs that already have a DateObj field (real datetime, written on
+    insert by /add-lead, indexed) are fetched with a single indexed Mongo
+    range query — no Python date parsing needed.
+
+    Docs from before the DateObj migration (missing the field entirely)
+    fall back to the old Python-side parse-and-filter, but only for that
+    shrinking legacy subset — not the whole collection. Run
+    POST /api/admin/backfill-date-obj once to eliminate the fallback path
+    completely; after that this function is a single indexed query.
+    """
+    now = datetime.utcnow()
+    coll = db[collection_name]
+
+    fast_docs = list(coll.find({
+        "DateObj": {"$gte": JULY_2026_START, "$lte": now}
+    }))
+
+    legacy_docs = list(coll.find({"DateObj": {"$exists": False}}))
+    kept_legacy = []
+    for d in legacy_docs:
+        parsed = parse_lead_date(d.get("Date")) or parse_created_at_str(d.get("Created At"))
+        if parsed and JULY_2026_START <= parsed <= now:
+            kept_legacy.append(d)
+
+    return [serialize_doc(d) for d in (fast_docs + kept_legacy)]
+
+
+def backfill_date_obj(collection_name):
+    """ONE-TIME (per collection) migration: adds an indexed real-datetime
+    DateObj field to every doc that doesn't have one yet, parsed from
+    'Date' (falls back to 'Created At'). After running this once per
+    collection, get_filtered_leads() runs as a single indexed query with
+    no Python fallback needed."""
+    coll = db[collection_name]
+    docs = list(coll.find({"DateObj": {"$exists": False}}, {"Date": 1, "Created At": 1}))
+    updated = 0
+    for d in docs:
+        parsed = parse_lead_date(d.get("Date")) or parse_created_at_str(d.get("Created At"))
+        if parsed:
+            coll.update_one({"_id": d["_id"]}, {"$set": {"DateObj": parsed}})
+            updated += 1
+    return {"scanned": len(docs), "updated": updated}
+
+
+@app.route("/api/admin/backfill-date-obj", methods=["POST"])
+def api_backfill_date_obj():
+    """Admin-triggered one-time migration across all 4 lead collections.
+    Safe to re-run — it only touches docs still missing DateObj."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    try:
+        results = {}
+        for coll_name in ["Leads", "RentalLeads", "sellingLeads", "agentLeads"]:
+            results[coll_name] = backfill_date_obj(coll_name)
+        return jsonify({"success": True, "results": results}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 def get_date_range(period):
@@ -1261,10 +1416,11 @@ def upload():
 # APIs
 # =============================
 
-# CHANGED: now filtered to July 2026 -> today only (see filter_by_july_range)
+# CHANGED: now uses get_filtered_leads() — indexed DateObj range query
+# instead of fetching the entire collection and filtering in Python.
 @app.route("/api/leads")
 def leads():
-    return jsonify(filter_by_july_range(get_collection_data("Leads")))
+    return jsonify(get_filtered_leads("Leads"))
 
 #single lead
 def clean_nan(data):
@@ -1359,20 +1515,20 @@ def update_realtor():
 def hofcorders():
     return jsonify(get_collection_data("orderhouseofcakes"))
 
-# CHANGED: now filtered to July 2026 -> today only
+# CHANGED: now uses get_filtered_leads()
 @app.route("/api/rental-leads")
 def rental_leads():
-    return jsonify(filter_by_july_range(get_collection_data("RentalLeads")))
+    return jsonify(get_filtered_leads("RentalLeads"))
 
-# CHANGED: now filtered to July 2026 -> today only
+# CHANGED: now uses get_filtered_leads()
 @app.route("/api/agent-leads")
 def agent_leads():
-    return jsonify(filter_by_july_range(get_collection_data("agentLeads")))
+    return jsonify(get_filtered_leads("agentLeads"))
 
-# CHANGED: now filtered to July 2026 -> today only
+# CHANGED: now uses get_filtered_leads()
 @app.route("/api/selling-leads")
 def selling_leads():
-    return jsonify(filter_by_july_range(get_collection_data("sellingLeads")))
+    return jsonify(get_filtered_leads("sellingLeads"))
 
 @app.route("/api/end-data")
 def get_end_data():
@@ -2191,6 +2347,7 @@ def dashboard_stats():
         end_collection = db["endData"]
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
 
+        # PERF: projection — only pull the fields actually used below.
         all_docs = list(end_collection.find({}, {
             "Number": 1, "Status": 1, "Next Follow-up Timeline": 1
         }))
@@ -2306,6 +2463,13 @@ def dashboard_followups():
     followups_list = []
 
     try:
+        # PERF: collect every candidate lead + its normalized phone FIRST,
+        # with zero endData queries yet — then do exactly ONE batched
+        # $in lookup for all their endData docs instead of one find_one()
+        # per lead (this was the N+1 hotspot in this endpoint).
+        candidate_leads = []   # (lead, lead_type, phone)
+        phones_needed = set()
+
         for lead_type, coll_name in collections.items():
             for lead in db[coll_name].find():
                 lead_date = parse_lead_date(lead.get("Date"))
@@ -2318,54 +2482,60 @@ def dashboard_followups():
                 if not phone.startswith("91"):
                     phone = "91" + phone
 
-                ed = end_collection.find_one({"Number": phone})
-                if not ed:
+                candidate_leads.append((lead, lead_type, phone))
+                phones_needed.add(phone)
+
+        end_data_map = {}
+        if phones_needed:
+            for ed in end_collection.find({"Number": {"$in": list(phones_needed)}}):
+                end_data_map[ed.get("Number")] = ed
+
+        def _clean(v, default="-"):
+            if v is None or v == "":
+                return default
+            if isinstance(v, float) and math.isnan(v):
+                return default
+            return v
+
+        for lead, lead_type, phone in candidate_leads:
+            ed = end_data_map.get(phone)
+            if not ed:
+                continue
+
+            ed_created = ed.get("lastUpdatedAt")
+            if isinstance(ed_created, datetime):
+                if ed_created < JULY_2026_START or ed_created > now:
                     continue
 
-                ed_created = ed.get("lastUpdatedAt")
-                if isinstance(ed_created, datetime):
-                    if ed_created < JULY_2026_START or ed_created > now:
-                        continue
+            fdate = parse_followup_date(ed.get("Next Call Date"))
+            if not fdate:
+                continue
 
-                fdate = parse_followup_date(ed.get("Next Call Date"))
-                if not fdate:
-                    continue
+            if range_start is not None and not (range_start <= fdate <= range_end):
+                continue
 
-                # CHANGED: single period window instead of today/this-week
-                # buckets. range_start/range_end are None for "lifetime".
-                if range_start is not None and not (range_start <= fdate <= range_end):
-                    continue
+            actual_type = _normalize_lead_type_field(lead.get("LeadType"))
 
-                def _clean(v, default="-"):
-                    if v is None or v == "":
-                        return default
-                    if isinstance(v, float) and math.isnan(v):
-                        return default
-                    return v
+            entry = {
+                "id": str(lead["_id"]),
+                "collection": collections[lead_type],
+                "leadType": actual_type,
+                "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                "phone": phone,
+                "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                "nextCallDate": _clean(ed.get("Next Call Date")),
+                "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                "callStatus": _clean(ed.get("Call Status")),
+                "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                "propertyType": _clean(lead.get("Property Type") or ed.get("Property Type")),
+                "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                "customerResponse": _clean(ed.get("Customer Response")),
+                "interestLevel": _clean(ed.get("Interest Level")),
+                "callerRemarks": _clean(ed.get("Caller Remarks")),
+                "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+            }
 
-                # CHANGED: lead type corrected to the real LeadType field
-                actual_type = _normalize_lead_type_field(lead.get("LeadType"))
-
-                entry = {
-                    "id": str(lead["_id"]),
-                    "collection": coll_name,
-                    "leadType": actual_type,
-                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
-                    "phone": phone,
-                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
-                    "nextCallDate": _clean(ed.get("Next Call Date")),
-                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
-                    "callStatus": _clean(ed.get("Call Status")),
-                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
-                    "propertyType": _clean(lead.get("Property Type") or ed.get("Property Type")),
-                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
-                    "customerResponse": _clean(ed.get("Customer Response")),
-                    "interestLevel": _clean(ed.get("Interest Level")),
-                    "callerRemarks": _clean(ed.get("Caller Remarks")),
-                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
-                }
-
-                followups_list.append(entry)
+            followups_list.append(entry)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2505,6 +2675,7 @@ def dashboard_overview():
         total_leads = sum(totals.values())
 
         # ---- Pipeline health / status breakdown / intent / follow-ups ----
+        # PERF: this was already using a batched $in lookup — kept as-is.
         end_collection = db["endData"]
         followup_count = pending_count = done_count = lost_count = 0
         status_counts = {}
@@ -2560,10 +2731,6 @@ def dashboard_overview():
                 call_status = ed.get("Call Status") or "No Log"
                 status_counts[call_status] = status_counts.get(call_status, 0) + 1
 
-                # NEW: count this lead as "lost" using the same rule as the
-                # Lost Leads popup (/api/dashboard-lost-leads). lost_count
-                # was declared above but never incremented, so the KPI card
-                # always showed 0 even though matching leads existed.
                 if _is_lost_lead(ed):
                     lost_count += 1
 
@@ -2709,8 +2876,13 @@ def dashboard_leads_by_type():
             return default
         return v
 
-    out = []
     try:
+        # PERF: two-pass approach like dashboard_lost_leads — collect all
+        # candidate leads + phones first (zero endData queries), then do
+        # ONE batched $in lookup instead of a find_one() per lead.
+        candidate_leads = []  # (lead, coll_name, phone, phone_raw)
+        phones_needed = set()
+
         for coll_name in coll_names:
             for lead in db[coll_name].find():
                 created_dt = parse_created_at_str(lead.get("Created At"))
@@ -2727,29 +2899,40 @@ def dashboard_leads_by_type():
                 if phone and not phone.startswith("91"):
                     phone = "91" + phone
 
-                ed = (end_collection.find_one({"Number": phone}) if phone else None) or {}
+                candidate_leads.append((lead, coll_name, phone, phone_raw, lead_type))
+                if phone:
+                    phones_needed.add(phone)
 
-                out.append({
-                    "id": str(lead["_id"]),
-                    "collection": coll_name,
-                    "leadType": lead_type,
-                    "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
-                    "phone": phone or _clean(phone_raw, ""),
-                    "date": _clean(lead.get("Date")),
-                    "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
-                    "propertyType": _clean(lead.get("Property Type")),
-                    "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
-                    "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
-                    "callStatus": _clean(ed.get("Call Status")),
-                    "customerResponse": _clean(ed.get("Customer Response")),
-                    "interestLevel": _clean(ed.get("Interest Level")),
-                    "callerRemarks": _clean(ed.get("Caller Remarks")),
-                    "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
-                    "nextCallDate": _clean(ed.get("Next Call Date")),
-                    "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
-                    "lastCallBy": _clean(ed.get("lastCallBy")),
-                    "lastCallAtFormatted": _clean(ed.get("lastCallAtFormatted")),
-                })
+        end_data_map = {}
+        if phones_needed:
+            for ed in end_collection.find({"Number": {"$in": list(phones_needed)}}):
+                end_data_map[ed.get("Number")] = ed
+
+        out = []
+        for lead, coll_name, phone, phone_raw, lead_type in candidate_leads:
+            ed = end_data_map.get(phone, {}) if phone else {}
+
+            out.append({
+                "id": str(lead["_id"]),
+                "collection": coll_name,
+                "leadType": lead_type,
+                "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                "phone": phone or _clean(phone_raw, ""),
+                "date": _clean(lead.get("Date")),
+                "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                "propertyType": _clean(lead.get("Property Type")),
+                "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                "assignedTo": _clean(lead.get("AssignTo"), "Unassigned"),
+                "callStatus": _clean(ed.get("Call Status")),
+                "customerResponse": _clean(ed.get("Customer Response")),
+                "interestLevel": _clean(ed.get("Interest Level")),
+                "callerRemarks": _clean(ed.get("Caller Remarks")),
+                "nextFollowupTimeline": _clean(ed.get("Next Follow-up Timeline")),
+                "nextCallDate": _clean(ed.get("Next Call Date")),
+                "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                "lastCallBy": _clean(ed.get("lastCallBy")),
+                "lastCallAtFormatted": _clean(ed.get("lastCallAtFormatted")),
+            })
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3308,14 +3491,26 @@ def add_lead():
         if not str(data.get("Date", "")).strip():
             data["Date"] = now.strftime("%d-%m-%Y")
 
+        # PERF: also write DateObj — a real, indexed datetime — so the fast
+        # path in get_filtered_leads() can serve this lead with a single
+        # indexed range query instead of falling back to Python parsing.
+        data.pop("DateObj", None)  # never let incoming payload override it
+
         # 4. Upsert (update if exists, insert if not)
         result = collection.update_one(
             {"Phone Number": phone_number},
             {
                 "$set": data,
-                "$setOnInsert": {"Created At": created_at_str}
+                "$setOnInsert": {"Created At": created_at_str},
+                "$currentDate": {},  # placeholder no-op kept for clarity of intent
             },
             upsert=True
+        )
+        # Set DateObj explicitly right after (covers both insert + update
+        # cases uniformly without fighting $setOnInsert semantics above).
+        collection.update_one(
+            {"Phone Number": phone_number},
+            {"$set": {"DateObj": now}}
         )
 
         name = data.get("Lead Name")
@@ -3907,7 +4102,10 @@ settings_collection = db["settings"]
 def get_settings_api():
     if not session.get("user_id"):
         return jsonify({"success": False}), 401
-    doc = settings_collection.find_one({"_id": "global"}) or {}
+    # PERF: settings almost never change — cache for 30s to skip the
+    # round-trip on every dashboard/page load that reads it.
+    doc = cached("global_settings", 30, lambda: settings_collection.find_one({"_id": "global"}) or {})
+    doc = dict(doc)
     doc.pop("_id", None)
     return jsonify({"success": True, "data": doc}), 200
 
@@ -3919,6 +4117,7 @@ def save_settings_api():
     data = request.json or {}
     fields = {k: data.get(k, "") for k in ["corporate", "agent", "advisorName", "website", "landing", "cta"]}
     settings_collection.update_one({"_id": "global"}, {"$set": fields}, upsert=True)
+    invalidate_cache("global_settings")  # PERF: bust the cache immediately on save
     return jsonify({"success": True}), 200
 
 
@@ -3962,57 +4161,64 @@ def inventory_dashboard_stats():
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False}), 403
 
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    closed_stages = {"Sold", "Rented", "Closed", "Cancelled"}
+    def _compute():
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        closed_stages = {"Sold", "Rented", "Closed", "Cancelled"}
 
-    all_projects = list(projects_collection.find())
-    all_reqs = list(requirements_collection.find())
-    all_partners = list(db["teamAssign"].find({"roll": "partner"}))
+        all_projects = list(projects_collection.find())
+        all_reqs = list(requirements_collection.find())
+        all_partners = list(db["teamAssign"].find({"roll": "partner"}))
 
-    today_inventory = sum(1 for p in all_projects if p.get("createdAt") and p["createdAt"] >= today_start)
-    today_requirements = sum(1 for r in all_reqs if r.get("createdAt") and r["createdAt"] >= today_start)
-    pending_inventory = sum(1 for p in all_projects if p.get("status") == "pending")
-    pending_requirements = sum(1 for r in all_reqs if r.get("status") == "new")
-    live_stock = sum(1 for p in all_projects if p.get("status") == "approved")
-    sold = sum(1 for p in all_projects if p.get("stage") == "Sold")
-    rented = sum(1 for p in all_projects if p.get("stage") == "Rented")
-    visits = (sum(1 for p in all_projects if p.get("stage") == "Site Visit Scheduled") +
-              sum(1 for r in all_reqs if r.get("status") == "visit"))
-    inventory_closed = sum(1 for p in all_projects if p.get("stage") in closed_stages)
-    requirements_closed = sum(1 for r in all_reqs if r.get("status") in ("closed", "matched"))
+        today_inventory = sum(1 for p in all_projects if p.get("createdAt") and p["createdAt"] >= today_start)
+        today_requirements = sum(1 for r in all_reqs if r.get("createdAt") and r["createdAt"] >= today_start)
+        pending_inventory = sum(1 for p in all_projects if p.get("status") == "pending")
+        pending_requirements = sum(1 for r in all_reqs if r.get("status") == "new")
+        live_stock = sum(1 for p in all_projects if p.get("status") == "approved")
+        sold = sum(1 for p in all_projects if p.get("stage") == "Sold")
+        rented = sum(1 for p in all_projects if p.get("stage") == "Rented")
+        visits = (sum(1 for p in all_projects if p.get("stage") == "Site Visit Scheduled") +
+                  sum(1 for r in all_reqs if r.get("status") == "visit"))
+        inventory_closed = sum(1 for p in all_projects if p.get("stage") in closed_stages)
+        requirements_closed = sum(1 for r in all_reqs if r.get("status") in ("closed", "matched"))
 
-    perf = []
-    for p in all_partners:
-        num = p.get("Employee number")
-        p_inv = [x for x in all_projects if x.get("ownerNumber") == num]
-        p_req = [x for x in all_reqs if x.get("submittedByNumber") == num]
-        approved = sum(1 for x in p_inv if x.get("status") == "approved" or x.get("stage") in closed_stages)
-        deals = sum(1 for x in p_inv if x.get("stage") in ("Sold", "Rented"))
-        conv = round(deals * 100 / len(p_inv)) if p_inv else 0
-        perf.append({
-            "name": p.get("Employee name"),
-            "inventory": len(p_inv),
-            "requirements": len(p_req),
-            "approved": approved,
-            "deals": deals,
-            "conversion": conv
-        })
-    perf.sort(key=lambda x: (-x["deals"], -x["inventory"]))
+        perf = []
+        for p in all_partners:
+            num = p.get("Employee number")
+            p_inv = [x for x in all_projects if x.get("ownerNumber") == num]
+            p_req = [x for x in all_reqs if x.get("submittedByNumber") == num]
+            approved = sum(1 for x in p_inv if x.get("status") == "approved" or x.get("stage") in closed_stages)
+            deals = sum(1 for x in p_inv if x.get("stage") in ("Sold", "Rented"))
+            conv = round(deals * 100 / len(p_inv)) if p_inv else 0
+            perf.append({
+                "name": p.get("Employee name"),
+                "inventory": len(p_inv),
+                "requirements": len(p_req),
+                "approved": approved,
+                "deals": deals,
+                "conversion": conv
+            })
+        perf.sort(key=lambda x: (-x["deals"], -x["inventory"]))
 
-    return jsonify({
-        "success": True,
-        "todayInventory": today_inventory,
-        "todayRequirements": today_requirements,
-        "pendingInventory": pending_inventory,
-        "pendingRequirements": pending_requirements,
-        "liveStock": live_stock,
-        "sold": sold,
-        "rented": rented,
-        "visits": visits,
-        "inventoryClosed": inventory_closed,
-        "requirementsClosed": requirements_closed,
-        "partnerPerformance": perf
-    }), 200
+        return {
+            "success": True,
+            "todayInventory": today_inventory,
+            "todayRequirements": today_requirements,
+            "pendingInventory": pending_inventory,
+            "pendingRequirements": pending_requirements,
+            "liveStock": live_stock,
+            "sold": sold,
+            "rented": rented,
+            "visits": visits,
+            "inventoryClosed": inventory_closed,
+            "requirementsClosed": requirements_closed,
+            "partnerPerformance": perf
+        }
+
+    # PERF: this endpoint scans 3 whole collections + does O(n*m) partner
+    # matching in Python — cache the computed result briefly so rapid
+    # dashboard refreshes/tab-switches don't recompute it every time.
+    result = cached("inventory_dashboard_stats", 15, _compute)
+    return jsonify(result), 200
 
 
 # =============================
@@ -4138,6 +4344,7 @@ def upload_project():
         }
 
         result = projects_collection.insert_one(project_data)
+        invalidate_cache("inventory_dashboard_stats")
 
         return jsonify({
             "status": "success",
@@ -4254,6 +4461,7 @@ def upload_inventory():
 
         embed_and_attach(inventory_data)
         result = projects_collection.insert_one(inventory_data)
+        invalidate_cache("inventory_dashboard_stats")
         return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
 
     except Exception as e:
@@ -4316,6 +4524,7 @@ def update_project(project_id):
         merged_preview = {**project, **update_fields}
         update_fields["embedding"] = get_embedding(build_inventory_embedding_text(merged_preview))
         projects_collection.update_one({"_id": ObjectId(project_id)}, {"$set": update_fields})
+        invalidate_cache("inventory_dashboard_stats")
 
         updated = projects_collection.find_one({"_id": ObjectId(project_id)})
         return jsonify({"status": "success", "data": serialize_doc(updated)}), 200
@@ -4353,6 +4562,7 @@ def delete_project(project_id):
                 print("Cloudinary delete failed:", cerr)
 
         projects_collection.delete_one({"_id": ObjectId(project_id)})
+        invalidate_cache("inventory_dashboard_stats")
         return jsonify({"status": "success", "message": "Project deleted"}), 200
 
     except Exception as e:
@@ -4382,6 +4592,7 @@ def approve_project(project_id):
                 "reviewedAt": datetime.utcnow()
             }}
         )
+        invalidate_cache("inventory_dashboard_stats")
 
         updated = projects_collection.find_one({"_id": ObjectId(project_id)})
         return jsonify({"status": "success", "data": serialize_doc(updated)}), 200
@@ -4755,6 +4966,7 @@ def upload_project_v2():
 
         embed_and_attach(project_data)
         result = projects_collection.insert_one(project_data)
+        invalidate_cache("inventory_dashboard_stats")
         return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
 
     except Exception as e:
