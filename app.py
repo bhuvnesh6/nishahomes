@@ -69,6 +69,8 @@ else:
 SUPABASE_URL2 = os.getenv("SUPABASE_URL2")
 SUPABASE_SERVICE_ROLE_KEY2 = os.getenv("SUPABASE_SERVICE_ROLE_KEY2")
 SUPABASE_MEDIA_BUCKET = "media"  # must exist + be set Public in the Supabase dashboard
+MAX_MEDIA_UPLOAD_BYTES = 50 * 1024 * 1024  # Supabase Storage free-tier hard cap
+
 
 supabase2 = None
 if SUPABASE_URL2 and SUPABASE_SERVICE_ROLE_KEY2:
@@ -702,22 +704,15 @@ def _to_bytes(data):
         return data.read()
     return data
 
-
-def upload_media_to_supabase(file_data, folder, resource_type="image", ext="jpg"):
-    """
-    Uploads image/video bytes (or a BytesIO) to the Supabase 'media' bucket
-    and returns (public_url, object_path).
-
-    object_path is the Supabase-Storage equivalent of Cloudinary's
-    public_id — store it in Mongo (we keep reusing the existing
-    'mediaPublicId' / 'mediaPublicIds' fields) so delete_media_from_supabase()
-    can remove it later.
-    """
+def upload_media_to_supabase(file_data, folder, resource_type="image", ext="jpg", max_retries=2):
     if not supabase2:
         raise RuntimeError("Supabase media storage not configured — check SUPABASE_URL2 / SUPABASE_SERVICE_ROLE_KEY2 in .env")
 
     ext = (ext or "jpg").lstrip(".").lower()
     file_bytes = _to_bytes(file_data)
+
+    if len(file_bytes) > MAX_MEDIA_UPLOAD_BYTES:
+        raise ValueError(f"File too large for Supabase Storage ({len(file_bytes)/1024/1024:.1f}MB, limit is 50MB)")
 
     content_type = (
         _VIDEO_CONTENT_TYPES.get(ext, "video/mp4") if resource_type == "video"
@@ -726,14 +721,52 @@ def upload_media_to_supabase(file_data, folder, resource_type="image", ext="jpg"
 
     object_path = f"{folder}/{secrets.token_hex(8)}.{ext}"
 
-    supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).upload(
-        object_path,
-        file_bytes,
-        {"content-type": content_type}
+    last_err = None
+    for attempt in range(1, max_retries + 2):
+        try:
+            supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).upload(
+                object_path, file_bytes, {"content-type": content_type}
+            )
+            return supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).get_public_url(object_path), object_path
+        except Exception as e:
+            last_err = e
+            print(f"[media] upload attempt {attempt} failed for {object_path}: {e}")
+            time.sleep(1.5 * attempt)
+
+    raise last_err
+
+
+
+def upload_raw_then_brand(raw_bytes, folder, resource_type, ext, brand_fn=None):
+    """
+    Uploads the ORIGINAL file to Supabase first. Only if brand_fn is given
+    (branding was requested), builds the branded version from the same
+    in-memory bytes, uploads it as a separate object, deletes the raw
+    object, and returns the branded URL/path instead.
+
+    If branding fails, the raw upload is left in place and used as the
+    result — a branding crash never costs the upload itself.
+
+    Returns: (public_url, object_path, was_branded: bool)
+    """
+    raw_url, raw_path = upload_media_to_supabase(
+        raw_bytes, folder=folder, resource_type=resource_type, ext=ext
     )
 
-    public_url = supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).get_public_url(object_path)
-    return public_url, object_path
+    if not brand_fn:
+        return raw_url, raw_path, False
+
+    try:
+        branded_bytes = _to_bytes(brand_fn(raw_bytes))
+        branded_url, branded_path = upload_media_to_supabase(
+            branded_bytes, folder=folder, resource_type=resource_type, ext=ext
+        )
+    except Exception as brand_err:
+        print(f"[branding] failed for {raw_path}, keeping unbranded upload: {brand_err}")
+        return raw_url, raw_path, False
+
+    delete_media_from_supabase(raw_path)
+    return branded_url, branded_path, True
 
 
 def delete_media_from_supabase(object_path):
@@ -4450,7 +4483,6 @@ def upload_inventory():
         if not all(f(k) for k in required):
             return jsonify({"status": "error", "message": "Property type, title, locality and price are required"}), 400
 
-        # NEW: branding toggle + fields used to render the overlay onto photos
         branding = request.form.get("branding") == "true"
         brand_fields = {
             "dealType": f("dealType", ""), "propertyTitle": f("propertyTitle", ""),
@@ -4460,40 +4492,54 @@ def upload_inventory():
 
         media_urls, media_public_ids = [], []
         banner_url, banner_public_id = None, None
+        failed_files = []
         photo_files = [f for f in request.files.getlist("photos") if f and f.filename]
 
         for idx, file in enumerate(photo_files):
-            raw = file.read()
-            if branding:
-                processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
-                img_bytes = _to_bytes(processed)
-            else:
-                img_bytes = raw
-            url, object_path = upload_media_to_supabase(img_bytes, folder="inventory", resource_type="image", ext="jpg")
-            media_urls.append(url)
-            media_public_ids.append(object_path)
-            if idx == 0:
-                banner_url, banner_public_id = url, object_path
+            try:
+                raw = file.read()
+                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                    print(f"[upload-inventory] photo '{file.filename}' rejected — over 50MB")
+                    failed_files.append(file.filename)
+                    continue
+
+                brand_fn = None
+                if branding:
+                    brand_fn = (lambda b, _fields=brand_fields: build_banner_image(b, _fields)) if idx == 0 \
+                        else (lambda b: build_simple_branded_image(b))
+
+                url, object_path, _ = upload_raw_then_brand(
+                    raw, folder="inventory", resource_type="image", ext="jpg", brand_fn=brand_fn
+                )
+                media_urls.append(url)
+                media_public_ids.append(object_path)
+                if idx == 0:
+                    banner_url, banner_public_id = url, object_path
+            except Exception as photo_err:
+                print(f"[upload-inventory] photo '{file.filename}' failed: {photo_err}")
+                failed_files.append(file.filename)
 
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
-            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
-            if branding:
-                try:
-                    branded_video = build_simple_branded_video(file.read())
-                    vid_bytes = _to_bytes(branded_video)
-                except Exception as vid_err:
-                    import traceback
-                    print(f"[branding] video branding failed, uploading original instead: {vid_err}")
-                    traceback.print_exc()
-                    file.seek(0)
-                    vid_bytes = file.read()
-            else:
-                vid_bytes = file.read()
-            url, object_path = upload_media_to_supabase(vid_bytes, folder="inventory", resource_type="video", ext=ext)
-            media_urls.append(url)
-            media_public_ids.append(object_path)
+            try:
+                ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
+                raw = file.read()
+                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                    print(f"[upload-inventory] video '{file.filename}' rejected — over 50MB")
+                    failed_files.append(file.filename)
+                    continue
+
+                brand_fn = build_simple_branded_video if branding else None
+
+                url, object_path, _ = upload_raw_then_brand(
+                    raw, folder="inventory", resource_type="video", ext=ext, brand_fn=brand_fn
+                )
+                media_urls.append(url)
+                media_public_ids.append(object_path)
+            except Exception as video_err:
+                print(f"[upload-inventory] video '{file.filename}' failed: {video_err}")
+                failed_files.append(file.filename)
 
         pdf_url = None
         pdf_file = request.files.get("pdf")
@@ -4538,13 +4584,16 @@ def upload_inventory():
         embed_and_attach(inventory_data)
         result = projects_collection.insert_one(inventory_data)
         invalidate_cache("inventory_dashboard_stats")
-        return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
+        return jsonify({
+            "status": "success",
+            "id": str(result.inserted_id),
+            "failedFiles": failed_files
+        }), 201
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # PUT/POST-style update - allows editing fields and/or replacing media
 @app.route("/api/projects/update/<project_id>", methods=["POST"])
@@ -4955,7 +5004,6 @@ def upload_project_v2():
         video_links_raw = f("videoLinks", "") or ""
         video_links = [v.strip() for v in video_links_raw.splitlines() if v.strip()]
 
-        # NEW: branding toggle + fields used to render the overlay onto photos
         branding = request.form.get("branding") == "true"
         brand_fields = {
             "dealType": "New Launch", "propertyTitle": f("name", ""),
@@ -4965,43 +5013,57 @@ def upload_project_v2():
 
         media_urls, media_public_ids = [], []
         has_image, has_video = False, False
+        failed_files = []
 
         banner_url = None
         photo_files = [f for f in request.files.getlist("photos") if f and f.filename]
         for idx, file in enumerate(photo_files):
-            raw = file.read()
-            if branding:
-                processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
-                img_bytes = _to_bytes(processed)
-            else:
-                img_bytes = raw
-            url, object_path = upload_media_to_supabase(img_bytes, folder="projects", resource_type="image", ext="jpg")
-            media_urls.append(url)
-            media_public_ids.append(object_path)
-            if idx == 0:
-                banner_url = url
-            has_image = True
+            try:
+                raw = file.read()
+                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                    print(f"[upload-project] photo '{file.filename}' rejected — over 50MB")
+                    failed_files.append(file.filename)
+                    continue
+
+                brand_fn = None
+                if branding:
+                    brand_fn = (lambda b, _fields=brand_fields: build_banner_image(b, _fields)) if idx == 0 \
+                        else (lambda b: build_simple_branded_image(b))
+
+                url, object_path, _ = upload_raw_then_brand(
+                    raw, folder="projects", resource_type="image", ext="jpg", brand_fn=brand_fn
+                )
+                media_urls.append(url)
+                media_public_ids.append(object_path)
+                if idx == 0:
+                    banner_url = url
+                has_image = True
+            except Exception as photo_err:
+                print(f"[upload-project] photo '{file.filename}' failed: {photo_err}")
+                failed_files.append(file.filename)
 
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
-            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
-            if branding:
-                try:
-                    branded_video = build_simple_branded_video(file.read())
-                    vid_bytes = _to_bytes(branded_video)
-                except Exception as vid_err:
-                    import traceback
-                    print(f"[branding] video branding failed, uploading original instead: {vid_err}")
-                    traceback.print_exc()
-                    file.seek(0)
-                    vid_bytes = file.read()
-            else:
-                vid_bytes = file.read()
-            url, object_path = upload_media_to_supabase(vid_bytes, folder="projects", resource_type="video", ext=ext)
-            media_urls.append(url)
-            media_public_ids.append(object_path)
-            has_video = True
+            try:
+                ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
+                raw = file.read()
+                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                    print(f"[upload-project] video '{file.filename}' rejected — over 50MB")
+                    failed_files.append(file.filename)
+                    continue
+
+                brand_fn = build_simple_branded_video if branding else None
+
+                url, object_path, _ = upload_raw_then_brand(
+                    raw, folder="projects", resource_type="video", ext=ext, brand_fn=brand_fn
+                )
+                media_urls.append(url)
+                media_public_ids.append(object_path)
+                has_video = True
+            except Exception as video_err:
+                print(f"[upload-project] video '{file.filename}' failed: {video_err}")
+                failed_files.append(file.filename)
 
         pdf_url = None
         pdf_file = request.files.get("pdf")
@@ -5011,15 +5073,15 @@ def upload_project_v2():
         starting_price = f("startingPrice", "")
 
         project_data = {
-            "kind": "project",                     # distinguishes from partner "inventory" listings
+            "kind": "project",
             "name": f("name", ""),
             "location": f("location", ""),
             "propertyType": f("propertyType", ""),
-            "category": f("propertyType", ""),     # kept for compatibility with existing card/filter code
+            "category": f("propertyType", ""),
             "possession": f("possession", ""),
             "configuration": f("configuration", ""),
             "startingPrice": starting_price,
-            "budget": starting_price,              # kept for compatibility with existing card display
+            "budget": starting_price,
             "description": f("description", ""),
             "videoLinks": video_links,
             "img": media_urls[0] if media_urls else None,
@@ -5040,7 +5102,11 @@ def upload_project_v2():
         embed_and_attach(project_data)
         result = projects_collection.insert_one(project_data)
         invalidate_cache("inventory_dashboard_stats")
-        return jsonify({"status": "success", "id": str(result.inserted_id)}), 201
+        return jsonify({
+            "status": "success",
+            "id": str(result.inserted_id),
+            "failedFiles": failed_files
+        }), 201
 
     except Exception as e:
         import traceback

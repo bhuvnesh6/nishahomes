@@ -868,6 +868,14 @@ let projCurrentCategory = 'all';
 let reqStatusFilter = 'new';
 let state = { tab: 'inventory' };
 
+// NEW: client-side upload size guard — matches the Supabase free-tier 50MB/file cap
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+function fmtMB(bytes){ return (bytes/1024/1024).toFixed(1) + 'MB'; }
+function anyOversized(...fileLists){
+  return fileLists.some(list => Array.from(list||[]).some(f => f.size > MAX_FILE_SIZE));
+}
+
+
 function showLoader(){document.getElementById('loader').classList.remove('hidden')}
 function hideLoader(){document.getElementById('loader').classList.add('hidden')}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -1137,7 +1145,15 @@ document.getElementById('closeProjectModal').addEventListener('click', ()=> proj
 projectModal.addEventListener('click', e=>{ if(e.target.id==='projectModal') projectModal.classList.remove('active') });
 fileDropZone.addEventListener('click', ()=> fileInput.click());
 fileInput.addEventListener('change', ()=>{
-  if(fileInput.files[0]){ fileDropZone.textContent = '✓ ' + fileInput.files[0].name; fileDropZone.classList.add('has-file'); }
+  const chosen = fileInput.files[0];
+  if(chosen && chosen.size > MAX_FILE_SIZE){
+    toast(`"${chosen.name}" is ${fmtMB(chosen.size)} — over the 50MB limit. Please choose a smaller file.`);
+    fileInput.value = '';
+    fileDropZone.textContent = 'Click to choose an image or video';
+    fileDropZone.classList.remove('has-file');
+    return;
+  }
+  if(chosen){ fileDropZone.textContent = '✓ ' + chosen.name; fileDropZone.classList.add('has-file'); }
 });
 pdfDropZone.addEventListener('click', ()=> pdfInput.click());
 pdfInput.addEventListener('change', ()=>{
@@ -1163,6 +1179,10 @@ function openEditModal(p){
 }
 document.getElementById('projectForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
+  if(anyOversized(fileInput.files)){
+    toast('The selected file is over the 50MB limit. Please choose a smaller file.');
+    return;
+  }
   const btn = document.getElementById('projectSubmitBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
   const editingId = document.getElementById('editingId').value;
@@ -1285,8 +1305,19 @@ function bindFileDropToInput(dropId, inputId, chipRowId){
   const chipRow = document.getElementById(chipRowId);
   drop.addEventListener('click', ()=> input.click());
   input.addEventListener('change', ()=>{
+    const files = Array.from(input.files);
+    const tooBig = files.filter(f => f.size > MAX_FILE_SIZE);
+    const ok = files.filter(f => f.size <= MAX_FILE_SIZE);
+
+    if(tooBig.length){
+      toast(`These file(s) are over 50MB and were not added:\n${tooBig.map(f=>`${f.name} (${fmtMB(f.size)})`).join('\n')}`);
+      const dt = new DataTransfer();
+      ok.forEach(f => dt.items.add(f));
+      input.files = dt.files;
+    }
+
     chipRow.innerHTML = Array.from(input.files).map(f=>`<span class="file-chip">${esc(f.name)}</span>`).join('');
-    if(input.files.length){ drop.classList.add('has-file'); }
+    drop.classList.toggle('has-file', input.files.length > 0);
   });
 }
 bindFileDropToInput('invPhotosDropZone','inv_photos','inv_photosChips');
@@ -1330,6 +1361,10 @@ document.getElementById('invAiBtn').addEventListener('click', async ()=>{
 
 document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
+  if(anyOversized(document.getElementById('inv_photos').files, document.getElementById('inv_videos').files)){
+    toast('One or more selected files are over the 50MB limit. Please remove them and try again.');
+    return;
+  }
   const btn = document.getElementById('inv_submitBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
 
@@ -1350,7 +1385,9 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
     const res = await fetch(`${BASE}/projects/upload-inventory`, { method:'POST', body: fd, credentials:'include' });
     const d = await res.json();
     if(d.status !== 'success'){ toast(d.message || 'Upload failed'); return; }
-    toast('Sent to the desk ✅');
+    toast(d.failedFiles?.length
+      ? `Sent to the desk ✅ — but ${d.failedFiles.length} file(s) failed: ${d.failedFiles.join(', ')}`
+      : 'Sent to the desk ✅');
     inventoryModal.classList.remove('active');
     loadProjects();
   }catch(e){ console.error(e); toast('Upload failed'); }
@@ -1406,6 +1443,10 @@ document.getElementById('pv2AiBtn').addEventListener('click', async ()=>{
 
 document.getElementById('projectV2Form').addEventListener('submit', async (e)=>{
   e.preventDefault();
+  if(anyOversized(document.getElementById('pv2_photos').files, document.getElementById('pv2_videos').files)){
+    toast('One or more selected files are over the 50MB limit. Please remove them and try again.');
+    return;
+  }
   const btn = document.getElementById('pv2_submitBtn');
   btn.disabled = true; btn.textContent = 'Adding…';
 
@@ -1427,7 +1468,9 @@ document.getElementById('projectV2Form').addEventListener('submit', async (e)=>{
     const res = await fetch(`${BASE}/projects/upload-project`, { method:'POST', body: fd, credentials:'include' });
     const d = await res.json();
     if(d.status !== 'success'){ toast(d.message || 'Failed to add project'); return; }
-    toast('Project added ✅');
+    toast(d.failedFiles?.length
+      ? `Project added ✅ — but ${d.failedFiles.length} file(s) failed: ${d.failedFiles.join(', ')}`
+      : 'Project added ✅');
     projectV2Modal.classList.remove('active');
     await loadProjects();
     if(state.tab !== 'projects'){ state.tab = 'projects'; }
