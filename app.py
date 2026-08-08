@@ -62,6 +62,21 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
 else:
     print("[startup] Supabase not configured — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing in .env")
 
+
+
+# NEW: Supabase Storage config #2 - used for photo/video media (separate
+# project/quota from the PDF bucket above). Reads from .env.
+SUPABASE_URL2 = os.getenv("SUPABASE_URL2")
+SUPABASE_SERVICE_ROLE_KEY2 = os.getenv("SUPABASE_SERVICE_ROLE_KEY2")
+SUPABASE_MEDIA_BUCKET = "media"  # must exist + be set Public in the Supabase dashboard
+
+supabase2 = None
+if SUPABASE_URL2 and SUPABASE_SERVICE_ROLE_KEY2:
+    supabase2 = create_client(SUPABASE_URL2, SUPABASE_SERVICE_ROLE_KEY2)
+else:
+    print("[startup] Supabase (media) not configured — SUPABASE_URL2 / SUPABASE_SERVICE_ROLE_KEY2 missing in .env")
+
+
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=60)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
@@ -669,6 +684,68 @@ def upload_pdf_to_supabase(pdf_file, folder):
 
     return supabase.storage.from_(SUPABASE_PDF_BUCKET).get_public_url(object_path)
 
+
+_IMAGE_CONTENT_TYPES = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "gif": "image/gif"
+}
+_VIDEO_CONTENT_TYPES = {
+    "mp4": "video/mp4", "mov": "video/quicktime", "avi": "video/x-msvideo",
+    "webm": "video/webm", "mkv": "video/x-matroska"
+}
+
+
+def _to_bytes(data):
+    """Some of our image/video builders return io.BytesIO, others return
+    raw bytes. Normalize to bytes before handing off to Supabase."""
+    if hasattr(data, "read"):
+        return data.read()
+    return data
+
+
+def upload_media_to_supabase(file_data, folder, resource_type="image", ext="jpg"):
+    """
+    Uploads image/video bytes (or a BytesIO) to the Supabase 'media' bucket
+    and returns (public_url, object_path).
+
+    object_path is the Supabase-Storage equivalent of Cloudinary's
+    public_id — store it in Mongo (we keep reusing the existing
+    'mediaPublicId' / 'mediaPublicIds' fields) so delete_media_from_supabase()
+    can remove it later.
+    """
+    if not supabase2:
+        raise RuntimeError("Supabase media storage not configured — check SUPABASE_URL2 / SUPABASE_SERVICE_ROLE_KEY2 in .env")
+
+    ext = (ext or "jpg").lstrip(".").lower()
+    file_bytes = _to_bytes(file_data)
+
+    content_type = (
+        _VIDEO_CONTENT_TYPES.get(ext, "video/mp4") if resource_type == "video"
+        else _IMAGE_CONTENT_TYPES.get(ext, "image/jpeg")
+    )
+
+    object_path = f"{folder}/{secrets.token_hex(8)}.{ext}"
+
+    supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).upload(
+        object_path,
+        file_bytes,
+        {"content-type": content_type}
+    )
+
+    public_url = supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).get_public_url(object_path)
+    return public_url, object_path
+
+
+def delete_media_from_supabase(object_path):
+    """Best-effort delete — never raises, matching how the old Cloudinary
+    destroy() calls were wrapped in try/except so a failed cleanup never
+    breaks the main request."""
+    if not supabase2 or not object_path:
+        return
+    try:
+        supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).remove([object_path])
+    except Exception as e:
+        print("[media] Supabase delete failed:", e)
 
 def _font(weight, size):
     """Robust font loader. Tries your bundled fonts, then common Linux
@@ -4304,19 +4381,15 @@ def upload_project():
             }), 400
 
         # Detect image vs video from extension
+        # Detect image vs video from extension
         ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
         video_exts = {"mp4", "mov", "avi", "webm", "mkv"}
         resource_type = "video" if ext in video_exts else "image"
 
-        # Upload straight to Cloudinary (no local disk write)
-        upload_result = cloudinary.uploader.upload(
-            file,
-            resource_type=resource_type,
-            folder="nishahomes/projects"
+        # CHANGED: was Cloudinary — now Supabase Storage
+        file_url, public_id = upload_media_to_supabase(
+            file.read(), folder="projects", resource_type=resource_type, ext=ext or "jpg"
         )
-
-        file_url = upload_result.get("secure_url")
-        public_id = upload_result.get("public_id")
 
         # PDF / brochure upload for the project — now goes to Supabase Storage
         pdf_url = None
@@ -4393,31 +4466,34 @@ def upload_inventory():
             raw = file.read()
             if branding:
                 processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
-                up = cloudinary.uploader.upload(processed, resource_type="image", folder="nishahomes/inventory")
+                img_bytes = _to_bytes(processed)
             else:
-                up = cloudinary.uploader.upload(raw, resource_type="image", folder="nishahomes/inventory")
-            media_urls.append(up.get("secure_url"))
-            media_public_ids.append(up.get("public_id"))
+                img_bytes = raw
+            url, object_path = upload_media_to_supabase(img_bytes, folder="inventory", resource_type="image", ext="jpg")
+            media_urls.append(url)
+            media_public_ids.append(object_path)
             if idx == 0:
-                banner_url, banner_public_id = up.get("secure_url"), up.get("public_id")
+                banner_url, banner_public_id = url, object_path
 
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
+            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
             if branding:
                 try:
                     branded_video = build_simple_branded_video(file.read())
-                    up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/inventory")
+                    vid_bytes = _to_bytes(branded_video)
                 except Exception as vid_err:
                     import traceback
                     print(f"[branding] video branding failed, uploading original instead: {vid_err}")
                     traceback.print_exc()
                     file.seek(0)
-                    up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
+                    vid_bytes = file.read()
             else:
-                up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/inventory")
-            media_urls.append(up.get("secure_url"))
-            media_public_ids.append(up.get("public_id"))
+                vid_bytes = file.read()
+            url, object_path = upload_media_to_supabase(vid_bytes, folder="inventory", resource_type="video", ext=ext)
+            media_urls.append(url)
+            media_public_ids.append(object_path)
 
         pdf_url = None
         pdf_file = request.files.get("pdf")
@@ -4498,23 +4574,17 @@ def update_project(project_id):
             video_exts = {"mp4", "mov", "avi", "webm", "mkv"}
             resource_type = "video" if ext in video_exts else "image"
 
-            # Remove old asset from Cloudinary before uploading the new one
-            old_public_id = project.get("mediaPublicId")
-            if old_public_id:
-                try:
-                    cloudinary.uploader.destroy(
-                        old_public_id,
-                        resource_type=project.get("type", "image")
-                    )
-                except Exception as cerr:
-                    print("Cloudinary delete failed:", cerr)
+            # Remove old asset from Supabase before uploading the new one
+            old_object_path = project.get("mediaPublicId")
+            if old_object_path:
+                delete_media_from_supabase(old_object_path)
 
-            upload_result = cloudinary.uploader.upload(
-                file, resource_type=resource_type, folder="nishahomes/projects"
+            new_url, new_object_path = upload_media_to_supabase(
+                file.read(), folder="projects", resource_type=resource_type, ext=ext or "jpg"
             )
-            update_fields["img"] = upload_result.get("secure_url")
-            update_fields["mediaUrl"] = upload_result.get("secure_url")
-            update_fields["mediaPublicId"] = upload_result.get("public_id")
+            update_fields["img"] = new_url
+            update_fields["mediaUrl"] = new_url
+            update_fields["mediaPublicId"] = new_object_path
             update_fields["type"] = resource_type
 
         if not update_fields:
@@ -4551,15 +4621,15 @@ def delete_project(project_id):
         if not project:
             return jsonify({"status": "error", "message": "Project not found or not yours"}), 404
 
-        public_id = project.get("mediaPublicId")
-        if public_id:
-            try:
-                cloudinary.uploader.destroy(
-                    public_id,
-                    resource_type=project.get("type", "image")
-                )
-            except Exception as cerr:
-                print("Cloudinary delete failed:", cerr)
+        # CHANGED: was Cloudinary destroy — now Supabase delete.
+        # Also cleans up mediaPublicIds (plural) for multi-photo inventory
+        # / project-v2 listings, which the old Cloudinary code never cleaned up.
+        object_path = project.get("mediaPublicId")
+        if object_path:
+            delete_media_from_supabase(object_path)
+
+        for op in (project.get("mediaPublicIds") or []):
+            delete_media_from_supabase(op)
 
         projects_collection.delete_one({"_id": ObjectId(project_id)})
         invalidate_cache("inventory_dashboard_stats")
@@ -4902,32 +4972,35 @@ def upload_project_v2():
             raw = file.read()
             if branding:
                 processed = build_banner_image(raw, brand_fields) if idx == 0 else build_simple_branded_image(raw)
-                up = cloudinary.uploader.upload(processed, resource_type="image", folder="nishahomes/projects")
+                img_bytes = _to_bytes(processed)
             else:
-                up = cloudinary.uploader.upload(raw, resource_type="image", folder="nishahomes/projects")
-            media_urls.append(up.get("secure_url"))
-            media_public_ids.append(up.get("public_id"))
+                img_bytes = raw
+            url, object_path = upload_media_to_supabase(img_bytes, folder="projects", resource_type="image", ext="jpg")
+            media_urls.append(url)
+            media_public_ids.append(object_path)
             if idx == 0:
-                banner_url = up.get("secure_url")
+                banner_url = url
             has_image = True
 
         for file in request.files.getlist("videos"):
             if not file or not file.filename:
                 continue
+            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
             if branding:
                 try:
                     branded_video = build_simple_branded_video(file.read())
-                    up = cloudinary.uploader.upload(branded_video, resource_type="video", folder="nishahomes/projects")
+                    vid_bytes = _to_bytes(branded_video)
                 except Exception as vid_err:
                     import traceback
                     print(f"[branding] video branding failed, uploading original instead: {vid_err}")
                     traceback.print_exc()
                     file.seek(0)
-                    up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
+                    vid_bytes = file.read()
             else:
-                up = cloudinary.uploader.upload(file, resource_type="video", folder="nishahomes/projects")
-            media_urls.append(up.get("secure_url"))
-            media_public_ids.append(up.get("public_id"))
+                vid_bytes = file.read()
+            url, object_path = upload_media_to_supabase(vid_bytes, folder="projects", resource_type="video", ext=ext)
+            media_urls.append(url)
+            media_public_ids.append(object_path)
             has_video = True
 
         pdf_url = None
