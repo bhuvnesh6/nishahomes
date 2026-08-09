@@ -243,6 +243,15 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .topbar-btn:hover{background:var(--accent-light);transform:translateY(-1px)}
 
+/* Mobile nav spacer — pushes topbar down ~3vh so it isn't flush against
+   the very top edge (avoids status-bar / notch overlap issues in the
+   APK webview) while keeping it sticky so users can still scroll past it */
+.mobile-nav-spacer{display:none}
+@media(max-width:899px){
+  .mobile-nav-spacer{display:block;height:3vh;background:var(--bg);flex-shrink:0}
+  .topbar{top:3vh}
+}
+
 /* ═══════════════════════════
    PAGE CONTENT
 ═══════════════════════════ */
@@ -1201,6 +1210,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 <div class="main-wrap">
 
   <!-- TOP BAR -->
+  <div class="mobile-nav-spacer"></div>
   <header class="topbar">
     <button class="topbar-hamburger" id="hamburgerBtn">
       <span></span><span></span><span></span>
@@ -1468,6 +1478,13 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           <button class="filter-chip" data-datefilter="this_month">This Month</button>
           <button class="filter-chip" data-datefilter="last_month">Last Month</button>
           <button class="filter-chip" data-datefilter="lifetime">Lifetime</button>
+        </div>
+        <div class="filter-chips" id="convFilterChips">
+          <button class="filter-chip active" data-convfilter="none">Any Conversation</button>
+          <button class="filter-chip" data-convfilter="today">Msg Today</button>
+          <button class="filter-chip" data-convfilter="3days">Last 3 Days</button>
+          <button class="filter-chip" data-convfilter="7days">Last 7 Days</button>
+          <button class="filter-chip" data-convfilter="30days">Last 30 Days</button>
         </div>
         <div class="filter-actions">
           <button class="action-btn-sm" id="toggleSelectBtn">
@@ -1927,6 +1944,7 @@ let wpTemplates = [];
 let currentPage = 1;
 const PAGE_SIZE = 25;
 let currentDateFilter = 'none';
+let currentConvFilter = 'none';
 
 // Mirrors the backend's parse_lead_date (DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
 function parseLeadDateClient(dateStr){
@@ -1959,6 +1977,33 @@ function matchesDateFilter(lead){
   if(currentDateFilter === 'lifetime'){
     return true; // has a valid date, no range restriction
   }
+  return true;
+}
+
+// Parses the lastUserMsgAt field, stored like "2026-07-14T13:58:17.960+05:30"
+// (ISO 8601 with timezone offset — native Date() parses this correctly).
+function parseLastUserMsgAt(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Filters leads by how recent their last WhatsApp/user conversation was,
+// relative to the current date/time. Leads with no lastUserMsgAt field are
+// simply excluded whenever a specific range (other than "none") is active.
+function matchesConversationFilter(lead){
+  if(currentConvFilter === 'none') return true;
+  const d = parseLastUserMsgAt(lead.lastUserMsgAt);
+  if(!d) return false;
+  const now = new Date();
+  const diffDays = (now - d) / 86400000;
+  if(diffDays < 0) return false; // future-dated / clock skew safety
+  if(currentConvFilter === 'today'){
+    return d.toDateString() === now.toDateString();
+  }
+  if(currentConvFilter === '3days') return diffDays <= 3;
+  if(currentConvFilter === '7days') return diffDays <= 7;
+  if(currentConvFilter === '30days') return diffDays <= 30;
   return true;
 }
 
@@ -2042,6 +2087,23 @@ function initials(name){
   const parts = String(name||'?').trim().split(/\s+/);
   if(parts.length>=2) return (parts[0][0]+(parts[1][0])).toUpperCase();
   return (parts[0][0]||'?').toUpperCase();
+}
+
+// Builds the data-lead payload used by openCallLogModal() for leads coming
+// from the dashboard popups (dashLeadsModal / lostLeadsModal / followupModal),
+// which use a slightly different field shape than the main leads table rows.
+function buildLeadCallLogPayload(l){
+  const clean = v => (v && v !== '-') ? v : '';
+  return encodeURIComponent(JSON.stringify({
+    name: l.name || '',
+    phone: l.phone || l.number || '',
+    type: l.leadType || l.type || '',
+    location: clean(l.location),
+    property: clean(l.propertyType || l.property),
+    budget: clean(l.budget),
+    timeline: clean(l.nextFollowupTimeline || l.timeline),
+    note: clean(l.callerRemarks || l.note)
+  }));
 }
 
 // Fires on every Call click, from every page/list (All Leads, Assigned,
@@ -2433,6 +2495,7 @@ function applyFilter(keepPage){
     const t = l._leadType;
     if(currentFilter!=='all' && t!==currentFilter) return false;
     if(!matchesDateFilter(l)) return false;
+    if(!matchesConversationFilter(l)) return false;
     if(!q) return true;
     const name = (l['Lead Name']||l.Name||'').toLowerCase();
     const phone = fmtPhone(l['Phone Number']).toLowerCase();
@@ -2811,6 +2874,14 @@ document.querySelectorAll('.filter-chip[data-datefilter]').forEach(chip=>{
     applyFilter();
   });
 });
+document.querySelectorAll('.filter-chip[data-convfilter]').forEach(chip=>{
+  chip.addEventListener('click',function(){
+    document.querySelectorAll('.filter-chip[data-convfilter]').forEach(c=>c.classList.remove('active'));
+    this.classList.add('active');
+    currentConvFilter = this.dataset.convfilter;
+    applyFilter();
+  });
+});
 document.getElementById('leadSearch').addEventListener('input',()=>applyFilter());
 
 /* ═══════════════════════════════════
@@ -3183,6 +3254,9 @@ function renderFollowupList(){
         <a href="https://wa.me/${rawPhone}?text=${waMsg}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">
           WhatsApp
         </a>
+        <button data-lead="${buildLeadCallLogPayload(l)}" onclick="openCallLogModal(this)" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(239,131,84,0.14);border:1.5px solid var(--accent);color:var(--accent-light);font-size:0.8rem;font-weight:600;cursor:pointer">
+          📝 Log
+        </button>
       </div>
     </div>`;
   }).join('');
@@ -3866,6 +3940,7 @@ function renderDashLeadsList(){
       <div style="display:flex;gap:8px;margin-top:12px">
         <a href="tel:${rawPhone}" onclick="logCallClick('${rawPhone}','${escHtml(l.name)}','${l.leadType||''}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(16,185,129,0.12);border:1.5px solid #10B981;color:#34d399;font-size:0.8rem;font-weight:600;text-decoration:none">Call</a>
         <a href="https://wa.me/${rawPhone}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">WhatsApp</a>
+        <button data-lead="${buildLeadCallLogPayload(l)}" onclick="openCallLogModal(this)" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(239,131,84,0.14);border:1.5px solid var(--accent);color:var(--accent-light);font-size:0.8rem;font-weight:600;cursor:pointer">📝 Log</button>
       </div>
     </div>`;
   }).join('');
@@ -3938,6 +4013,7 @@ function renderLostLeadsList(){
       <div style="display:flex;gap:8px;margin-top:12px">
         <a href="tel:${rawPhone}" onclick="logCallClick('${rawPhone}','${escHtml(l.name)}','${l.leadType||''}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(16,185,129,0.12);border:1.5px solid #10B981;color:#34d399;font-size:0.8rem;font-weight:600;text-decoration:none">Call</a>
         <a href="https://wa.me/${rawPhone}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(37,211,102,0.12);border:1.5px solid #25D366;color:#4ade80;font-size:0.8rem;font-weight:600;text-decoration:none">WhatsApp</a>
+        <button data-lead="${buildLeadCallLogPayload(l)}" onclick="openCallLogModal(this)" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border-radius:8px;background:rgba(239,131,84,0.14);border:1.5px solid var(--accent);color:var(--accent-light);font-size:0.8rem;font-weight:600;cursor:pointer">📝 Log</button>
       </div>
     </div>`;
   }).join('');
