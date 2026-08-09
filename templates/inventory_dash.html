@@ -407,7 +407,9 @@ img,video{max-width:100%}
 }
 
 @media(max-width:768px){
-  .topbar{padding:0 0 12px;height:58px;min-height:58px;gap:8px;position:relative}
+  /* NAV SHIFT FIX: pushed 3vh down so it clears the APK WebView's top chrome
+     and the hamburger button stays tappable */
+  .topbar{padding:3vh 0 12px;height:calc(58px + 3vh);min-height:calc(58px + 3vh);gap:8px;position:relative}
   .topbar-title{font-size:0.98rem;max-width:46vw}
   .topbar-title span[style]{display:none}
   .topbar-role-badge{display:none}
