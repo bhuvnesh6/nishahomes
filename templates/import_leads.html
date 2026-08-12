@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Import Leads · Nisha Homes CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --primary:#2D3142; --primary-deep:#1e2235; --primary-mid:#3a3f56; --primary-light:#4a5070;
+  --accent:#EF8354; --accent-light:#FFA07A; --accent-glow:rgba(239,131,84,0.22);
+  --bg:#FAF9F6; --text:#2D3142; --text-soft:#6B7280; --border:#E5E7EB; --border-dark:rgba(255,255,255,0.10);
+  --success:#10B981; --warm:#F59E0B; --hot:#EF4444; --info:#3B82F6;
+  --sh-sm:0 2px 8px rgba(45,49,66,0.07); --sh:0 6px 24px rgba(45,49,66,0.10); --sh-lg:0 18px 48px rgba(45,49,66,0.18);
+  --radius:14px; --radius-sm:8px; --radius-pill:100px;
+  --transition:all 0.28s cubic-bezier(0.22,1,0.36,1);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+
+/* ===== Top bar (matches CRM topbar) ===== */
+.topbar{
+  height:60px;background:var(--primary-deep);box-shadow:0 2px 16px rgba(0,0,0,0.2);
+  display:flex;align-items:center;padding:0 20px;gap:14px;position:sticky;top:0;z-index:100;
+}
+.topbar-title{font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:900;color:#fff}
+.topbar-title span{color:var(--accent)}
+.topbar-back{
+  display:flex;align-items:center;gap:6px;padding:8px 14px;
+  background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.12);
+  border-radius:var(--radius-sm);color:rgba(255,255,255,0.75);font-size:0.82rem;font-weight:600;
+  transition:var(--transition);
+}
+.topbar-back:hover{border-color:var(--accent);color:#fff}
+
+.content{max-width:960px;margin:0 auto;padding:28px 20px 60px}
+
+.page-head{margin-bottom:22px}
+.page-head h1{
+  font-family:'Playfair Display',serif;font-size:1.7rem;font-weight:900;
+  color:var(--primary);letter-spacing:-0.5px;
+}
+.page-head p{font-size:0.86rem;color:var(--text-soft);margin-top:4px}
+
+/* ===== Step indicator ===== */
+.steps{display:flex;align-items:center;gap:8px;margin-bottom:26px}
+.step{
+  display:flex;align-items:center;gap:8px;padding:8px 14px 8px 8px;
+  background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-pill);
+  font-size:0.78rem;font-weight:700;color:var(--text-soft);transition:var(--transition);
+}
+.step-num{
+  width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--text-soft);
+  display:flex;align-items:center;justify-content:center;font-size:0.75rem;flex-shrink:0;
+}
+.step.active{border-color:var(--accent);color:var(--accent);background:rgba(239,131,84,0.05)}
+.step.active .step-num{background:var(--accent);color:#fff}
+.step.done .step-num{background:var(--success);color:#fff}
+.step.done{color:var(--success);border-color:var(--success)}
+.step-divider{width:22px;height:1.5px;background:var(--border);flex-shrink:0}
+
+/* ===== Card ===== */
+.card{
+  background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--sh);padding:26px;margin-bottom:20px;
+}
+.card-title{
+  font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:800;color:var(--primary);
+  margin-bottom:4px;display:flex;align-items:center;gap:8px;
+}
+.card-title::before{content:'';width:4px;height:16px;background:linear-gradient(180deg,var(--accent),var(--accent-light));border-radius:3px}
+.card-sub{font-size:0.8rem;color:var(--text-soft);margin-bottom:18px}
+
+/* ===== Step 1: Upload ===== */
+.dropzone{
+  border:2px dashed var(--border);border-radius:var(--radius);
+  padding:48px 24px;text-align:center;cursor:pointer;transition:var(--transition);
+  background:var(--bg);
+}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:rgba(239,131,84,0.04)}
+.dropzone-icon{
+  width:56px;height:56px;border-radius:50%;background:rgba(239,131,84,0.1);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:1.5rem;color:var(--accent);
+}
+.dropzone h3{font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:5px}
+.dropzone p{font-size:0.82rem;color:var(--text-soft)}
+.dropzone-formats{
+  display:inline-flex;gap:6px;margin-top:12px;
+}
+.format-pill{
+  padding:3px 10px;border-radius:var(--radius-pill);background:var(--border);
+  font-size:0.68rem;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:0.4px;
+}
+#fileInput{display:none}
+
+.file-picked{
+  display:none;align-items:center;gap:12px;padding:14px 16px;
+  background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);margin-top:14px;
+}
+.file-picked.visible{display:flex}
+.file-picked-icon{
+  width:38px;height:38px;border-radius:9px;background:rgba(16,185,129,0.1);color:var(--success);
+  display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;
+}
+.file-picked-name{font-weight:700;font-size:0.86rem;color:var(--primary);word-break:break-all}
+.file-picked-meta{font-size:0.75rem;color:var(--text-soft);margin-top:1px}
+.file-picked-remove{
+  margin-left:auto;width:28px;height:28px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:var(--text-soft);
+  transition:var(--transition);flex-shrink:0;
+}
+.file-picked-remove:hover{background:rgba(239,68,68,0.1);color:var(--hot)}
+
+/* ===== Form controls ===== */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+@media(max-width:599px){.form-row{grid-template-columns:1fr}}
+.form-group{margin-bottom:0}
+.form-label{display:block;font-size:0.72rem;font-weight:700;color:var(--text-soft);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:7px}
+.form-select,.form-input{
+  width:100%;padding:11px 13px;border:2px solid var(--border);border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif;font-size:0.87rem;color:var(--text);background:#fff;transition:all 0.22s ease;
+}
+.form-select:focus,.form-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:11px 22px;border-radius:var(--radius-sm);font-size:0.86rem;font-weight:700;
+  transition:var(--transition);white-space:nowrap;
+}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 4px 14px var(--accent-glow)}
+.btn-primary:hover{background:var(--accent-light);transform:translateY(-1px)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.btn-ghost{background:#fff;border:1.5px solid var(--border);color:var(--text-soft)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-row{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+
+/* ===== Preview table ===== */
+.preview-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:16px}
+table.preview-table{width:100%;border-collapse:collapse;min-width:520px}
+.preview-table th{
+  background:var(--primary);color:rgba(255,255,255,0.75);font-size:0.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.5px;padding:9px 12px;text-align:left;white-space:nowrap;
+}
+.preview-table td{padding:9px 12px;font-size:0.8rem;color:var(--text);border-bottom:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.preview-table tr:last-child td{border-bottom:none}
+.preview-note{font-size:0.76rem;color:var(--text-soft);margin-top:8px}
+
+/* ===== Mapping grid ===== */
+.mapping-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.mapping-row{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;
+  padding:12px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);
+}
+@media(max-width:599px){.mapping-row{grid-template-columns:1fr;gap:6px}}
+.mapping-target{display:flex;flex-direction:column;gap:2px}
+.mapping-target-label{font-size:0.85rem;font-weight:700;color:var(--primary)}
+.mapping-target-req{font-size:0.68rem;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:0.4px}
+.mapping-arrow{color:var(--text-soft);font-size:1rem}
+@media(max-width:599px){.mapping-arrow{display:none}}
+.mapping-row select{
+  padding:9px 11px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif;font-size:0.82rem;color:var(--text);background:#fff;
+}
+.mapping-row select:focus{outline:none;border-color:var(--accent)}
+.mapping-row.unmapped-required select{border-color:var(--hot)}
+
+/* ===== Result summary ===== */
+.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:6px}
+@media(max-width:599px){.result-grid{grid-template-columns:1fr 1fr}}
+.result-card{
+  background:var(--primary-deep);border-radius:var(--radius);padding:18px;text-align:center;
+  border:1px solid var(--border-dark);
+}
+.result-card .num{font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:#fff}
+.result-card .lbl{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:rgba(255,255,255,0.5);margin-top:4px}
+.result-card.inserted .num{color:var(--success)}
+.result-card.updated .num{color:var(--info)}
+.result-card.skipped .num{color:var(--warm)}
+
+.error-list{
+  margin-top:16px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.25);
+  border-radius:var(--radius-sm);padding:12px 14px;max-height:180px;overflow-y:auto;
+}
+.error-list-title{font-size:0.75rem;font-weight:700;color:var(--hot);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+.error-list li{font-size:0.78rem;color:#7f1d1d;list-style:none;padding:3px 0}
+
+/* ===== Toast / loading ===== */
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(120%);
+  background:var(--primary-deep);color:#fff;padding:12px 22px;border-radius:var(--radius-pill);
+  font-size:0.84rem;font-weight:600;box-shadow:var(--sh-lg);z-index:9999;
+  transition:transform 0.35s cubic-bezier(0.22,1,0.36,1);border:1px solid var(--border-dark);
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.error{background:#7f1d1d}
+
+.spinner{
+  width:16px;height:16px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;
+  border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/admin" class="topbar-back">&larr; Back</a>
+  <div class="topbar-title">Nisha Homes <span>CRM</span></div>
+</div>
+
+<div class="content">
+
+  <div class="page-head">
+    <h1>Import Leads</h1>
+    <p>Upload a CSV or Excel file, match its columns to your lead fields, then review before saving.</p>
+  </div>
+
+  <div class="steps">
+    <div class="step active" id="stepPill1"><span class="step-num">1</span>Upload file</div>
+    <div class="step-divider"></div>
+    <div class="step" id="stepPill2"><span class="step-num">2</span>Match columns</div>
+    <div class="step-divider"></div>
+    <div class="step" id="stepPill3"><span class="step-num">3</span>Done</div>
+  </div>
+
+  <!-- ============ STEP 1: UPLOAD ============ -->
+  <div class="card" id="stepUpload">
+    <div class="card-title">Select your file</div>
+    <div class="card-sub">Every row needs a phone number — that's the only required column.</div>
+
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">&#8593;</div>
+      <h3>Drag &amp; drop your file here</h3>
+      <p>or click to browse</p>
+      <div class="dropzone-formats">
+        <span class="format-pill">.csv</span>
+        <span class="format-pill">.xlsx</span>
+        <span class="format-pill">.xls</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+
+    <div class="file-picked" id="filePicked">
+      <div class="file-picked-icon">&#10003;</div>
+      <div>
+        <div class="file-picked-name" id="filePickedName"></div>
+        <div class="file-picked-meta" id="filePickedMeta"></div>
+      </div>
+      <button class="file-picked-remove" id="fileRemoveBtn" title="Remove">&times;</button>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Import into</label>
+        <select class="form-select" id="collectionSelect">
+          <option value="Leads">Buying Leads</option>
+          <option value="RentalLeads">Rental Leads</option>
+          <option value="sellingLeads">Selling Leads</option>
+          <option value="agentLeads">Agent Leads</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Default lead type (if column not mapped)</label>
+        <select class="form-select" id="defaultLeadType">
+          <option value="buyer_purchase">Buyer — Purchase</option>
+          <option value="buyer_rental">Buyer — Rental</option>
+          <option value="seller">Seller</option>
+          <option value="agent">Agent</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="parseBtn" disabled>
+        <span id="parseBtnText">Read file &amp; continue</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ STEP 2: MAPPING ============ -->
+  <div class="card hidden" id="stepMapping">
+    <div class="card-title">Preview</div>
+    <div class="card-sub" id="previewSub"></div>
+    <div class="preview-wrap"><table class="preview-table" id="previewTable"></table></div>
+    <div class="preview-note">Showing the first rows only — the full file will be processed on import.</div>
+  </div>
+
+  <div class="card hidden" id="stepMapping2">
+    <div class="card-title">Match your columns</div>
+    <div class="card-sub">Tell us which column in your file holds each lead field. Fields marked <b style="color:var(--accent)">required</b> must be mapped.</div>
+    <div class="mapping-list" id="mappingList"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="backToUploadBtn">&larr; Back</button>
+      <button class="btn btn-primary" id="commitBtn">
+        <span id="commitBtnText">Import leads</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ STEP 3: RESULT ============ -->
+  <div class="card hidden" id="stepResult">
+    <div class="card-title">Import complete</div>
+    <div class="card-sub">New leads were stamped with <code>Created At</code> and <code>adon_leads: 0</code>.</div>
+
+    <div class="result-grid">
+      <div class="result-card inserted"><div class="num" id="resInserted">0</div><div class="lbl">New leads</div></div>
+      <div class="result-card updated"><div class="num" id="resUpdated">0</div><div class="lbl">Updated</div></div>
+      <div class="result-card skipped"><div class="num" id="resSkipped">0</div><div class="lbl">Skipped</div></div>
+    </div>
+
+    <div class="error-list hidden" id="errorBox">
+      <div class="error-list-title">Rows with issues</div>
+      <ul id="errorListItems"></ul>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="importAnotherBtn">Import another file</button>
+      <a class="btn btn-primary" href="/admin" id="goToLeadsBtn">Go to Leads</a>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const filePicked = document.getElementById('filePicked');
+const filePickedName = document.getElementById('filePickedName');
+const filePickedMeta = document.getElementById('filePickedMeta');
+const fileRemoveBtn = document.getElementById('fileRemoveBtn');
+const parseBtn = document.getElementById('parseBtn');
+const parseBtnText = document.getElementById('parseBtnText');
+const collectionSelect = document.getElementById('collectionSelect');
+const defaultLeadType = document.getElementById('defaultLeadType');
+
+const stepUpload = document.getElementById('stepUpload');
+const stepMapping = document.getElementById('stepMapping');
+const stepMapping2 = document.getElementById('stepMapping2');
+const stepResult = document.getElementById('stepResult');
+const stepPill1 = document.getElementById('stepPill1');
+const stepPill2 = document.getElementById('stepPill2');
+const stepPill3 = document.getElementById('stepPill3');
+
+let selectedFile = null;
+let importState = null; // { importId, headers, targetFields, autoMapping }
+
+function toast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 3200);
+}
+
+function formatBytes(b){
+  if(b < 1024) return b + ' B';
+  if(b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(2) + ' MB';
+}
+
+/* ---------- Drag & drop / file pick ---------- */
+dropzone.addEventListener('click', ()=>fileInput.click());
+['dragenter','dragover'].forEach(evt=>{
+  dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.classList.add('drag'); });
+});
+['dragleave','drop'].forEach(evt=>{
+  dropzone.addEventListener(evt, e=>{ e.preventDefault(); dropzone.classList.remove('drag'); });
+});
+dropzone.addEventListener('drop', e=>{
+  const f = e.dataTransfer.files[0];
+  if(f) setFile(f);
+});
+fileInput.addEventListener('change', ()=>{
+  if(fileInput.files[0]) setFile(fileInput.files[0]);
+});
+fileRemoveBtn.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  selectedFile = null;
+  fileInput.value = '';
+  filePicked.classList.remove('visible');
+  parseBtn.disabled = true;
+});
+
+function setFile(f){
+  const ext = f.name.split('.').pop().toLowerCase();
+  if(!['csv','xlsx','xls'].includes(ext)){
+    toast('Please choose a .csv, .xlsx or .xls file', true);
+    return;
+  }
+  selectedFile = f;
+  filePickedName.textContent = f.name;
+  filePickedMeta.textContent = formatBytes(f.size) + ' · ready to read';
+  filePicked.classList.add('visible');
+  parseBtn.disabled = false;
+}
+
+/* ---------- Step 1 -> Step 2: parse file ---------- */
+parseBtn.addEventListener('click', async ()=>{
+  if(!selectedFile) return;
+  parseBtn.disabled = true;
+  parseBtnText.innerHTML = '<span class="spinner"></span> Reading file…';
+
+  try{
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const resp = await fetch('/api/import-leads/parse', { method:'POST', body: fd });
+    const data = await resp.json();
+
+    if(!data.success){
+      toast(data.message || 'Could not read file', true);
+      parseBtn.disabled = false;
+      parseBtnText.textContent = 'Read file & continue';
+      return;
+    }
+
+    importState = data;
+    renderPreview(data);
+    renderMapping(data);
+    goToStep(2);
+
+  }catch(err){
+    toast('Network error while reading file', true);
+    parseBtn.disabled = false;
+    parseBtnText.textContent = 'Read file & continue';
+  }
+});
+
+function renderPreview(data){
+  document.getElementById('previewSub').textContent =
+    `${data.fileName} · ${data.totalRows} row${data.totalRows === 1 ? '' : 's'} detected`;
+
+  const table = document.getElementById('previewTable');
+  let html = '<thead><tr>' + data.headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
+  data.previewRows.forEach(row=>{
+    html += '<tr>' + data.headers.map(h=>`<td>${escapeHtml(row[h] ?? '')}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function renderMapping(data){
+  const list = document.getElementById('mappingList');
+  list.innerHTML = '';
+
+  data.targetFields.forEach(field=>{
+    const row = document.createElement('div');
+    row.className = 'mapping-row';
+    row.dataset.target = field.key;
+
+    const guessed = data.autoMapping[field.key] || '';
+
+    row.innerHTML = `
+      <div class="mapping-target">
+        <span class="mapping-target-label">${escapeHtml(field.label)}</span>
+        ${field.required ? '<span class="mapping-target-req">Required</span>' : ''}
+      </div>
+      <div class="mapping-arrow">&rarr;</div>
+      <select data-target="${escapeHtml(field.key)}">
+        <option value="">— Not in file / skip —</option>
+        ${data.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===guessed?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+      </select>
+    `;
+    if(field.required && !guessed) row.classList.add('unmapped-required');
+
+    row.querySelector('select').addEventListener('change', (e)=>{
+      row.classList.toggle('unmapped-required', field.required && !e.target.value);
+    });
+
+    list.appendChild(row);
+  });
+}
+
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function goToStep(step){
+  stepUpload.classList.toggle('hidden', step !== 1);
+  stepMapping.classList.toggle('hidden', step !== 2);
+  stepMapping2.classList.toggle('hidden', step !== 2);
+  stepResult.classList.toggle('hidden', step !== 3);
+
+  [stepPill1, stepPill2, stepPill3].forEach((pill, i)=>{
+    pill.classList.remove('active','done');
+    if(i + 1 < step) pill.classList.add('done');
+    else if(i + 1 === step) pill.classList.add('active');
+  });
+}
+
+/* ---------- Step 2 -> Step 1: back / cancel ---------- */
+document.getElementById('backToUploadBtn').addEventListener('click', async ()=>{
+  if(importState && importState.importId){
+    try{
+      await fetch('/api/import-leads/cancel', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({importId: importState.importId})
+      });
+    }catch(e){}
+  }
+  importState = null;
+  parseBtn.disabled = !selectedFile;
+  parseBtnText.textContent = 'Read file & continue';
+  goToStep(1);
+});
+
+/* ---------- Step 2 -> Step 3: commit import ---------- */
+document.getElementById('commitBtn').addEventListener('click', async ()=>{
+  const rows = document.querySelectorAll('#mappingList .mapping-row');
+  const mapping = {};
+  let missingRequired = false;
+
+  rows.forEach(row=>{
+    const select = row.querySelector('select');
+    if(select.value) mapping[row.dataset.target] = select.value;
+  });
+
+  document.querySelectorAll('#mappingList .mapping-row').forEach(row=>{
+    const isRequired = row.querySelector('.mapping-target-req');
+    const select = row.querySelector('select');
+    const bad = isRequired && !select.value;
+    row.classList.toggle('unmapped-required', !!bad);
+    if(bad) missingRequired = true;
+  });
+
+  if(missingRequired){
+    toast('Please map all required fields (Phone Number)', true);
+    return;
+  }
+
+  const commitBtn = document.getElementById('commitBtn');
+  const commitBtnText = document.getElementById('commitBtnText');
+  commitBtn.disabled = true;
+  commitBtnText.innerHTML = '<span class="spinner"></span> Importing…';
+
+  try{
+    const resp = await fetch('/api/import-leads/commit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        importId: importState.importId,
+        collection: collectionSelect.value,
+        defaultLeadType: defaultLeadType.value,
+        mapping
+      })
+    });
+    const data = await resp.json();
+
+    commitBtn.disabled = false;
+    commitBtnText.textContent = 'Import leads';
+
+    if(!data.success){
+      toast(data.message || 'Import failed', true);
+      return;
+    }
+
+    document.getElementById('resInserted').textContent = data.inserted;
+    document.getElementById('resUpdated').textContent = data.updated;
+    document.getElementById('resSkipped').textContent = data.skipped;
+
+    const errorBox = document.getElementById('errorBox');
+    const errorList = document.getElementById('errorListItems');
+    if(data.errors && data.errors.length){
+      errorList.innerHTML = data.errors.map(e=>`<li>${escapeHtml(e)}</li>`).join('');
+      errorBox.classList.remove('hidden');
+    } else {
+      errorBox.classList.add('hidden');
+    }
+
+    goToStep(3);
+    toast(`Imported ${data.inserted} new lead${data.inserted===1?'':'s'} successfully`);
+
+  }catch(err){
+    commitBtn.disabled = false;
+    commitBtnText.textContent = 'Import leads';
+    toast('Network error while importing', true);
+  }
+});
+
+/* ---------- Step 3 -> Step 1: import another ---------- */
+document.getElementById('importAnotherBtn').addEventListener('click', ()=>{
+  selectedFile = null;
+  importState = null;
+  fileInput.value = '';
+  filePicked.classList.remove('visible');
+  parseBtn.disabled = true;
+  parseBtnText.textContent = 'Read file & continue';
+  goToStep(1);
+});
+</script>
+
+</body>
+</html>

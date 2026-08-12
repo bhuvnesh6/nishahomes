@@ -4722,9 +4722,6 @@ def approve_project(project_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/add-project")
-def add_project_page():
-    return render_template("upload_project.html")
 
 
 @app.route("/view/<unique_id>")
@@ -5336,6 +5333,266 @@ def ai_campaign():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+import uuid
+
+# =============================
+# IMPORT LEADS FROM CSV / EXCEL (with field-mapping)
+# =============================
+
+IMPORT_TEMP_DIR = os.path.join(tempfile.gettempdir(), "lead_imports")
+os.makedirs(IMPORT_TEMP_DIR, exist_ok=True)
+
+# import_id -> {"path": ..., "ext": ..., "createdAt": time.time()}
+_import_cache = {}
+
+def _cleanup_old_imports(max_age_seconds=3600):
+    """Drops any parsed-but-never-committed uploads older than 1hr."""
+    now = time.time()
+    stale = [k for k, v in _import_cache.items() if now - v["createdAt"] > max_age_seconds]
+    for k in stale:
+        try:
+            os.remove(_import_cache[k]["path"])
+        except Exception:
+            pass
+        _import_cache.pop(k, None)
+
+
+# The fields a lead can be mapped into. "Phone Number" is the only hard
+# requirement (everything is upserted on it, same as /add-lead).
+LEAD_TARGET_FIELDS = [
+    {"key": "Lead Name",               "label": "Lead Name",        "required": True},
+    {"key": "Phone Number",            "label": "Phone Number",     "required": True},
+    {"key": "Date",                    "label": "Date (DD-MM-YYYY)","required": False},
+    {"key": "Location Interested In",  "label": "Location",         "required": False},
+    {"key": "Property Type",           "label": "Property Type",    "required": False},
+    {"key": "Budget Range",            "label": "Budget Range",     "required": False},
+    {"key": "Configuration",           "label": "Configuration",    "required": False},
+    {"key": "AssignTo",                "label": "Assigned To",      "required": False},
+    {"key": "LeadType",                "label": "Lead Type",        "required": False},
+    {"key": "Operating City",          "label": "Operating City",   "required": False},
+    {"key": "Note",                    "label": "Note / Remarks",   "required": False},
+]
+
+_MAPPING_KEYWORDS = {
+    "Lead Name": ["name", "lead name", "full name", "customer name", "client name"],
+    "Phone Number": ["phone", "phone number", "mobile", "contact", "contact number", "number", "whatsapp"],
+    "Date": ["date", "created date", "lead date", "enquiry date"],
+    "Location Interested In": ["location", "city", "area", "locality", "location interested in"],
+    "Property Type": ["property type", "property", "type", "unit type"],
+    "Budget Range": ["budget", "budget range", "price", "expected price"],
+    "Configuration": ["configuration", "config", "bhk"],
+    "AssignTo": ["assign to", "assigned to", "agent", "executive"],
+    "LeadType": ["lead type", "leadtype", "category"],
+    "Operating City": ["operating city", "branch city"],
+    "Note": ["note", "notes", "remarks", "comment", "comments"],
+}
+
+def _auto_guess_mapping(headers):
+    """Best-effort auto-suggestion so the mapping modal isn't empty by default."""
+    guesses = {}
+    lower_map = {str(h).strip().lower(): h for h in headers}
+    for target, keywords in _MAPPING_KEYWORDS.items():
+        for kw in keywords:
+            if kw in lower_map:
+                guesses[target] = lower_map[kw]
+                break
+    return guesses
+
+
+def _read_import_file(path, ext):
+    if ext == "csv":
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
+    return pd.read_excel(path, dtype=str, keep_default_na=False)
+
+
+@app.route("/api/import-leads/parse", methods=["POST"])
+def import_leads_parse():
+    """Step 1: user picks a file. We save it to a temp dir, parse headers +
+    a small preview, and hand back an importId the frontend re-uses in the
+    commit call — the file is NOT re-uploaded on step 2."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+        file = request.files["file"]
+        if not file.filename:
+            return jsonify({"success": False, "message": "No file selected"}), 400
+
+        ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        if ext not in ("csv", "xlsx", "xls"):
+            return jsonify({"success": False, "message": "Only .csv, .xlsx or .xls files are supported"}), 400
+
+        _cleanup_old_imports()
+
+        import_id = uuid.uuid4().hex
+        saved_path = os.path.join(IMPORT_TEMP_DIR, f"{import_id}.{ext}")
+        file.save(saved_path)
+
+        try:
+            df = _read_import_file(saved_path, ext)
+        except Exception as parse_err:
+            try:
+                os.remove(saved_path)
+            except Exception:
+                pass
+            return jsonify({"success": False, "message": f"Could not read file: {parse_err}"}), 400
+
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how="all")
+
+        if df.empty or len(df.columns) == 0:
+            os.remove(saved_path)
+            return jsonify({"success": False, "message": "File has no readable data"}), 400
+
+        headers = list(df.columns)
+        preview_rows = df.head(5).fillna("").astype(str).to_dict(orient="records")
+
+        _import_cache[import_id] = {"path": saved_path, "ext": ext, "createdAt": time.time()}
+
+        return jsonify({
+            "success": True,
+            "importId": import_id,
+            "fileName": file.filename,
+            "headers": headers,
+            "previewRows": preview_rows,
+            "totalRows": int(len(df)),
+            "targetFields": LEAD_TARGET_FIELDS,
+            "autoMapping": _auto_guess_mapping(headers)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/import-leads/commit", methods=["POST"])
+def import_leads_commit():
+    """Step 2: user has matched sheet columns -> lead fields in the popup.
+    Every imported/updated lead gets the two required fields:
+      - "Created At": "YYYY-MM-DD HH:MM:SS" (only set on first insert)
+      - "adon_leads": 0
+    Also writes "Date"/"DateObj" the same way /add-lead does, so imported
+    leads show up correctly in the existing July-2026-onward lead lists.
+    """
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    try:
+        data = request.json or {}
+        import_id = data.get("importId")
+        collection_name = data.get("collection")
+        mapping = data.get("mapping", {})          # { targetField: sheetColumnName }
+        default_lead_type = data.get("defaultLeadType", "buyer_purchase")
+
+        if collection_name not in ("Leads", "RentalLeads", "sellingLeads", "agentLeads"):
+            return jsonify({"success": False, "message": "Invalid collection"}), 400
+
+        if not mapping.get("Phone Number"):
+            return jsonify({"success": False, "message": "Phone Number must be mapped to a column"}), 400
+
+        entry = _import_cache.get(import_id)
+        if not entry or not os.path.exists(entry["path"]):
+            return jsonify({"success": False, "message": "Import session expired — please re-upload the file"}), 400
+
+        df = _read_import_file(entry["path"], entry["ext"])
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how="all")
+
+        collection = db[collection_name]
+        now = datetime.utcnow()
+        created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")   # e.g. 2026-08-03 12:12:13
+
+        inserted, updated, skipped = 0, 0, 0
+        errors = []
+
+        for idx, row in df.iterrows():
+            try:
+                phone_col = mapping.get("Phone Number")
+                raw_phone = str(row.get(phone_col, "")).strip()
+                phone_clean = normalize_number(raw_phone)
+                if not phone_clean:
+                    skipped += 1
+                    continue
+
+                doc = {}
+                for target_field, sheet_col in mapping.items():
+                    if not sheet_col:
+                        continue
+                    val = row.get(sheet_col, "")
+                    val = "" if val is None else str(val).strip()
+                    if val:
+                        doc[target_field] = val
+
+                doc["Phone Number"] = phone_clean
+
+                lead_type = str(doc.get("LeadType", "")).strip()
+                if lead_type not in VALID_LEAD_TYPES:
+                    lead_type = default_lead_type if default_lead_type in VALID_LEAD_TYPES else "buyer_purchase"
+                doc["LeadType"] = lead_type
+
+                if not str(doc.get("Date", "")).strip():
+                    doc["Date"] = now.strftime("%d-%m-%Y")
+
+                doc["DateObj"] = now
+                doc["adon_leads"] = 0   # NEW required field on every imported lead
+
+                existing = collection.find_one({"Phone Number": phone_clean})
+                if existing:
+                    # Keep the original Created At — never overwrite it on re-import
+                    collection.update_one({"_id": existing["_id"]}, {"$set": doc})
+                    updated += 1
+                else:
+                    doc["Created At"] = created_at_str   # NEW required field, set once
+                    collection.insert_one(doc)
+                    inserted += 1
+
+            except Exception as row_err:
+                skipped += 1
+                errors.append(f"Row {idx + 2}: {row_err}")
+                continue
+
+        try:
+            os.remove(entry["path"])
+        except Exception:
+            pass
+        _import_cache.pop(import_id, None)
+
+        return jsonify({
+            "success": True,
+            "totalRows": int(len(df)),
+            "inserted": inserted,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors[:20]
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/import-leads/cancel", methods=["POST"])
+def import_leads_cancel():
+    """Cleans up the temp file if the user closes the mapping popup without importing."""
+    data = request.json or {}
+    entry = _import_cache.pop(data.get("importId"), None)
+    if entry:
+        try:
+            os.remove(entry["path"])
+        except Exception:
+            pass
+    return jsonify({"success": True})
+
+
+@app.route("/import-leads")
+def import_leads_page():
+    if not session.get("user_id"):
+        return redirect("/")
+    return render_template("import_leads.html")
 
 if __name__ == "__main__":
     #remove_assign_to_from_leads()
