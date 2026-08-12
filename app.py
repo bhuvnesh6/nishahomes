@@ -5483,7 +5483,7 @@ def import_leads_commit():
     try:
         data = request.json or {}
         import_id = data.get("importId")
-        collection_name = data.get("collection")
+        collection_name = "Leads"
         mapping = data.get("mapping", {})          # { targetField: sheetColumnName }
         default_lead_type = data.get("defaultLeadType", "buyer_purchase")
 
