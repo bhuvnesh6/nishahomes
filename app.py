@@ -4723,7 +4723,7 @@ def approve_project(project_id):
 
 
 
-
+#new
 @app.route("/view/<unique_id>")
 def view_property(unique_id):
     p = projects_collection.find_one({"uniqueId": unique_id, "status": "approved"})
