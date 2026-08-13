@@ -2018,6 +2018,10 @@ let endDataMap = {};
 let endDataLoaded = false;
 let daiSet = new Set();
 
+// 🔥 Tracks which popup (if any) was open behind the Call Log modal, so we
+// can hide it while logging a call and restore it afterwards.
+let previousModalBeforeCallLog = null;
+
 const TYPE_TO_COLLECTION = {buying:'Leads',rental:'RentalLeads',selling:'sellingLeads',agent:'agentLeads',other:'Leads'};
 
 // Maps the raw LeadType field values on each record to a filter category
@@ -3588,6 +3592,16 @@ async function exportByDateRange(period, type){
    CALL LOG MODAL
 ═══════════════════════════════════ */
 function openCallLogModal(btn){
+  // 🔥 If this "Log" button lives inside another popup (Dashboard leads
+  // popup, Follow-ups popup, Lead Intent popup, or Lost Leads popup), hide
+  // that popup so only the Call Log modal is visible for this lead. We
+  // remember which one it was so we can restore it on close/save.
+  const parentModal = btn.closest('.modal-overlay');
+  previousModalBeforeCallLog = (parentModal && parentModal.id !== 'callLogOverlay') ? parentModal.id : null;
+  if(parentModal && parentModal.id !== 'callLogOverlay'){
+    parentModal.classList.remove('active');
+  }
+
   const data=JSON.parse(decodeURIComponent(btn.dataset.lead));
   const draft = leadDrafts[data.phone] || {};
   document.getElementById('callLogName').value=data.name;
@@ -3635,6 +3649,12 @@ function captureCallLogDraft(){
 function closeModalCall(id){
   if(id==='callLogOverlay'){ captureCallLogDraft(); }
   document.getElementById(id).classList.remove('active');
+  // 🔥 Restore whichever popup was open behind the Call Log modal, if any.
+  if(id==='callLogOverlay' && previousModalBeforeCallLog){
+    const prev = document.getElementById(previousModalBeforeCallLog);
+    if(prev) prev.classList.add('active');
+    previousModalBeforeCallLog = null;
+  }
 }
 document.getElementById('callLogOverlay').addEventListener('click',e=>{if(e.target.id==='callLogOverlay')closeModalCall('callLogOverlay')});
 document.getElementById('callLogForm').addEventListener('input',captureCallLogDraft);
@@ -3679,6 +3699,13 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
     delete leadDrafts[phone];
     document.getElementById('callLogForm').reset();
     document.getElementById('callLogOverlay').classList.remove('active');
+    // 🔥 Restore whichever popup (dashboard leads / followups / lead intent /
+    // lost leads) was open behind the Call Log modal, now that it's saved.
+    if(previousModalBeforeCallLog){
+      const prev = document.getElementById(previousModalBeforeCallLog);
+      if(prev) prev.classList.add('active');
+      previousModalBeforeCallLog = null;
+    }
     endDataMap={}; await loadEndData();
     loadAllLeads(true);
     loadAssignedLeads();
