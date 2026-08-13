@@ -370,6 +370,72 @@ def api_backfill_date_obj():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+# NEW: ONE-TIME, browser-runnable migration. Re-fits every EXISTING
+# project/inventory banner into the new 1080x1080 WhatsApp square
+# (no cropping — same fit_to_whatsapp_square() logic new banners use).
+# Just open this URL in your browser while logged in as admin:
+#   https://your-domain/api/admin/resize-banners-to-square
+# Safe to re-run — docs already fixed are flagged "squareFitted": True
+# and get skipped on the next run.
+@app.route("/api/admin/resize-banners-to-square", methods=["GET"])
+def resize_existing_banners_to_square():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only — log in as admin first"}), 403
+
+    results = {"scanned": 0, "resized": 0, "skipped_no_banner": 0, "failed": []}
+
+    try:
+        docs = list(projects_collection.find({"squareFitted": {"$ne": True}}))
+        results["scanned"] = len(docs)
+
+        for doc in docs:
+            banner_url = doc.get("bannerUrl") or doc.get("img")
+            if not banner_url:
+                results["skipped_no_banner"] += 1
+                continue
+
+            try:
+                resp = requests.get(banner_url, timeout=30)
+                resp.raise_for_status()
+
+                squared = fit_to_whatsapp_square(resp.content)
+
+                folder = "projects" if doc.get("kind") == "project" else "inventory"
+                new_url, new_object_path = upload_media_to_supabase(
+                    squared, folder=folder, resource_type="image", ext="jpg"
+                )
+
+                update_fields = {"bannerUrl": new_url, "squareFitted": True}
+
+                # Keep img / mediaUrls[0] in sync if they pointed at the same banner
+                if doc.get("img") == banner_url:
+                    update_fields["img"] = new_url
+                media_urls = doc.get("mediaUrls") or []
+                if media_urls and media_urls[0] == banner_url:
+                    media_urls[0] = new_url
+                    update_fields["mediaUrls"] = media_urls
+
+                projects_collection.update_one({"_id": doc["_id"]}, {"$set": update_fields})
+                # NOTE: the old (pre-square) banner object is intentionally left
+                # in Supabase Storage rather than auto-deleted — we don't have
+                # a reliably-tracked object path for bannerUrl on old docs, and
+                # a wrong delete would be irreversible. Clean those up manually
+                # from the Supabase dashboard if you want to reclaim space.
+                results["resized"] += 1
+
+            except Exception as doc_err:
+                results["failed"].append({"id": str(doc["_id"]), "error": str(doc_err)})
+                continue
+
+        invalidate_cache("inventory_dashboard_stats")
+        return jsonify({"success": True, **results}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 def get_date_range(period):
     """Returns (start_date, end_date) for the given export period, or (None, None) for 'all'."""
     now = datetime.utcnow()
@@ -646,6 +712,11 @@ BRAND_NAVY_SOLID = (16, 19, 28)   # solid, not the old semi-transparent tuple
 BRAND_CONTACT_NUMBER = "91 73035 15710"   # <-- change this ONE line if the number is different
 BRAND_WEBSITE = "nishahomes.com"           # <-- change this ONE line if the website changes
 BRAND_NAME = "NISHA HOMES"
+
+# NEW: WhatsApp chat-bubble preview is a 1:1 square. Every banner (branded
+# or not) gets fit into this square — WITHOUT cropping — by scaling it
+# down to fit and padding the empty space, never by cutting the photo.
+WHATSAPP_SQUARE_SIZE = 1080
 
 def generate_unique_id():
     """Short, URL-safe id used for the public /view/<id> page."""
@@ -1042,6 +1113,35 @@ def build_simple_branded_image(image_bytes):
 
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=92)
+    out.seek(0)
+    return out
+
+
+def fit_to_whatsapp_square(image_bytes, size=WHATSAPP_SQUARE_SIZE, bg_color=BRAND_NAVY_SOLID):
+    """
+    Fits ANY image (a full branded banner OR a plain unbranded photo) into
+    a size x size (default 1080x1080) square for WhatsApp's chat-bubble
+    preview — WITHOUT cropping anything. The image is scaled down (never
+    upscaled) to fit entirely inside the square, keeping its aspect ratio,
+    then centered on a solid background so nothing gets cut off, just
+    letterboxed top/bottom or left/right as needed.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+
+    scale = min(size / w, size / h)
+    scale = min(scale, 1.0)  # never blow up a smaller image, just pad it
+    new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
+    if (new_w, new_h) != (w, h):
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    canvas = Image.new("RGB", (size, size), bg_color)
+    paste_x = (size - new_w) // 2
+    paste_y = (size - new_h) // 2
+    canvas.paste(img, (paste_x, paste_y))
+
+    out = io.BytesIO()
+    canvas.save(out, format="JPEG", quality=92)
     out.seek(0)
     return out
 
@@ -4503,10 +4603,17 @@ def upload_inventory():
                     failed_files.append(file.filename)
                     continue
 
-                brand_fn = None
-                if branding:
-                    brand_fn = (lambda b, _fields=brand_fields: build_banner_image(b, _fields)) if idx == 0 \
-                        else (lambda b: build_simple_branded_image(b))
+                if idx == 0:
+                    # BANNER photo — ALWAYS fit into the 1080x1080 WhatsApp
+                    # square, no cropping, regardless of the branding toggle.
+                    if branding:
+                        brand_fn = lambda b, _fields=brand_fields: fit_to_whatsapp_square(
+                            build_banner_image(b, _fields).getvalue()
+                        )
+                    else:
+                        brand_fn = lambda b: fit_to_whatsapp_square(b)
+                else:
+                    brand_fn = (lambda b: build_simple_branded_image(b)) if branding else None
 
                 url, object_path, _ = upload_raw_then_brand(
                     raw, folder="inventory", resource_type="image", ext="jpg", brand_fn=brand_fn
@@ -5022,10 +5129,17 @@ def upload_project_v2():
                     failed_files.append(file.filename)
                     continue
 
-                brand_fn = None
-                if branding:
-                    brand_fn = (lambda b, _fields=brand_fields: build_banner_image(b, _fields)) if idx == 0 \
-                        else (lambda b: build_simple_branded_image(b))
+                if idx == 0:
+                    # BANNER photo — ALWAYS fit into the 1080x1080 WhatsApp
+                    # square, no cropping, regardless of the branding toggle.
+                    if branding:
+                        brand_fn = lambda b, _fields=brand_fields: fit_to_whatsapp_square(
+                            build_banner_image(b, _fields).getvalue()
+                        )
+                    else:
+                        brand_fn = lambda b: fit_to_whatsapp_square(b)
+                else:
+                    brand_fn = (lambda b: build_simple_branded_image(b)) if branding else None
 
                 url, object_path, _ = upload_raw_then_brand(
                     raw, folder="projects", resource_type="image", ext="jpg", brand_fn=brand_fn
