@@ -14,3 +14,4 @@ cloudinary
 PyMuPDF==1.26.3
 Pillow==10.4.0
 supabase==2.9.1
+cloudinary
