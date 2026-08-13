@@ -415,7 +415,7 @@ def run_resize_banners_to_square():
                 })
                 continue
 
-            squared = fit_to_whatsapp_square(resp.content)c
+            squared = fit_to_whatsapp_square(resp.content)
 
             folder = "projects" if doc.get("kind") == "project" else "inventory"
             new_url, new_object_path = upload_media_to_supabase(
