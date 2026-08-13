@@ -394,7 +394,28 @@ def run_resize_banners_to_square():
             resp = requests.get(banner_url, timeout=30)
             resp.raise_for_status()
 
-            squared = fit_to_whatsapp_square(resp.content)
+            content_type = resp.headers.get("Content-Type", "")
+            content_len = len(resp.content)
+            print(f"[resize-banners] fetched {banner_url} — "
+                  f"content-type={content_type!r} bytes={content_len}")
+
+            if "video" in content_type:
+                print(f"[resize-banners] SKIP (bannerUrl is a video, not an image): {doc.get('name', doc['_id'])}")
+                results["failed"].append({
+                    "id": str(doc["_id"]),
+                    "error": f"bannerUrl points to a video ({content_type}), not an image"
+                })
+                continue
+
+            if content_len < 100:
+                print(f"[resize-banners] SKIP (empty/near-empty response, first 200 bytes: {resp.content[:200]!r})")
+                results["failed"].append({
+                    "id": str(doc["_id"]),
+                    "error": f"downloaded {content_len} bytes — likely not a real image"
+                })
+                continue
+
+            squared = fit_to_whatsapp_square(resp.content)c
 
             folder = "projects" if doc.get("kind") == "project" else "inventory"
             new_url, new_object_path = upload_media_to_supabase(
