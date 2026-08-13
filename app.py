@@ -370,70 +370,64 @@ def api_backfill_date_obj():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# NEW: ONE-TIME, browser-runnable migration. Re-fits every EXISTING
-# project/inventory banner into the new 1080x1080 WhatsApp square
-# (no cropping — same fit_to_whatsapp_square() logic new banners use).
-# Just open this URL in your browser while logged in as admin:
-#   https://your-domain/api/admin/resize-banners-to-square
+# NEW: ONE-TIME migration, run from the terminal (docker exec) instead of
+# a browser route — no session/auth needed since it's only reachable by
+# whoever has shell access to the container. Re-fits every EXISTING
+# project/inventory banner into the 1080x1080 WhatsApp square (no
+# cropping — same fit_to_whatsapp_square() logic new banners use).
 # Safe to re-run — docs already fixed are flagged "squareFitted": True
 # and get skipped on the next run.
-@app.route("/api/admin/resize-banners-to-square", methods=["GET"])
-def resize_existing_banners_to_square():
-    if session.get("role") != "admin":
-        return jsonify({"success": False, "message": "Admin only — log in as admin first"}), 403
-
+def run_resize_banners_to_square():
     results = {"scanned": 0, "resized": 0, "skipped_no_banner": 0, "failed": []}
 
-    try:
-        docs = list(projects_collection.find({"squareFitted": {"$ne": True}}))
-        results["scanned"] = len(docs)
+    docs = list(projects_collection.find({"squareFitted": {"$ne": True}}))
+    results["scanned"] = len(docs)
+    print(f"[resize-banners] {len(docs)} doc(s) to check...")
 
-        for doc in docs:
-            banner_url = doc.get("bannerUrl") or doc.get("img")
-            if not banner_url:
-                results["skipped_no_banner"] += 1
-                continue
+    for doc in docs:
+        banner_url = doc.get("bannerUrl") or doc.get("img")
+        if not banner_url:
+            results["skipped_no_banner"] += 1
+            continue
 
-            try:
-                resp = requests.get(banner_url, timeout=30)
-                resp.raise_for_status()
+        try:
+            resp = requests.get(banner_url, timeout=30)
+            resp.raise_for_status()
 
-                squared = fit_to_whatsapp_square(resp.content)
+            squared = fit_to_whatsapp_square(resp.content)
 
-                folder = "projects" if doc.get("kind") == "project" else "inventory"
-                new_url, new_object_path = upload_media_to_supabase(
-                    squared, folder=folder, resource_type="image", ext="jpg"
-                )
+            folder = "projects" if doc.get("kind") == "project" else "inventory"
+            new_url, new_object_path = upload_media_to_supabase(
+                squared, folder=folder, resource_type="image", ext="jpg"
+            )
 
-                update_fields = {"bannerUrl": new_url, "squareFitted": True}
+            update_fields = {"bannerUrl": new_url, "squareFitted": True}
 
-                # Keep img / mediaUrls[0] in sync if they pointed at the same banner
-                if doc.get("img") == banner_url:
-                    update_fields["img"] = new_url
-                media_urls = doc.get("mediaUrls") or []
-                if media_urls and media_urls[0] == banner_url:
-                    media_urls[0] = new_url
-                    update_fields["mediaUrls"] = media_urls
+            # Keep img / mediaUrls[0] in sync if they pointed at the same banner
+            if doc.get("img") == banner_url:
+                update_fields["img"] = new_url
+            media_urls = doc.get("mediaUrls") or []
+            if media_urls and media_urls[0] == banner_url:
+                media_urls[0] = new_url
+                update_fields["mediaUrls"] = media_urls
 
-                projects_collection.update_one({"_id": doc["_id"]}, {"$set": update_fields})
-                # NOTE: the old (pre-square) banner object is intentionally left
-                # in Supabase Storage rather than auto-deleted — we don't have
-                # a reliably-tracked object path for bannerUrl on old docs, and
-                # a wrong delete would be irreversible. Clean those up manually
-                # from the Supabase dashboard if you want to reclaim space.
-                results["resized"] += 1
+            projects_collection.update_one({"_id": doc["_id"]}, {"$set": update_fields})
+            # NOTE: the old (pre-square) banner object is intentionally left
+            # in Supabase Storage rather than auto-deleted — we don't have
+            # a reliably-tracked object path for bannerUrl on old docs, and
+            # a wrong delete would be irreversible. Clean those up manually
+            # from the Supabase dashboard if you want to reclaim space.
+            results["resized"] += 1
+            print(f"[resize-banners] OK: {doc.get('name', doc['_id'])}")
 
-            except Exception as doc_err:
-                results["failed"].append({"id": str(doc["_id"]), "error": str(doc_err)})
-                continue
+        except Exception as doc_err:
+            results["failed"].append({"id": str(doc["_id"]), "error": str(doc_err)})
+            print(f"[resize-banners] FAILED: {doc.get('name', doc['_id'])} — {doc_err}")
+            continue
 
-        invalidate_cache("inventory_dashboard_stats")
-        return jsonify({"success": True, **results}), 200
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "message": str(e)}), 500
+    invalidate_cache("inventory_dashboard_stats")
+    print(f"[resize-banners] DONE — {results}")
+    return results
 
 
 def get_date_range(period):
@@ -5709,5 +5703,12 @@ def import_leads_page():
     return render_template("import_leads.html")
 
 if __name__ == "__main__":
+    import sys
     #remove_assign_to_from_leads()
+
+    if len(sys.argv) > 1 and sys.argv[1] == "resize-banners":
+        # Terminal-only migration — see run_resize_banners_to_square() above.
+        run_resize_banners_to_square()
+        sys.exit(0)
+
     app.run(host="0.0.0.0", port=8000)
