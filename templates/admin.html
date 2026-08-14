@@ -1491,6 +1491,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           <button class="filter-chip" data-convfilter="7days">Last 7 Days</button>
           <button class="filter-chip" data-convfilter="30days">Last 30 Days</button>
         </div>
+        <div class="filter-chips" id="addonFilterChips">
+          <button class="filter-chip active" data-addonfilter="none">All Leads</button>
+          <button class="filter-chip" data-addonfilter="addons">Add Ons</button>
+        </div>
         <div class="filter-actions">
           <button class="action-btn-sm" id="toggleSelectBtn">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="9 12 11 14 15 10"/></svg>
@@ -1950,6 +1954,7 @@ let currentPage = 1;
 const PAGE_SIZE = 25;
 let currentDateFilter = 'none';
 let currentConvFilter = 'none';
+let currentAddonFilter = 'none';
 
 // Mirrors the backend's parse_lead_date (DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
 function parseLeadDateClient(dateStr){
@@ -2009,6 +2014,17 @@ function matchesConversationFilter(lead){
   if(currentConvFilter === '3days') return diffDays <= 3;
   if(currentConvFilter === '7days') return diffDays <= 7;
   if(currentConvFilter === '30days') return diffDays <= 30;
+  return true;
+}
+
+// Only true when the lead has an 'adon_leads' field AND its value is
+// strictly 0. Leads missing the field entirely are excluded (not shown)
+// whenever this filter is active.
+function matchesAddonFilter(lead){
+  if(currentAddonFilter === 'none') return true;
+  if(currentAddonFilter === 'addons'){
+    return Object.prototype.hasOwnProperty.call(lead, 'adon_leads') && lead.adon_leads === 0;
+  }
   return true;
 }
 
@@ -2505,6 +2521,7 @@ function applyFilter(keepPage){
     if(currentFilter!=='all' && t!==currentFilter) return false;
     if(!matchesDateFilter(l)) return false;
     if(!matchesConversationFilter(l)) return false;
+    if(!matchesAddonFilter(l)) return false;
     if(!q) return true;
     const name = (l['Lead Name']||l.Name||'').toLowerCase();
     const phone = fmtPhone(l['Phone Number']).toLowerCase();
@@ -2888,6 +2905,14 @@ document.querySelectorAll('.filter-chip[data-convfilter]').forEach(chip=>{
     document.querySelectorAll('.filter-chip[data-convfilter]').forEach(c=>c.classList.remove('active'));
     this.classList.add('active');
     currentConvFilter = this.dataset.convfilter;
+    applyFilter();
+  });
+});
+document.querySelectorAll('.filter-chip[data-addonfilter]').forEach(chip=>{
+  chip.addEventListener('click',function(){
+    document.querySelectorAll('.filter-chip[data-addonfilter]').forEach(c=>c.classList.remove('active'));
+    this.classList.add('active');
+    currentAddonFilter = this.dataset.addonfilter;
     applyFilter();
   });
 });
