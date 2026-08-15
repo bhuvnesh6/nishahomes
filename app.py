@@ -1968,12 +1968,15 @@ def assign_lead():
     try:
         data = request.json or {}
 
-        collection_name = data.get("collection")
-        lead_id = data.get("leadId")            # Mongo _id of the lead doc
+        collection_name = str(data.get("collection") or "").strip()
+        lead_id = str(data.get("leadId") or "").strip()            # Mongo _id of the lead doc
         assign_to_number = data.get("assignToNumber")  # employee number, NOT name
 
         if not collection_name or not lead_id or not assign_to_number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
+
+        if collection_name not in ("Leads", "RentalLeads", "sellingLeads", "agentLeads"):
+            return jsonify({"success": False, "message": f"Invalid collection: {collection_name}"}), 400
 
         try:
             assign_to_number = int(str(assign_to_number).strip())
@@ -2137,12 +2140,15 @@ def bulk_assign_leads():
     try:
         data = request.json or {}
 
-        collection_name = data.get("collection")
-        lead_ids = data.get("leadIds", [])
+        collection_name = str(data.get("collection") or "").strip()
+        lead_ids = [str(i).strip() for i in (data.get("leadIds") or []) if str(i).strip()]
         assign_to_number = data.get("assignToNumber")
 
         if not collection_name or not lead_ids or not assign_to_number:
             return jsonify({"success": False, "message": "Missing fields"}), 400
+
+        if collection_name not in ("Leads", "RentalLeads", "sellingLeads", "agentLeads"):
+            return jsonify({"success": False, "message": f"Invalid collection: {collection_name}"}), 400
 
         try:
             assign_to_number = int(str(assign_to_number).strip())
