@@ -1963,6 +1963,49 @@ def normalize_number(number):
     return number
 
 
+def normalize_phone_91(raw):
+    """
+    Normalizes ANY phone representation into a clean bare digit-only
+    '91XXXXXXXXXX' string — no '+', no spaces, no leading zeros, and
+    always exactly ONE '91' country-code prefix.
+
+    This is stricter than normalize_number() alone, which just strips
+    non-digit characters and leaves the '91' prefixing to a naive
+    startswith() check at each call site — that's what was letting
+    malformed numbers (leading zeros, missing prefix, accidental double
+    prefix) slip into DAI/endData with the wrong shape.
+    """
+    digits = re.sub(r"\D", "", str(raw or ""))
+    digits = digits.lstrip("0")  # drop stray leading zeros e.g. "0919876543210"
+
+    if not digits:
+        return ""
+
+    # Bare 10-digit Indian mobile number -> add the prefix
+    if len(digits) == 10:
+        return "91" + digits
+
+    # Already exactly "91" + 10 digits -> good as-is
+    if len(digits) == 12 and digits.startswith("91"):
+        return digits
+
+    # Accidental double prefix e.g. "9191XXXXXXXXXX" -> collapse to one
+    if len(digits) == 14 and digits.startswith("9191"):
+        return digits[2:]
+
+    # Anything longer than 12 that still starts with 91 -> keep the last
+    # 12 digits (guards against extra junk prefixed by upstream sources)
+    if len(digits) > 12 and digits.startswith("91"):
+        return digits[-12:]
+
+    # Fallback: doesn't cleanly fit the 10/12-digit shape — prefix as-is
+    # rather than silently dropping the number.
+    if not digits.startswith("91"):
+        return "91" + digits
+
+    return digits
+
+
 @app.route("/api/assign-lead", methods=["POST"])
 def assign_lead():
     try:
@@ -5054,9 +5097,7 @@ def toggle_ai():
                 "message": "AI re-enabled for this lead"
             })
         else:
-            normalized_phone = normalize_number(phone)
-            if normalized_phone and not normalized_phone.startswith("91"):
-                normalized_phone = "91" + normalized_phone
+            normalized_phone = normalize_phone_91(phone)
 
             doc = {
                 "leadId": lead_id,
@@ -5076,7 +5117,6 @@ def toggle_ai():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
-
 @app.route("/api/dai-list", methods=["GET"])
 def get_dai_list():
     """Returns every lead currently DAI-flagged (AI disabled)."""
@@ -5086,6 +5126,28 @@ def get_dai_list():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/api/admin/fix-dai-numbers", methods=["POST"])
+def fix_dai_numbers():
+    """ONE-TIME cleanup: re-normalizes every existing DAI doc's 'Phone
+    Number' field to the clean '91XXXXXXXXXX' shape using
+    normalize_phone_91(). Safe to re-run — a doc already in the correct
+    shape is simply left unchanged (matched_count 0)."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    try:
+        fixed = 0
+        for doc in dai_collection.find():
+            old_phone = doc.get("Phone Number", "")
+            new_phone = normalize_phone_91(old_phone)
+            if new_phone and new_phone != old_phone:
+                dai_collection.update_one({"_id": doc["_id"]}, {"$set": {"Phone Number": new_phone}})
+                fixed += 1
+        return jsonify({"success": True, "fixed": fixed}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 def remove_assign_to_from_leads():
