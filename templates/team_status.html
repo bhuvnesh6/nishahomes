@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2D3142">
+<title>Team Status · Nisha Homes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:       #2D3142;
+  --primary-deep:  #1e2235;
+  --primary-mid:   #3a3f56;
+  --primary-light: #4a5070;
+  --accent:        #EF8354;
+  --accent-light:  #FFA07A;
+  --accent-glow:   rgba(239,131,84,0.22);
+  --bg:            #FAF9F6;
+  --text:          #2D3142;
+  --text-soft:     #6B7280;
+  --text-faint:    rgba(255,255,255,0.45);
+  --border:        #E5E7EB;
+  --border-dark:   rgba(255,255,255,0.10);
+  --success:       #10B981;
+  --warm:          #F59E0B;
+  --hot:           #EF4444;
+  --info:          #3B82F6;
+  --cold:          #38BDF8;
+  --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
+  --sh:            0 6px 24px rgba(45,49,66,0.10);
+  --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
+  --sidebar-w:     240px;
+  --topbar-h:      60px;
+  --radius:        14px;
+  --radius-sm:     8px;
+  --radius-pill:   100px;
+  --transition:    all 0.28s cubic-bezier(0.22,1,0.36,1);
+
+  --tint-accent:   rgba(239,131,84,0.10);
+  --tint-success:  rgba(16,185,129,0.10);
+  --tint-warm:     rgba(245,158,11,0.12);
+  --tint-hot:      rgba(239,68,68,0.10);
+  --tint-cold:     rgba(56,189,248,0.12);
+  --tint-info:     rgba(59,130,246,0.10);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+
+button, select, input { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* ---------------- TOPBAR ---------------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  height: var(--topbar-h);
+  padding: 0 20px;
+  padding-top: env(safe-area-inset-top);
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  background: var(--primary);
+  color: #fff;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: var(--sh);
+}
+.topbar .back-btn {
+  width: 36px; height: 36px; min-width: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.08);
+  transition: var(--transition);
+}
+.topbar .back-btn:active { background: rgba(255,255,255,0.18); transform: scale(0.94); }
+.topbar .titles { flex: 1; min-width: 0; }
+.topbar .titles h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; }
+.topbar .titles p { font-size: 11.5px; color: var(--text-faint); margin-top: 1px; }
+.topbar .me {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border-dark);
+  padding: 6px 12px 6px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.topbar .me .avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 11px; color: #fff;
+}
+.topbar .me .role-tag {
+  text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.6px;
+  color: var(--accent-light); font-weight: 700;
+}
+
+/* ---------------- LAYOUT ---------------- */
+.page { max-width: 1120px; margin: 0 auto; padding: 20px 20px 60px; }
+
+/* ---------------- FILTER CARD ---------------- */
+.filters-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--sh-sm);
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.filter-block { flex: 1; min-width: 220px; }
+.filter-block label {
+  display: block; font-size: 11.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-soft); margin-bottom: 7px;
+}
+.select-wrap { position: relative; }
+.select-wrap svg.chev {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--text-soft);
+}
+select#memberSelect {
+  width: 100%; appearance: none; -webkit-appearance: none;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 36px 11px 13px;
+  font-size: 15px; font-weight: 600; color: var(--text);
+  transition: var(--transition);
+}
+select#memberSelect:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+.refresh-btn {
+  width: 42px; height: 42px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--primary); transition: var(--transition); flex-shrink: 0;
+}
+.refresh-btn:active { transform: rotate(180deg); background: var(--tint-accent); border-color: var(--accent); }
+.refresh-btn.spinning svg { animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.period-row {
+  display: flex; gap: 8px; margin-top: 14px;
+  overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.period-row::-webkit-scrollbar { display: none; }
+.period-pill {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  font-size: 13px; font-weight: 600; color: var(--text-soft);
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.period-pill:active { transform: scale(0.96); }
+.period-pill.active {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+  box-shadow: var(--sh-sm);
+}
+
+/* ---------------- EMPTY / LOADING ---------------- */
+.empty-state, .loading-state {
+  text-align: center; padding: 70px 20px;
+  color: var(--text-soft);
+}
+.empty-state .icon-wrap, .loading-state .icon-wrap {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--tint-accent); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.empty-state h3 { color: var(--text); font-size: 16px; margin-bottom: 6px; }
+.empty-state p { font-size: 13.5px; max-width: 280px; margin: 0 auto; }
+.hidden { display: none !important; }
+
+.skeleton-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.skeleton-card { height: 108px; border-radius: var(--radius); background: linear-gradient(90deg, #EFEDE7 25%, #F6F5F1 37%, #EFEDE7 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+@keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+/* ---------------- CONTENT HEADER ---------------- */
+.content-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.content-head h2 { font-size: 15px; font-weight: 700; }
+.content-head .sub {
+  font-size: 12.5px; color: var(--text-soft);
+  display: flex; align-items: center; gap: 6px;
+}
+.content-head .sub b { color: var(--primary); font-weight: 700; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; }
+.status-dot.inactive { background: var(--text-soft); }
+
+/* ---------------- KPI GRID ---------------- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.kpi-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 16px 15px;
+  box-shadow: var(--sh-sm);
+  transition: var(--transition);
+  overflow: hidden;
+}
+.kpi-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--card-accent, var(--accent));
+}
+.kpi-card.clickable { cursor: pointer; }
+.kpi-card.clickable:active { transform: scale(0.97); box-shadow: var(--sh-sm); }
+.kpi-card .kpi-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.kpi-card .kpi-icon {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: var(--card-tint, var(--tint-accent));
+  color: var(--card-accent, var(--accent));
+  display: flex; align-items: center; justify-content: center;
+}
+.kpi-card .kpi-arrow { color: var(--text-soft); opacity: 0.55; }
+.kpi-card .kpi-value {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 26px; font-weight: 800; color: var(--primary); line-height: 1;
+  transition: opacity 0.25s ease;
+}
+.kpi-card .kpi-label {
+  font-size: 12.5px; font-weight: 600; color: var(--text-soft); margin-top: 6px;
+}
+.kpi-card .kpi-sub { font-size: 11px; color: var(--text-soft); opacity: 0.85; margin-top: 3px; }
+
+/* ---------------- PANELS ---------------- */
+.split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--sh-sm); overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 17px; border-bottom: 1px solid var(--border);
+}
+.panel-head h3 { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.panel-head .view-all {
+  font-size: 12px; font-weight: 700; color: var(--accent);
+  display: flex; align-items: center; gap: 3px;
+}
+.panel-chips { display: flex; gap: 8px; padding: 13px 17px 0; }
+.chip {
+  font-size: 11.5px; font-weight: 700; padding: 5px 11px; border-radius: var(--radius-pill);
+}
+.chip.approved { background: var(--tint-success); color: var(--success); }
+.chip.pending  { background: var(--tint-warm); color: #B45309; }
+.panel-body { padding: 8px 8px 12px; }
+
+.mini-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 9px; border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+.mini-row:active { background: var(--bg); }
+.mini-row .dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--success);
+}
+.mini-row .dot.pending { background: var(--warm); }
+.mini-row .body { flex: 1; min-width: 0; }
+.mini-row .name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-row .meta { font-size: 11.5px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-row .date { font-size: 11px; color: var(--text-soft); flex-shrink: 0; }
+.panel-empty { text-align: center; padding: 26px 12px; color: var(--text-soft); font-size: 12.5px; }
+
+/* ---------------- MODAL ---------------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(30,34,53,0.55);
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal {
+  width: 100%; max-width: 520px;
+  max-height: 82vh;
+  background: var(--bg);
+  border-radius: 22px 22px 0 0;
+  box-shadow: var(--sh-lg);
+  display: flex; flex-direction: column;
+  transform: translateY(24px);
+  transition: transform 0.3s cubic-bezier(0.22,1,0.36,1);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal-grip { width: 40px; height: 4px; border-radius: 3px; background: var(--border); margin: 10px auto 2px; flex-shrink: 0; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.modal-head h3 { font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.modal-head .count-badge {
+  background: var(--tint-accent); color: var(--accent);
+  font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill);
+}
+.modal-close {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; color: var(--text-soft);
+}
+.modal-close:active { background: var(--border); }
+.modal-tabs { display: flex; gap: 8px; padding: 12px 18px 0; flex-shrink: 0; }
+.modal-tab {
+  padding: 7px 14px; border-radius: var(--radius-pill); border: 1.5px solid var(--border);
+  background: #fff; font-size: 12.5px; font-weight: 700; color: var(--text-soft);
+}
+.modal-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.modal-body { overflow-y: auto; padding: 14px 12px 22px; flex: 1; -webkit-overflow-scrolling: touch; }
+
+.lead-card {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 13px 14px; margin: 0 6px 10px;
+  box-shadow: var(--sh-sm);
+}
+.lead-card .lead-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.lead-card .lead-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.lead-card .badge {
+  font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+  padding: 3px 9px; border-radius: var(--radius-pill); flex-shrink: 0;
+}
+.badge.hot  { background: var(--tint-hot);  color: var(--hot); }
+.badge.warm { background: var(--tint-warm); color: #B45309; }
+.badge.cold { background: var(--tint-cold); color: #0284C7; }
+.badge.neutral { background: var(--tint-info); color: var(--info); }
+.badge.approved { background: var(--tint-success); color: var(--success); }
+.badge.pending { background: var(--tint-warm); color: #B45309; }
+
+.lead-card .lead-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-soft); margin-bottom: 9px; }
+.lead-card .lead-meta span b { color: var(--text); font-weight: 600; }
+.lead-card .lead-remarks {
+  font-size: 12.5px; color: var(--text-soft); background: var(--bg);
+  border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px;
+  font-style: italic; line-height: 1.4;
+}
+.lead-card .lead-actions { display: flex; gap: 8px; }
+.call-link {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
+  background: var(--primary); color: #fff; font-size: 12.5px; font-weight: 700;
+  padding: 9px; border-radius: var(--radius-sm);
+}
+.call-link:active { background: var(--primary-deep); }
+.copy-link {
+  width: 40px; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text-soft);
+}
+.copy-link:active { background: var(--bg); }
+
+.modal-empty { text-align: center; padding: 50px 20px; color: var(--text-soft); }
+.modal-empty svg { color: var(--border); margin-bottom: 12px; }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--primary); color: #fff; font-size: 13px; font-weight: 600;
+  padding: 11px 20px; border-radius: var(--radius-pill); box-shadow: var(--sh-lg);
+  opacity: 0; pointer-events: none; transition: var(--transition); z-index: 200;
+  padding-bottom: calc(11px + env(safe-area-inset-bottom));
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------------- RESPONSIVE ---------------- */
+@media (max-width: 860px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .split-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .page { padding: 16px 14px 50px; }
+  .topbar { padding: 0 14px; }
+  .topbar .titles p { display: none; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi-card { padding: 14px 13px; }
+  .kpi-card .kpi-value { font-size: 22px; }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .filter-block { min-width: 0; }
+  .refresh-btn { align-self: flex-end; }
+  .skeleton-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 380px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/admin" class="back-btn" aria-label="Back to dashboard">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  </a>
+  <div class="titles">
+    <h1>Team Status</h1>
+    <p>Calls · Follow-ups · Lead intent · Listings</p>
+  </div>
+  <div class="me">
+    <div class="avatar">{{ (employee_name or "U")[0]|upper }}</div>
+    <div>
+      <div>{{ employee_name or "User" }}</div>
+      <div class="role-tag">{{ role or "" }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- FILTERS -->
+  <div class="filters-card">
+    <div class="filter-row">
+      <div class="filter-block">
+        <label for="memberSelect">Team member</label>
+        <div class="select-wrap">
+          <select id="memberSelect">
+            <option value="">Select a team member…</option>
+          </select>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+      </div>
+      <button class="refresh-btn" id="refreshBtn" aria-label="Refresh">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      </button>
+    </div>
+
+    <div class="period-row" id="periodRow">
+      <button class="period-pill" data-period="today">Today</button>
+      <button class="period-pill" data-period="this_week">This Week</button>
+      <button class="period-pill" data-period="this_month">This Month</button>
+      <button class="period-pill" data-period="last_month">Last Month</button>
+      <button class="period-pill" data-period="last_3_months">Last 3 Months</button>
+      <button class="period-pill" data-period="lifetime">Lifetime</button>
+    </div>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div class="empty-state" id="emptyState">
+    <div class="icon-wrap">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 11l2 2 4-4"/><path d="M1 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
+    </div>
+    <h3>Pick a team member</h3>
+    <p>Select someone from the dropdown above to see their calls, follow-ups, lead intent and listings added.</p>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-state hidden" id="loadingState">
+    <div class="skeleton-grid">
+      <div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>
+      <div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content hidden" id="content">
+    <div class="content-head">
+      <h2>Performance overview</h2>
+      <div class="sub">
+        <span class="status-dot" id="activeDot"></span>
+        <b id="selName">—</b> · <span id="selRole">—</span> · <span id="periodLabel">—</span>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card" style="--card-accent: var(--accent); --card-tint: var(--tint-accent)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpiCalls">0</div>
+        <div class="kpi-label">Calls Made</div>
+        <div class="kpi-sub" id="kpiCallsSub">0 unique leads</div>
+      </div>
+
+      <div class="kpi-card clickable" data-modal="followups" style="--card-accent: var(--success); --card-tint: var(--tint-success)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M9 16l2 2 4-4"/></svg>
+          </div>
+          <svg class="kpi-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiFollowups">0</div>
+        <div class="kpi-label">Follow-ups</div>
+        <div class="kpi-sub">Tap to view list</div>
+      </div>
+
+      <div class="kpi-card clickable" data-modal="hot" style="--card-accent: var(--hot); --card-tint: var(--tint-hot)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/></svg>
+          </div>
+          <svg class="kpi-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiHot">0</div>
+        <div class="kpi-label">Hot Leads</div>
+        <div class="kpi-sub">Tap to view list</div>
+      </div>
+
+      <div class="kpi-card clickable" data-modal="warm" style="--card-accent: var(--warm); --card-tint: var(--tint-warm)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          </div>
+          <svg class="kpi-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiWarm">0</div>
+        <div class="kpi-label">Warm Leads</div>
+        <div class="kpi-sub">Tap to view list</div>
+      </div>
+
+      <div class="kpi-card clickable" data-modal="cold" style="--card-accent: var(--cold); --card-tint: var(--tint-cold)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4.93 6.34l14.14 11.32M19.07 6.34L4.93 17.66M2 12h20"/></svg>
+          </div>
+          <svg class="kpi-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiCold">0</div>
+        <div class="kpi-label">Cold Leads</div>
+        <div class="kpi-sub">Tap to view list</div>
+      </div>
+
+      <div class="kpi-card clickable" data-modal="listings" style="--card-accent: var(--info); --card-tint: var(--tint-info)">
+        <div class="kpi-top">
+          <div class="kpi-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9v.01M9 13v.01M9 17v.01M15 9v.01M15 13v.01M15 17v.01"/></svg>
+          </div>
+          <svg class="kpi-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiListings">0</div>
+        <div class="kpi-label">Listings Added</div>
+        <div class="kpi-sub" id="kpiListingsSub">0 inventory · 0 projects</div>
+      </div>
+    </div>
+
+    <div class="split-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+            Inventory Added
+          </h3>
+          <span class="view-all" data-modal="listings" data-tab="inventory">View all
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </div>
+        <div class="panel-chips">
+          <span class="chip approved"><span id="invApprovedCount">0</span> Approved</span>
+          <span class="chip pending"><span id="invPendingCount">0</span> Pending</span>
+        </div>
+        <div class="panel-body" id="inventoryMiniList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h8M8 10h8"/></svg>
+            Projects Added
+          </h3>
+          <span class="view-all" data-modal="listings" data-tab="projects">View all
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </div>
+        <div class="panel-chips">
+          <span class="chip approved"><span id="projApprovedCount">0</span> Approved</span>
+          <span class="chip pending"><span id="projPendingCount">0</span> Pending</span>
+        </div>
+        <div class="panel-body" id="projectMiniList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-grip"></div>
+    <div class="modal-head">
+      <h3 id="modalTitle">
+        <span id="modalIconWrap"></span>
+        <span id="modalTitleText">List</span>
+        <span class="count-badge" id="modalCount">0</span>
+      </h3>
+      <button class="modal-close" id="modalCloseBtn" aria-label="Close">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-tabs hidden" id="modalTabs">
+      <button class="modal-tab" data-tab="inventory">Inventory</button>
+      <button class="modal-tab" data-tab="projects">Projects</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+const state = { members: [], number: null, period: 'today', data: null, listingsTab: 'inventory' };
+
+const $ = (sel, ctx = document) => ctx.querySelector(sel);
+const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+
+const PERIOD_LABELS = {
+  today: 'Today', this_week: 'This Week', this_month: 'This Month',
+  last_month: 'Last Month', last_3_months: 'Last 3 Months', lifetime: 'Lifetime'
+};
+
+function escapeHtml(str) {
+  return String(str ?? '-').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function telHref(number) {
+  const digits = String(number || '').replace(/\D/g, '');
+  return digits ? `tel:+${digits}` : '#';
+}
+
+function showToast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+/* ---------------- INIT ---------------- */
+async function loadMembers() {
+  try {
+    const res = await fetch('/api/team-status/members');
+    const json = await res.json();
+    if (!json.success) return;
+    state.members = json.data;
+
+    const sel = $('#memberSelect');
+    sel.innerHTML = '<option value="">Select a team member…</option>';
+    json.data.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.number;
+      opt.textContent = `${m.name} · ${m.role.toUpperCase()}${m.active === false ? ' (Inactive)' : ''}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load members', e);
+  }
+}
+
+function setActivePeriodPill() {
+  $$('.period-pill').forEach(btn => btn.classList.toggle('active', btn.dataset.period === state.period));
+}
+
+/* ---------------- LOAD OVERVIEW ---------------- */
+async function loadOverview() {
+  if (!state.number) {
+    $('#emptyState').classList.remove('hidden');
+    $('#content').classList.add('hidden');
+    $('#loadingState').classList.add('hidden');
+    return;
+  }
+
+  $('#emptyState').classList.add('hidden');
+  $('#content').classList.add('hidden');
+  $('#loadingState').classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/api/team-status/overview?number=${encodeURIComponent(state.number)}&period=${encodeURIComponent(state.period)}`);
+    const json = await res.json();
+    if (!json.success) {
+      showToast(json.message || 'Could not load data');
+      $('#loadingState').classList.add('hidden');
+      $('#emptyState').classList.remove('hidden');
+      return;
+    }
+    state.data = json;
+    render(json);
+  } catch (e) {
+    console.error(e);
+    showToast('Network error — try again');
+    $('#loadingState').classList.add('hidden');
+    $('#emptyState').classList.remove('hidden');
+  }
+}
+
+function render(data) {
+  $('#loadingState').classList.add('hidden');
+  $('#content').classList.remove('hidden');
+
+  $('#selName').textContent = data.employee.name;
+  $('#selRole').textContent = data.employee.role.toUpperCase();
+  $('#periodLabel').textContent = PERIOD_LABELS[data.period] || data.period;
+  $('#activeDot').classList.toggle('inactive', data.employee.active === false);
+
+  $('#kpiCalls').textContent = data.calls.totalCalls;
+  $('#kpiCallsSub').textContent = `${data.calls.uniqueLeadsCalled} unique lead${data.calls.uniqueLeadsCalled === 1 ? '' : 's'}`;
+  $('#kpiFollowups').textContent = data.followups.count;
+  $('#kpiHot').textContent = data.intent.hotCount;
+  $('#kpiWarm').textContent = data.intent.warmCount;
+  $('#kpiCold').textContent = data.intent.coldCount;
+  $('#kpiListings').textContent = data.inventory.totalAdded;
+  $('#kpiListingsSub').textContent = `${data.inventory.inventoryCount} inventory · ${data.inventory.projectCount} projects`;
+
+  $('#invApprovedCount').textContent = data.inventory.inventoryApproved;
+  $('#invPendingCount').textContent = data.inventory.inventoryPending;
+  $('#projApprovedCount').textContent = data.inventory.projectApproved;
+  $('#projPendingCount').textContent = data.inventory.projectPending;
+
+  renderMiniList('#inventoryMiniList', data.inventory.inventoryList, 'inventory');
+  renderMiniList('#projectMiniList', data.inventory.projectList, 'project');
+}
+
+function renderMiniList(selector, list, kind) {
+  const el = $(selector);
+  if (!list || !list.length) {
+    el.innerHTML = `<div class="panel-empty">No ${kind} added yet for this period.</div>`;
+    return;
+  }
+  const rows = list.slice(0, 4).map(item => `
+    <div class="mini-row">
+      <span class="dot ${item.status === 'approved' ? '' : 'pending'}"></span>
+      <div class="body">
+        <div class="name">${escapeHtml(item.name)}</div>
+        <div class="meta">${escapeHtml(item.location)} · ${escapeHtml(item.propertyType)}</div>
+      </div>
+      <div class="date">${escapeHtml(item.createdAt).split(' . ')[1] || ''}</div>
+    </div>
+  `).join('');
+  const more = list.length > 4 ? `<div class="panel-empty">+${list.length - 4} more — tap "View all"</div>` : '';
+  el.innerHTML = rows + more;
+}
+
+/* ---------------- MODAL ---------------- */
+const MODAL_META = {
+  followups: { title: 'Follow-ups', icon: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18M9 16l2 2 4-4', color: 'var(--success)' },
+  hot:       { title: 'Hot Leads',  icon: 'M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z', color: 'var(--hot)' },
+  warm:      { title: 'Warm Leads', icon: 'M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41', color: 'var(--warm)' },
+  cold:      { title: 'Cold Leads', icon: 'M12 2v20M4.93 6.34l14.14 11.32M19.07 6.34L4.93 17.66M2 12h20', color: 'var(--cold)' },
+  listings:  { title: 'Listings Added', icon: 'M3 21h18M5 21V7l7-4 7 4v14', color: 'var(--info)' }
+};
+
+function openModal(type, tab) {
+  if (!state.data) return;
+  const meta = MODAL_META[type];
+  $('#modalTitleText').textContent = meta.title;
+  $('#modalIconWrap').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${meta.color}" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:2px"><path d="${meta.icon}"/></svg>`;
+
+  const tabsEl = $('#modalTabs');
+  if (type === 'listings') {
+    tabsEl.classList.remove('hidden');
+    state.listingsTab = tab || 'inventory';
+    $$('.modal-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.listingsTab));
+    renderListingsModal();
+  } else {
+    tabsEl.classList.add('hidden');
+    renderLeadsModal(type);
+  }
+
+  $('#modalOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  $('#modalOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function intentBadge(level) {
+  const lvl = (level || '').toLowerCase();
+  if (lvl.includes('high')) return '<span class="badge hot">Hot</span>';
+  if (lvl === 'medium') return '<span class="badge warm">Warm</span>';
+  if (lvl === 'cold') return '<span class="badge cold">Cold</span>';
+  return '<span class="badge neutral">Logged</span>';
+}
+
+function renderLeadsModal(type) {
+  const list = { followups: state.data.followups.list, hot: state.data.intent.hotList,
+                 warm: state.data.intent.warmList, cold: state.data.intent.coldList }[type];
+
+  $('#modalCount').textContent = list.length;
+
+  if (!list.length) {
+    $('#modalBody').innerHTML = emptyModalHtml('No leads in this list for the selected period.');
+    return;
+  }
+
+  $('#modalBody').innerHTML = list.map(l => `
+    <div class="lead-card">
+      <div class="lead-top">
+        <span class="lead-name">${escapeHtml(l.name)}</span>
+        ${intentBadge(l.interestLevel)}
+      </div>
+      <div class="lead-meta">
+        <span>📞 <b>${escapeHtml(l.number)}</b></span>
+        <span>Status: <b>${escapeHtml(l.callStatus)}</b></span>
+        ${l.nextCallDate && l.nextCallDate !== '-' ? `<span>Next call: <b>${escapeHtml(l.nextCallDate)}</b></span>` : ''}
+        ${l.followupTimeline && l.followupTimeline !== '-' ? `<span>Follow-up: <b>${escapeHtml(l.followupTimeline)}</b></span>` : ''}
+      </div>
+      ${l.callerRemarks && l.callerRemarks !== '-' ? `<div class="lead-remarks">“${escapeHtml(l.callerRemarks)}”</div>` : ''}
+      <div class="lead-actions">
+        <a class="call-link" href="${telHref(l.number)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+          Call ${escapeHtml(l.number)}
+        </a>
+        <button class="copy-link" onclick="copyNumber('${l.number}')" aria-label="Copy number">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderListingsModal() {
+  const list = state.listingsTab === 'inventory' ? state.data.inventory.inventoryList : state.data.inventory.projectList;
+  $('#modalCount').textContent = list.length;
+
+  if (!list.length) {
+    $('#modalBody').innerHTML = emptyModalHtml(`No ${state.listingsTab} added for the selected period.`);
+    return;
+  }
+
+  $('#modalBody').innerHTML = list.map(item => `
+    <div class="lead-card">
+      <div class="lead-top">
+        <span class="lead-name">${escapeHtml(item.name)}</span>
+        <span class="badge ${item.status === 'approved' ? 'approved' : 'pending'}">${escapeHtml(item.status)}</span>
+      </div>
+      <div class="lead-meta">
+        <span>📍 <b>${escapeHtml(item.location)}</b></span>
+        <span>🏷️ <b>${escapeHtml(item.propertyType)}</b></span>
+        <span>💰 <b>${escapeHtml(item.budget)}</b></span>
+        <span>🗓️ <b>${escapeHtml(item.createdAt)}</b></span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function emptyModalHtml(msg) {
+  return `<div class="modal-empty">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    <p>${escapeHtml(msg)}</p>
+  </div>`;
+}
+
+function copyNumber(number) {
+  const digits = String(number || '').replace(/\D/g, '');
+  if (!digits) return;
+  navigator.clipboard?.writeText(digits).then(() => showToast('Number copied'))
+    .catch(() => showToast('Could not copy'));
+}
+
+/* ---------------- EVENTS ---------------- */
+document.addEventListener('DOMContentLoaded', () => {
+  loadMembers();
+  setActivePeriodPill();
+
+  $('#memberSelect').addEventListener('change', (e) => {
+    state.number = e.target.value || null;
+    loadOverview();
+  });
+
+  $('#periodRow').addEventListener('click', (e) => {
+    const btn = e.target.closest('.period-pill');
+    if (!btn) return;
+    state.period = btn.dataset.period;
+    setActivePeriodPill();
+    if (state.number) loadOverview();
+  });
+
+  $('#refreshBtn').addEventListener('click', (e) => {
+    e.currentTarget.classList.add('spinning');
+    loadOverview().finally(() => setTimeout(() => e.currentTarget.classList.remove('spinning'), 500));
+  });
+
+  document.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-modal]');
+    if (card) openModal(card.dataset.modal, card.dataset.tab);
+  });
+
+  $('#modalTabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.modal-tab');
+    if (!tab) return;
+    state.listingsTab = tab.dataset.tab;
+    $$('.modal-tab').forEach(b => b.classList.toggle('active', b === tab));
+    renderListingsModal();
+  });
+
+  $('#modalCloseBtn').addEventListener('click', closeModal);
+  $('#modalOverlay').addEventListener('click', (e) => { if (e.target.id === 'modalOverlay') closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+});
+</script>
+</body>
+</html>

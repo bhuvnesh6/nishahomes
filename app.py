@@ -5799,5 +5799,277 @@ if __name__ == "__main__":
         # Terminal-only migration — see run_resize_banners_to_square() above.
         run_resize_banners_to_square()
         sys.exit(0)
+        
+        
+        
+
+# ---------------------------------------------------------------------
+# 1) PERIOD RANGE HELPER
+# Same shape as get_dashboard_period_range(), plus "this_week".
+# Returns (start_datetime, end_datetime) or (None, None) for "lifetime".
+# ---------------------------------------------------------------------
+def get_team_status_period_range(period):
+    now = datetime.utcnow()
+ 
+    if period == "today":
+        start = datetime(now.year, now.month, now.day)
+        return start, now
+ 
+    if period == "this_week":
+        start_date = now - timedelta(days=now.weekday())  # Monday
+        start = datetime(start_date.year, start_date.month, start_date.day)
+        return start, now
+ 
+    if period == "this_month":
+        start = datetime(now.year, now.month, 1)
+        return start, now
+ 
+    if period == "last_month":
+        first_of_this_month = datetime(now.year, now.month, 1)
+        last_month_end = first_of_this_month - timedelta(seconds=1)
+        start = datetime(last_month_end.year, last_month_end.month, 1)
+        return start, last_month_end
+ 
+    if period == "last_3_months":
+        month = now.month - 2
+        year = now.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        start = datetime(year, month, 1)
+        return start, now
+ 
+    return None, None  # "lifetime"
+ 
+ 
+# ---------------------------------------------------------------------
+# 2) PAGE ROUTE
+# ---------------------------------------------------------------------
+@app.route("/team-status")
+def team_status_page():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return redirect("/")
+ 
+    return render_template(
+        "team_status.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
+    )
+ 
+ 
+# ---------------------------------------------------------------------
+# 3) MEMBERS LIST — powers the <select> dropdown
+# ---------------------------------------------------------------------
+@app.route("/api/team-status/members", methods=["GET"])
+def team_status_members():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    try:
+        members = list(db["teamAssign"].find(
+            {"roll": {"$in": ["admin", "emp"]}},
+            {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1}
+        ).sort("Employee name", 1))
+ 
+        data = [{
+            "name": m.get("Employee name", "Unknown"),
+            "number": m.get("Employee number"),
+            "role": (m.get("roll") or "").strip().lower(),
+            "active": m.get("Active", True)
+        } for m in members if m.get("Employee number") is not None]
+ 
+        return jsonify({"success": True, "data": data}), 200
+ 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+ 
+# ---------------------------------------------------------------------
+# 4) OVERVIEW — the main stats endpoint
+# GET /api/team-status/overview?number=<Employee number>&period=<today|this_week|this_month|last_month|last_3_months|lifetime>
+# ---------------------------------------------------------------------
+@app.route("/api/team-status/overview", methods=["GET"])
+def team_status_overview():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    try:
+        raw_number = request.args.get("number")
+        period = request.args.get("period", "today")
+ 
+        if not raw_number:
+            return jsonify({"success": False, "message": "number is required"}), 400
+ 
+        try:
+            employee_number = int(str(raw_number).strip())
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid employee number"}), 400
+ 
+        member = db["teamAssign"].find_one({"Employee number": employee_number})
+        if not member:
+            return jsonify({"success": False, "message": "Team member not found"}), 404
+ 
+        employee_name = member.get("Employee name", "Unknown")
+        start, end = get_team_status_period_range(period)
+ 
+        def _clean(v, default="-"):
+            if v is None or v == "":
+                return default
+            if isinstance(v, float) and math.isnan(v):
+                return default
+            return v
+ 
+        # ---------------- CALLS + FOLLOW-UPS + INTENT ----------------
+        # Pulled from callLogs (every call attempt this employee logged),
+        # then deduped to the LATEST full log per lead number so a lead
+        # called 5 times only counts once toward Hot/Warm/Cold/Followups.
+        # "Call attempt only" pings (the plain Call button, no form) still
+        # count toward Total Calls but never overwrite a real log's status.
+        call_query = {"CalledBy": employee_name}
+        if start is not None:
+            call_query["CreatedAt"] = {"$gte": start, "$lte": end}
+ 
+        total_calls = 0
+        latest_by_number = {}
+ 
+        for log in call_logs_collection.find(call_query).sort("CreatedAt", 1):
+            total_calls += 1
+            if log.get("CallAttemptOnly"):
+                continue
+            num = log.get("Number")
+            if num:
+                latest_by_number[num] = log
+ 
+        def bucket_for(level):
+            lvl = (level or "").strip().lower()
+            if lvl in ("very high", "high"):
+                return "Hot"
+            if lvl == "medium":
+                return "Warm"
+            if lvl == "cold":
+                return "Cold"
+            return None
+ 
+        hot_list, warm_list, cold_list, followup_list = [], [], [], []
+ 
+        for num, log in latest_by_number.items():
+            entry = {
+                "number": num,
+                "name": _clean(log.get("Name"), "Unknown"),
+                "leadType": _clean(log.get("LeadType")),
+                "callStatus": _clean(log.get("CallStatus")),
+                "customerResponse": _clean(log.get("CustomerResponse")),
+                "interestLevel": _clean(log.get("InterestLevel")),
+                "callerRemarks": _clean(log.get("CallerRemarks")),
+                "followupTimeline": _clean(log.get("FollowupTimeline")),
+                "nextCallDate": _clean(log.get("NextCallDate")),
+                "lastCallAt": _clean(log.get("CallDateTimeFormatted")),
+            }
+ 
+            bucket = bucket_for(log.get("InterestLevel"))
+            if bucket == "Hot":
+                hot_list.append(entry)
+            elif bucket == "Warm":
+                warm_list.append(entry)
+            elif bucket == "Cold":
+                cold_list.append(entry)
+ 
+            if (log.get("FollowupTimeline") or "").strip() or (log.get("NextCallDate") or "").strip():
+                followup_list.append(entry)
+ 
+        # sort newest-first for the popup lists
+        for lst in (hot_list, warm_list, cold_list, followup_list):
+            lst.sort(key=lambda e: e.get("lastCallAt") or "", reverse=True)
+ 
+        # ---------------- INVENTORY / PROJECTS ADDED ----------------
+        proj_query = {"ownerNumber": employee_number}
+        if start is not None:
+            proj_query["createdAt"] = {"$gte": start, "$lte": end}
+ 
+        owned_docs = list(projects_collection.find(proj_query, {
+            "kind": 1, "status": 1, "name": 1, "location": 1, "createdAt": 1,
+            "budget": 1, "startingPrice": 1, "category": 1, "propertyType": 1,
+            "uniqueId": 1
+        }))
+ 
+        inventory_items, project_items = [], []
+        inventory_pending = inventory_approved = 0
+        project_pending = project_approved = 0
+ 
+        for d in owned_docs:
+            item = {
+                "id": str(d["_id"]),
+                "name": _clean(d.get("name")),
+                "location": _clean(d.get("location")),
+                "status": _clean(d.get("status"), "pending"),
+                "budget": _clean(d.get("budget") or d.get("startingPrice")),
+                "propertyType": _clean(d.get("category") or d.get("propertyType")),
+                "createdAt": format_ist(d.get("createdAt")) if isinstance(d.get("createdAt"), datetime) else "-",
+                "uniqueId": d.get("uniqueId", "")
+            }
+            if d.get("kind") == "project":
+                project_items.append(item)
+                if d.get("status") == "approved":
+                    project_approved += 1
+                else:
+                    project_pending += 1
+            else:
+                inventory_items.append(item)
+                if d.get("status") == "approved":
+                    inventory_approved += 1
+                else:
+                    inventory_pending += 1
+ 
+        for lst in (inventory_items, project_items):
+            lst.sort(key=lambda e: e.get("createdAt") or "", reverse=True)
+ 
+        return jsonify({
+            "success": True,
+            "period": period,
+            "employee": {
+                "name": employee_name,
+                "number": employee_number,
+                "role": (member.get("roll") or "").strip().lower(),
+                "active": member.get("Active", True)
+            },
+            "calls": {
+                "totalCalls": total_calls,
+                "uniqueLeadsCalled": len(latest_by_number)
+            },
+            "followups": {
+                "count": len(followup_list),
+                "list": followup_list
+            },
+            "intent": {
+                "hotCount": len(hot_list),
+                "warmCount": len(warm_list),
+                "coldCount": len(cold_list),
+                "hotList": hot_list,
+                "warmList": warm_list,
+                "coldList": cold_list
+            },
+            "inventory": {
+                "totalAdded": len(inventory_items) + len(project_items),
+                "inventoryCount": len(inventory_items),
+                "projectCount": len(project_items),
+                "inventoryApproved": inventory_approved,
+                "inventoryPending": inventory_pending,
+                "projectApproved": project_approved,
+                "projectPending": project_pending,
+                "inventoryList": inventory_items,
+                "projectList": project_items
+            }
+        }), 200
+ 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+         
+                
+        
 
     app.run(host="0.0.0.0", port=8000)
