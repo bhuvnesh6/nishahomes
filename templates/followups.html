@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Follow-ups · Nisha Homes</title>
+<style>
+:root {
+  --primary:       #2D3142;
+  --primary-deep:  #1e2235;
+  --primary-mid:   #3a3f56;
+  --primary-light: #4a5070;
+  --accent:        #EF8354;
+  --accent-light:  #FFA07A;
+  --accent-glow:   rgba(239,131,84,0.22);
+  --bg:            #FAF9F6;
+  --text:          #2D3142;
+  --text-soft:     #6B7280;
+  --text-faint:    rgba(255,255,255,0.45);
+  --border:        #E5E7EB;
+  --border-dark:   rgba(255,255,255,0.10);
+  --success:       #10B981;
+  --warm:          #F59E0B;
+  --hot:           #EF4444;
+  --info:          #3B82F6;
+  --cold:          #38BDF8;
+  --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
+  --sh:            0 6px 24px rgba(45,49,66,0.10);
+  --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
+  --sidebar-w:     240px;
+  --topbar-h:      60px;
+  --radius:        14px;
+  --radius-sm:     8px;
+  --radius-pill:   100px;
+  --transition:    all 0.28s cubic-bezier(0.22,1,0.36,1);
+
+  --tint-accent:   rgba(239,131,84,0.10);
+  --tint-success:  rgba(16,185,129,0.10);
+  --tint-warm:     rgba(245,158,11,0.12);
+  --tint-hot:      rgba(239,68,68,0.10);
+  --tint-cold:     rgba(56,189,248,0.12);
+  --tint-info:     rgba(59,130,246,0.10);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- shell ---------- */
+.app-shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w);
+  background: linear-gradient(180deg, var(--primary) 0%, var(--primary-deep) 100%);
+  color: #fff;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  display: flex; flex-direction: column;
+  padding: 26px 20px;
+  z-index: 20;
+}
+.sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
+.sidebar-brand .logo-dot {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 15px; color: #fff;
+  box-shadow: 0 6px 16px var(--accent-glow);
+}
+.sidebar-brand .brand-text h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.3; }
+.sidebar-brand .brand-text span { font-size: 11px; color: var(--text-faint); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 6px; }
+.sidebar-nav .nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-radius: var(--radius-sm);
+  color: var(--text-faint); text-decoration: none; font-size: 13.5px; font-weight: 600;
+  transition: var(--transition); cursor: pointer;
+}
+.sidebar-nav .nav-item .nav-icon { font-size: 15px; }
+.sidebar-nav .nav-item.is-active {
+  background: rgba(239,131,84,0.16);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(239,131,84,0.35);
+}
+
+.sidebar-footer {
+  margin-top: auto; padding-top: 18px; border-top: 1px solid var(--border-dark);
+  font-size: 11.5px; color: var(--text-faint);
+}
+.sidebar-footer .role-pill {
+  display: inline-block; margin-top: 6px; padding: 3px 9px;
+  background: rgba(255,255,255,0.08); border-radius: var(--radius-pill);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--accent-light);
+}
+
+.main { flex: 1; margin-left: var(--sidebar-w); display: flex; flex-direction: column; min-height: 100vh; }
+
+.topbar {
+  height: var(--topbar-h);
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px;
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar-title h2 { font-size: 17px; font-weight: 700; }
+.topbar-title .topbar-sub { font-size: 12px; color: var(--text-soft); font-weight: 500; margin-top: 1px; }
+
+.btn-back {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: var(--radius-pill);
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-size: 13px; font-weight: 700; text-decoration: none;
+  transition: var(--transition);
+}
+.btn-back:hover { background: var(--tint-accent); border-color: var(--accent); color: var(--accent); transform: translateX(-2px); }
+
+.content { padding: 28px; flex: 1; }
+
+/* ---------- stat tiles ---------- */
+.stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 22px; }
+.stat-tile {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px; cursor: pointer; transition: var(--transition); box-shadow: var(--sh-sm);
+  text-align: left;
+}
+.stat-tile:hover { transform: translateY(-3px); box-shadow: var(--sh); }
+.stat-tile.is-active { box-shadow: 0 0 0 2px var(--tile-color), var(--sh-lg); border-color: transparent; }
+
+.stat-tile .tile-icon {
+  width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 17px; margin-bottom: 14px; background: var(--tile-tint); color: var(--tile-color);
+}
+.stat-tile .tile-value { font-size: 27px; font-weight: 800; line-height: 1; margin-bottom: 5px; }
+.stat-tile .tile-label { font-size: 12.5px; color: var(--text-soft); font-weight: 700; }
+.stat-tile .tile-sub { font-size: 11px; color: var(--text-soft); margin-top: 4px; }
+
+.tile--info    { --tile-color: var(--info);    --tile-tint: var(--tint-info); }
+.tile--accent  { --tile-color: var(--accent);  --tile-tint: var(--tint-accent); }
+.tile--cold    { --tile-color: var(--cold);    --tile-tint: var(--tint-cold); }
+.tile--warm    { --tile-color: var(--warm);    --tile-tint: var(--tint-warm); }
+.tile--success { --tile-color: var(--success); --tile-tint: var(--tint-success); }
+.tile--hot     { --tile-color: var(--hot);     --tile-tint: var(--tint-hot); }
+
+/* ---------- run-now bar ---------- */
+.run-now-bar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.btn-run {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--primary); color: #fff; border: none;
+  padding: 11px 20px; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 700; cursor: pointer; transition: var(--transition);
+  box-shadow: var(--sh-sm);
+}
+.btn-run:hover:not(:disabled) { background: var(--primary-mid); transform: translateY(-2px); box-shadow: var(--sh); }
+.btn-run:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---------- list panel ---------- */
+.list-panel {
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--sh-sm); overflow: hidden;
+}
+.list-panel-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding: 18px 22px; border-bottom: 1px solid var(--border);
+}
+.list-panel-title { display: flex; align-items: center; gap: 10px; }
+.list-panel-title h3 { font-size: 15.5px; font-weight: 700; }
+.count-pill {
+  font-size: 11.5px; font-weight: 700; color: var(--accent); background: var(--tint-accent);
+  padding: 4px 11px; border-radius: var(--radius-pill);
+}
+.list-panel-actions { display: flex; align-items: center; gap: 10px; }
+.search-box {
+  padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  font-size: 12.5px; width: 220px; outline: none; transition: var(--transition); font-family: inherit;
+}
+.search-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.btn-close {
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+  background: #fff; cursor: pointer; font-size: 15px; color: var(--text-soft); flex-shrink: 0;
+  transition: var(--transition);
+}
+.btn-close:hover { background: var(--tint-hot); color: var(--hot); border-color: var(--hot); }
+
+.list-panel-body { padding: 6px 22px 22px; }
+
+.loading, .empty-state { padding: 54px 0; text-align: center; color: var(--text-soft); font-size: 13.5px; }
+.loading::before { content: "⏳"; display: block; font-size: 24px; margin-bottom: 10px; }
+.empty-state::before { content: "🗂️"; display: block; font-size: 26px; margin-bottom: 10px; }
+
+/* ---------- lead table / cards ---------- */
+.lead-table { width: 100%; }
+.lead-row {
+  display: grid; grid-template-columns: 1.7fr 1.2fr 1.1fr 1.2fr 1.1fr 1fr;
+  gap: 14px; align-items: center; padding: 14px 6px; border-bottom: 1px solid var(--border);
+}
+.lead-row--head {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-soft); font-weight: 700; padding-bottom: 10px;
+}
+.lead-row:last-child { border-bottom: none; }
+.lead-cell { font-size: 13px; min-width: 0; }
+.lead-name { font-weight: 700; font-size: 13.5px; }
+.lead-sub { font-size: 11.5px; color: var(--text-soft); margin-top: 2px; }
+.lead-phone { font-weight: 700; letter-spacing: 0.2px; }
+
+.lead-cell--actions { display: flex; gap: 8px; align-items: center; }
+.btn-icon {
+  width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer; text-decoration: none;
+  font-size: 14px; transition: var(--transition); color: var(--text); flex-shrink: 0;
+}
+.btn-call:hover    { background: var(--tint-success); border-color: var(--success); }
+.btn-wa:hover      { background: var(--tint-accent);  border-color: var(--accent); }
+.btn-history:hover, .btn-history.is-active { background: var(--tint-info); border-color: var(--info); color: var(--info); }
+
+.fu-badge {
+  display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--accent);
+  background: var(--tint-accent); padding: 3px 9px; border-radius: var(--radius-pill);
+}
+
+.history-panel { grid-column: 1 / -1; max-height: 0; overflow: hidden; transition: var(--transition); }
+.lead-row.is-open .history-panel { max-height: 900px; margin-top: 12px; }
+.msg-item { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 13px; margin-bottom: 8px; }
+.msg-item:last-child { margin-bottom: 0; }
+.msg-item-top { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+.msg-attempt { font-size: 11px; font-weight: 700; color: var(--text-soft); }
+.msg-time { font-size: 11px; color: var(--text-soft); margin-left: auto; }
+.msg-text { font-size: 12.5px; line-height: 1.5; }
+.msg-preview { font-size: 12.5px; }
+
+.badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill); text-transform: capitalize; white-space: nowrap; }
+.badge--sent              { background: var(--tint-success); color: var(--success); }
+.badge--failed            { background: var(--tint-hot);     color: var(--hot); }
+.badge--generation_failed { background: var(--tint-warm);    color: var(--warm); }
+
+.empty-inline { font-size: 12px; color: var(--text-soft); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1200px) {
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+}
+@media (max-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .content { padding: 16px; }
+  .topbar { padding: 0 16px; }
+  .list-panel-header { flex-direction: column; align-items: flex-start; }
+  .search-box { width: 100%; }
+
+  .lead-row--head { display: none; }
+  .lead-row {
+    display: block; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: 12px; padding: 14px; grid-template-columns: none;
+  }
+  .lead-cell { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 5px 0; font-size: 12.5px; }
+  .lead-cell::before { content: attr(data-label); font-weight: 700; color: var(--text-soft); font-size: 10.5px; text-transform: uppercase; flex-shrink: 0; padding-top: 2px; }
+  .lead-cell--actions { justify-content: flex-start; }
+  .lead-cell--actions::before { display: none; }
+  .history-panel { grid-column: auto; }
+}
+</style>
+</head>
+<body data-role="{{ role }}">
+  <div class="app-shell">
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-dot">NH</div>
+        <div class="brand-text">
+          <h1>Nisha Homes</h1>
+          <span>Follow-ups</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="nav-item is-active">
+          <span class="nav-icon">🔁</span> Follow-up Pipeline
+        </span>
+      </nav>
+
+      <div class="sidebar-footer">
+        Signed in as<br>
+        <strong style="color:#fff;">{{ employee_name or "—" }}</strong>
+        <div><span class="role-pill">{{ role }}</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h2>WhatsApp Follow-up Pipeline</h2>
+          <div class="topbar-sub">Auto follow-ups for leads created in the last 7 days</div>
+        </div>
+        <a href="/admin" class="btn-back">← Back</a>
+      </header>
+
+      <div class="content">
+
+        <div class="stats-grid">
+          <button class="stat-tile tile--info" data-tile="pending" type="button">
+            <div class="tile-icon">⏳</div>
+            <div class="tile-value" id="tile-pending">–</div>
+            <div class="tile-label">Pending</div>
+            <div class="tile-sub">Not yet followed up</div>
+          </button>
+
+          <button class="stat-tile tile--accent" data-tile="followup1" type="button">
+            <div class="tile-icon">1️⃣</div>
+            <div class="tile-value" id="tile-followup1">–</div>
+            <div class="tile-label">1st Follow-up Sent</div>
+            <div class="tile-sub">Waiting on reply</div>
+          </button>
+
+          <button class="stat-tile tile--cold" data-tile="followup2" type="button">
+            <div class="tile-icon">2️⃣</div>
+            <div class="tile-value" id="tile-followup2">–</div>
+            <div class="tile-label">2nd Follow-up Sent</div>
+            <div class="tile-sub">Waiting on reply</div>
+          </button>
+
+          <button class="stat-tile tile--warm" data-tile="manual" type="button">
+            <div class="tile-icon">📞</div>
+            <div class="tile-value" id="tile-manual">–</div>
+            <div class="tile-label">Needs Manual Calling</div>
+            <div class="tile-sub">3 follow-ups done</div>
+          </button>
+
+          <button class="stat-tile tile--success" data-tile="sent" type="button">
+            <div class="tile-icon">✅</div>
+            <div class="tile-value" id="tile-sent">–</div>
+            <div class="tile-label">Sent Today</div>
+            <div class="tile-sub" id="tile-sent-sub">— total</div>
+          </button>
+
+          <button class="stat-tile tile--hot" data-tile="failed" type="button">
+            <div class="tile-icon">❌</div>
+            <div class="tile-value" id="tile-failed">–</div>
+            <div class="tile-label">Failed Today</div>
+            <div class="tile-sub" id="tile-failed-sub">— total</div>
+          </button>
+        </div>
+
+        <div class="run-now-bar" id="runNowBar" hidden>
+          <button class="btn-run" id="runNowBtn" type="button">⚡ Run Scan Now</button>
+        </div>
+
+        <section class="list-panel" id="listPanel" hidden>
+          <div class="list-panel-header">
+            <div class="list-panel-title">
+              <h3 id="listPanelTitle">—</h3>
+              <span class="count-pill" id="listPanelCount">0 records</span>
+            </div>
+            <div class="list-panel-actions">
+              <input type="text" class="search-box" id="searchInput" placeholder="Search name or phone…" hidden>
+              <button class="btn-close" id="closePanel" type="button" title="Close">✕</button>
+            </div>
+          </div>
+          <div class="list-panel-body" id="listPanelBody"></div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+<script>
+const BUCKET_META = {
+  pending:   { label: "Pending Follow-ups",     type: "lead" },
+  followup1: { label: "1st Follow-up Sent",     type: "lead" },
+  followup2: { label: "2nd Follow-up Sent",     type: "lead" },
+  manual:    { label: "Needs Manual Calling",   type: "lead" },
+  sent:      { label: "Messages Sent",          type: "log"  },
+  failed:    { label: "Failed Sends",           type: "log"  },
+};
+
+let activeBucket = null;
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str).replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
+}
+
+/* ---------------- stats ---------------- */
+async function loadStats() {
+  try {
+    const res = await fetch("/api/followup/stats");
+    const d = await res.json();
+    if (!d.success) return;
+    document.getElementById("tile-pending").textContent   = d.pending ?? 0;
+    document.getElementById("tile-followup1").textContent = d.followup1 ?? 0;
+    document.getElementById("tile-followup2").textContent = d.followup2 ?? 0;
+    document.getElementById("tile-manual").textContent    = d.manualRequired ?? 0;
+    document.getElementById("tile-sent").textContent      = d.sentToday ?? 0;
+    document.getElementById("tile-failed").textContent    = d.failedToday ?? 0;
+    document.getElementById("tile-sent-sub").textContent   = `${d.sentTotal ?? 0} total`;
+    document.getElementById("tile-failed-sub").textContent = `${d.failedTotal ?? 0} total`;
+  } catch (e) {
+    console.error("[followups] failed to load stats", e);
+  }
+}
+
+/* ---------------- lead bucket rendering ---------------- */
+function renderLeadList(items) {
+  if (!items.length) {
+    return `<div class="empty-state">No leads in this bucket right now.</div>`;
+  }
+  return `
+    <div class="lead-table">
+      <div class="lead-row lead-row--head">
+        <div class="lead-cell">Lead</div>
+        <div class="lead-cell">Contact</div>
+        <div class="lead-cell">Property</div>
+        <div class="lead-cell">Call Status</div>
+        <div class="lead-cell">Follow-ups</div>
+        <div class="lead-cell">Actions</div>
+      </div>
+      ${items.map(renderLeadRow).join("")}
+    </div>`;
+}
+
+function renderLeadRow(l) {
+  const history = l.followupHistory || [];
+  const historyHtml = history.length
+    ? history.map(h => `
+        <div class="msg-item">
+          <div class="msg-item-top">
+            <span class="msg-attempt">Attempt ${h.attempt}</span>
+            <span class="badge badge--${h.status}">${escapeHtml(h.status || "")}</span>
+            <span class="msg-time">${escapeHtml(h.sentAt || "-")}</span>
+          </div>
+          <div class="msg-text">${escapeHtml(h.message || "-")}</div>
+        </div>`).join("")
+    : `<div class="empty-inline">No messages sent yet.</div>`;
+
+  const waNumber = (l.phone || "").replace(/\D/g, "");
+
+  return `
+    <div class="lead-row" data-name="${escapeHtml((l.name || "").toLowerCase())}" data-phone="${escapeHtml(l.phone || "")}">
+      <div class="lead-cell" data-label="Lead">
+        <div class="lead-name">${escapeHtml(l.name)}</div>
+        <div class="lead-sub">${escapeHtml(l.location)}${l.location && l.propertyType ? " · " : ""}${escapeHtml(l.propertyType)}</div>
+      </div>
+      <div class="lead-cell" data-label="Contact">
+        <div class="lead-phone">${escapeHtml(l.phone)}</div>
+        <div class="lead-sub">Created ${escapeHtml(l.createdAt)}</div>
+      </div>
+      <div class="lead-cell" data-label="Budget">
+        <div>${escapeHtml(l.budget)}</div>
+      </div>
+      <div class="lead-cell" data-label="Call Status">
+        <div>${escapeHtml(l.callStatus)}</div>
+        <div class="lead-sub">${escapeHtml(l.interestLevel)}</div>
+      </div>
+      <div class="lead-cell" data-label="Follow-ups">
+        <span class="fu-badge">Sent ${l.followupCount}/3</span>
+        <div class="lead-sub">Last: ${escapeHtml(l.lastFollowupAt)}</div>
+      </div>
+      <div class="lead-cell lead-cell--actions" data-label="Actions">
+        <a class="btn-icon btn-call" href="tel:+${waNumber}" title="Call">📞</a>
+        <a class="btn-icon btn-wa" href="https://wa.me/${waNumber}" target="_blank" rel="noopener" title="WhatsApp">💬</a>
+        <button class="btn-icon btn-history" type="button" onclick="toggleHistory(this)" title="Message history">🕘</button>
+      </div>
+      <div class="history-panel">${historyHtml}</div>
+    </div>`;
+}
+
+function toggleHistory(btn) {
+  const row = btn.closest(".lead-row");
+  row.classList.toggle("is-open");
+  btn.classList.toggle("is-active");
+}
+
+/* ---------------- log bucket rendering (sent / failed) ---------------- */
+function renderLogList(items) {
+  if (!items.length) {
+    return `<div class="empty-state">Nothing here yet.</div>`;
+  }
+  return `
+    <div class="lead-table">
+      <div class="lead-row lead-row--head" style="grid-template-columns: 1.4fr 0.6fr 2fr 1.2fr 1fr;">
+        <div class="lead-cell">Lead</div>
+        <div class="lead-cell">Attempt</div>
+        <div class="lead-cell">Message</div>
+        <div class="lead-cell">Status</div>
+        <div class="lead-cell">Time</div>
+      </div>
+      ${items.map(renderLogRow).join("")}
+    </div>`;
+}
+
+function renderLogRow(l) {
+  const statusHtml = l.status === "failed"
+    ? `<span class="badge badge--failed" title="${escapeHtml(l.error || "")}">${escapeHtml(l.error ? l.error.slice(0, 40) : "Failed")}</span>`
+    : `<span class="badge badge--sent">Sent</span>`;
+
+  return `
+    <div class="lead-row" style="grid-template-columns: 1.4fr 0.6fr 2fr 1.2fr 1fr;">
+      <div class="lead-cell" data-label="Lead">
+        <div class="lead-name">${escapeHtml(l.name)}</div>
+        <div class="lead-sub">${escapeHtml(l.phone)}</div>
+      </div>
+      <div class="lead-cell" data-label="Attempt">#${escapeHtml(l.attempt)}</div>
+      <div class="lead-cell" data-label="Message"><div class="msg-preview">${escapeHtml(l.message || "-")}</div></div>
+      <div class="lead-cell" data-label="Status">${statusHtml}</div>
+      <div class="lead-cell" data-label="Time">${escapeHtml(l.at)}</div>
+    </div>`;
+}
+
+/* ---------------- bucket panel open/refresh/close ---------------- */
+async function openBucket(bucket) {
+  activeBucket = bucket;
+  document.querySelectorAll(".stat-tile").forEach(t => t.classList.toggle("is-active", t.dataset.tile === bucket));
+
+  const panel = document.getElementById("listPanel");
+  panel.hidden = false;
+  document.getElementById("listPanelTitle").textContent = BUCKET_META[bucket].label;
+  document.getElementById("listPanelBody").innerHTML = `<div class="loading">Loading…</div>`;
+
+  const search = document.getElementById("searchInput");
+  search.hidden = BUCKET_META[bucket].type !== "lead";
+  search.value = "";
+
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  await refreshBucket();
+}
+
+async function refreshBucket() {
+  if (!activeBucket) return;
+  try {
+    const res = await fetch(`/api/followup/leads?bucket=${encodeURIComponent(activeBucket)}`);
+    const d = await res.json();
+    const body = document.getElementById("listPanelBody");
+    if (!d.success) {
+      body.innerHTML = `<div class="empty-state">Could not load this list.</div>`;
+      return;
+    }
+    document.getElementById("listPanelCount").textContent = `${d.count} record${d.count === 1 ? "" : "s"}`;
+    body.innerHTML = BUCKET_META[activeBucket].type === "log" ? renderLogList(d.data) : renderLeadList(d.data);
+  } catch (e) {
+    document.getElementById("listPanelBody").innerHTML = `<div class="empty-state">Network error — please retry.</div>`;
+  }
+}
+
+document.querySelectorAll(".stat-tile").forEach(tile => {
+  tile.addEventListener("click", () => openBucket(tile.dataset.tile));
+});
+
+document.getElementById("closePanel").addEventListener("click", () => {
+  document.getElementById("listPanel").hidden = true;
+  activeBucket = null;
+  document.querySelectorAll(".stat-tile").forEach(t => t.classList.remove("is-active"));
+});
+
+document.getElementById("searchInput").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll(".lead-row:not(.lead-row--head)").forEach(row => {
+    const name = row.dataset.name || "";
+    const phone = row.dataset.phone || "";
+    row.style.display = (!q || name.includes(q) || phone.includes(q)) ? "" : "none";
+  });
+});
+
+/* ---------------- run-now (admin only) ---------------- */
+if (document.body.dataset.role === "admin") {
+  document.getElementById("runNowBar").hidden = false;
+  const runBtn = document.getElementById("runNowBtn");
+  runBtn.addEventListener("click", async () => {
+    if (!confirm("Start a follow-up scan right now?")) return;
+    runBtn.disabled = true;
+    runBtn.textContent = "Starting…";
+    try {
+      const res = await fetch("/api/followup/trigger", { method: "POST" });
+      const d = await res.json();
+      alert(d.message || (d.success ? "Scan started" : "Could not start scan"));
+    } catch (e) {
+      alert("Network error — please retry.");
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = "⚡ Run Scan Now";
+      setTimeout(loadStats, 5000);
+      if (activeBucket) setTimeout(refreshBucket, 5000);
+    }
+  });
+}
+
+/* ---------------- boot ---------------- */
+loadStats();
+setInterval(() => {
+  loadStats();
+  if (activeBucket) refreshBucket();
+}, 30000);
+</script>
+</body>
+</html>

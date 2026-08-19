@@ -40,6 +40,10 @@ import shutil
 # NEW: branding overlay for images
 from PIL import Image, ImageDraw, ImageFont
 
+import wp
+import threading
+import socket
+
 # Load env
 load_dotenv()
 
@@ -6069,7 +6073,555 @@ def team_status_overview():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
          
-                
+
+
+# =====================================================================
+# AUTOMATIC WHATSAPP FOLLOW-UP SYSTEM
+# =====================================================================
+ 
+FOLLOWUP_COLLECTIONS = {"Leads": "buying", "RentalLeads": "rental"}   # agent/selling intentionally excluded
+FOLLOWUP_LEAD_TYPES_EXCLUDED = {"agent", "selling"}
+ 
+FOLLOWUP_WINDOW_DAYS = 7            # only leads created in the last 7 days are ever followed up
+FOLLOWUP_MIN_GAP_MINUTES = 5        # don't message if the customer texted in the last 5 minutes
+FOLLOWUP_MAX_GAP_DAYS = 7           # don't message if it's been over a week since they last texted
+FOLLOWUP_MAX_ATTEMPTS = 3           # no automatic followups after the 3rd — becomes "manual required"
+ 
+FOLLOWUP_HOURLY_LIMIT = 30          # leads processed per batch (see notes above re: 30 vs 35)
+FOLLOWUP_SEND_WAIT_MIN_SEC = 60     # 1 min
+FOLLOWUP_SEND_WAIT_MAX_SEC = 300    # 5 min   -> random wait between individual sends
+FOLLOWUP_BATCH_COOLDOWN_MIN_SEC = 600   # 10 min
+FOLLOWUP_BATCH_COOLDOWN_MAX_SEC = 900   # 15 min  -> random wait between batches if leads are left over
+FOLLOWUP_RESCAN_INTERVAL_SEC = 3600     # re-scan for newly-eligible leads every hour
+ 
+FOLLOWUP_MISTRAL_KEY = MISTRAL_API_KEY  # reuses the existing autofill key; swap to MISTRAL_API_KEY2 if you'd rather keep quotas separate
+ 
+followup_logs_collection = db["followupLogs"]
+system_locks_collection = db["systemLocks"]
+ 
+ 
+def parse_last_user_msg_at(s):
+    """
+    Parses an ISO-8601 timestamp with a UTC offset, e.g.
+    '2026-07-11T20:45:15.635+05:30', and returns a naive UTC datetime
+    (matching the naive-UTC convention used everywhere else in this file,
+    e.g. datetime.utcnow() / 'Created At'). Returns None if unparseable.
+    """
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(s).strip())
+        offset = dt.utcoffset()
+        if offset is not None:
+            dt = (dt - offset).replace(tzinfo=None)
+        return dt
+    except Exception:
+        return None
+ 
+ 
+def ist_date_str(dt_utc):
+    """Same IST-shift convention as format_ist(), but date-only — used to
+    enforce 'max one followup per lead per day'."""
+    if not isinstance(dt_utc, datetime):
+        return None
+    ist = dt_utc + timedelta(hours=5, minutes=30)
+    return ist.strftime("%Y-%m-%d")
+ 
+ 
+# ---------------------------------------------------------------------
+# MISTRAL — SHORT NATURAL FOLLOW-UP MESSAGE GENERATION
+# ---------------------------------------------------------------------
+def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number):
+    """
+    Uses Mistral to write a short, natural WhatsApp follow-up message for
+    this lead, informed by the lead's own details AND its call-log history
+    (so the message doesn't ignore what a human agent already discussed).
+    Returns plain text, or None on failure.
+    """
+    if not FOLLOWUP_MISTRAL_KEY:
+        print("[followup] Mistral key not configured — skipping message generation")
+        return None
+ 
+    call_summary = []
+    for c in (call_logs or [])[:5]:
+        call_summary.append({
+            "date": c.get("CallDateTimeFormatted"),
+            "status": c.get("CallStatus"),
+            "response": c.get("CustomerResponse"),
+            "interest": c.get("InterestLevel"),
+            "objection": c.get("Objection"),
+            "remarks": c.get("CallerRemarks"),
+        })
+ 
+    context = {
+        "customerName": lead_ctx.get("name"),
+        "location": lead_ctx.get("location"),
+        "propertyType": lead_ctx.get("propertyType"),
+        "budget": lead_ctx.get("budget"),
+        "configuration": lead_ctx.get("configuration"),
+        "followupAttemptNumber": attempt_number,
+        "lastCallStatus": (end_data or {}).get("Call Status", ""),
+        "lastInterestLevel": (end_data or {}).get("Interest Level", ""),
+        "lastCallerRemarks": (end_data or {}).get("Caller Remarks", ""),
+        "callHistory": call_summary,
+    }
+ 
+    system_prompt = (
+        "You are a friendly real-estate sales assistant for Nisha Homes, writing a short "
+        "WhatsApp follow-up message to a property lead. Use the lead's details and call "
+        "history (if any) below to write a natural, warm, non-pushy follow-up in 2-3 short "
+        "sentences, in a conversational WhatsApp tone (not a formal email). "
+        f"This is follow-up attempt {attempt_number} of {FOLLOWUP_MAX_ATTEMPTS} for this lead — "
+        "attempt 1 should read as a gentle check-in, attempt 2 should add a small bit of new "
+        "value or a soft nudge (e.g. mention availability/options), and attempt 3 should read "
+        "as a polite final check-in before pausing outreach. "
+        "If call history shows an objection or a specific interest, acknowledge it briefly. "
+        "Do not invent property details that aren't given. Do not use markdown or emojis "
+        "sparingly is fine but don't overdo it. Reply with ONLY the message text — no quotes, "
+        "no preamble, no explanation."
+    )
+ 
+    payload = {
+        "model": "mistral-large-latest",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(context)},
+        ],
+        "temperature": 0.6,
+    }
+ 
+    try:
+        resp = requests.post(
+            MISTRAL_API_URL,
+            headers={
+                "Authorization": f"Bearer {FOLLOWUP_MISTRAL_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        return text.strip('"').strip() or None
+    except Exception as e:
+        print(f"[followup] message generation failed: {e}")
+        return None
+ 
+ 
+# ---------------------------------------------------------------------
+# ELIGIBILITY
+# ---------------------------------------------------------------------
+def get_eligible_followup_leads(limit=None):
+    """
+    Scans Leads + RentalLeads (buyer/rental only — agent/selling are
+    excluded per spec) for leads that are:
+      - created within the last FOLLOWUP_WINDOW_DAYS days
+      - not already at FOLLOWUP_MAX_ATTEMPTS followups
+      - not already followed up today (IST)
+      - "quiet enough" since the customer's last message (>= 5 min,
+        <= 7 days — using lastUserMsgAt if present, else Created At)
+    Returns a list of lightweight lead-context dicts, oldest/least-followed
+    first.
+    """
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=FOLLOWUP_WINDOW_DAYS)
+    today_ist = ist_date_str(now)
+ 
+    # cheap DB-side filter: only docs that have a Created At AND aren't
+    # already fully-followed-up — full date parsing still happens in
+    # Python below since Created At is stored as a string, same
+    # limitation as the rest of this app's dashboard endpoints.
+    base_query = {
+        "Created At": {"$exists": True},
+        "$or": [
+            {"followup_send": {"$exists": False}},
+            {"followup_send": {"$lt": FOLLOWUP_MAX_ATTEMPTS}},
+        ],
+    }
+ 
+    candidates = []
+    for coll_name in FOLLOWUP_COLLECTIONS:
+        for lead in db[coll_name].find(base_query):
+            created_dt = parse_created_at_str(lead.get("Created At"))
+            if not created_dt or created_dt < window_start or created_dt > now:
+                continue
+ 
+            lead_type = _normalize_lead_type_field(lead.get("LeadType"))
+            if lead_type in FOLLOWUP_LEAD_TYPES_EXCLUDED:
+                continue
+ 
+            followup_count = lead.get("followup_send", 0)
+            try:
+                followup_count = int(followup_count)
+            except (TypeError, ValueError):
+                followup_count = 0
+            if followup_count >= FOLLOWUP_MAX_ATTEMPTS:
+                continue
+ 
+            last_followup_at = lead.get("lastFollowupAt")
+            if isinstance(last_followup_at, datetime) and ist_date_str(last_followup_at) == today_ist:
+                continue  # already followed up today
+ 
+            last_msg_dt = parse_last_user_msg_at(lead.get("lastUserMsgAt")) or created_dt
+            gap = now - last_msg_dt
+            if gap < timedelta(minutes=FOLLOWUP_MIN_GAP_MINUTES) or gap > timedelta(days=FOLLOWUP_MAX_GAP_DAYS):
+                continue
+ 
+            phone = normalize_number(lead.get("Phone Number", ""))
+            if not phone:
+                continue
+            if not phone.startswith("91"):
+                phone = "91" + phone
+ 
+            candidates.append({
+                "leadId": lead["_id"],
+                "collection": coll_name,
+                "leadType": lead_type,
+                "phone": phone,
+                "name": lead.get("Lead Name") or lead.get("Name") or "Unknown",
+                "location": lead.get("Location Interested In") or lead.get("Property Location") or "",
+                "propertyType": lead.get("Property Type", ""),
+                "budget": lead.get("Budget Range") or lead.get("Expected Price") or "",
+                "configuration": lead.get("Configuration", ""),
+                "createdAt": created_dt,
+                "followupCount": followup_count,
+            })
+ 
+    candidates.sort(key=lambda c: (c["followupCount"], c["createdAt"]))
+    if limit:
+        return candidates[:limit]
+    return candidates
+ 
+ 
+# ---------------------------------------------------------------------
+# SEND ONE FOLLOW-UP
+# ---------------------------------------------------------------------
+def process_single_followup(ctx):
+    lead_id = ctx["leadId"]
+    coll_name = ctx["collection"]
+    phone = ctx["phone"]
+    attempt_number = ctx["followupCount"] + 1
+    now = datetime.utcnow()
+ 
+    end_doc = db["endData"].find_one({"Number": phone}) or {}
+    call_logs = list(call_logs_collection.find({"Number": phone}).sort("CreatedAt", -1).limit(5))
+ 
+    message = generate_followup_message(ctx, end_doc, call_logs, attempt_number)
+    if not message:
+        followup_logs_collection.insert_one({
+            "leadId": str(lead_id), "collection": coll_name, "phone": phone,
+            "name": ctx["name"], "attempt": attempt_number, "message": None,
+            "status": "generation_failed", "createdAt": now,
+        })
+        print(f"[followup] message generation failed for {phone} ({ctx['name']}) — will retry next scan")
+        return
+ 
+    history_entry = {"attempt": attempt_number, "message": message, "sentAt": now}
+ 
+    try:
+        result = wp.send_whatsapp_message(phone, message)
+        history_entry["status"] = "sent"
+        history_entry["messageId"] = result.get("messageId")
+ 
+        new_status = "manual_required" if attempt_number >= FOLLOWUP_MAX_ATTEMPTS else "pending"
+        db[coll_name].update_one(
+            {"_id": lead_id},
+            {
+                "$set": {
+                    "followup_send": attempt_number,
+                    "lastFollowupAt": now,
+                    "followupStatus": new_status,
+                },
+                "$push": {"followupHistory": history_entry},
+            },
+        )
+        followup_logs_collection.insert_one({
+            "leadId": str(lead_id), "collection": coll_name, "phone": phone,
+            "name": ctx["name"], "attempt": attempt_number, "message": message,
+            "status": "sent", "messageId": result.get("messageId"), "createdAt": now,
+        })
+        print(f"[followup] sent attempt {attempt_number}/{FOLLOWUP_MAX_ATTEMPTS} to {phone} ({ctx['name']})")
+ 
+    except wp.WirebaseError as e:
+        history_entry["status"] = "failed"
+        history_entry["error"] = str(e)
+        # Don't increment followup_send on failure (so it's retried), but
+        # DO stamp lastFollowupAt so a broken instance isn't hammered every
+        # scan — it gets one attempt per day, same cadence as a real send.
+        db[coll_name].update_one(
+            {"_id": lead_id},
+            {
+                "$set": {"lastFollowupAt": now},
+                "$push": {"followupHistory": history_entry},
+            },
+        )
+        followup_logs_collection.insert_one({
+            "leadId": str(lead_id), "collection": coll_name, "phone": phone,
+            "name": ctx["name"], "attempt": attempt_number, "message": message,
+            "status": "failed", "error": str(e), "createdAt": now,
+        })
+        print(f"[followup] FAILED attempt {attempt_number} to {phone}: {e}")
+ 
+    invalidate_cache("followup_stats")
+ 
+ 
+# ---------------------------------------------------------------------
+# BATCH RUNNER — gathers eligible leads, sends in a paced/rate-limited way
+# ---------------------------------------------------------------------
+def run_followup_scan_and_send():
+    while True:
+        eligible = get_eligible_followup_leads()
+        if not eligible:
+            print("[followup] no eligible leads this scan")
+            break
+ 
+        batch = eligible[:FOLLOWUP_HOURLY_LIMIT]
+        print(f"[followup] processing batch of {len(batch)} lead(s) (of {len(eligible)} eligible)")
+        for ctx in batch:
+            try:
+                process_single_followup(ctx)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+            time.sleep(random.randint(FOLLOWUP_SEND_WAIT_MIN_SEC, FOLLOWUP_SEND_WAIT_MAX_SEC))
+ 
+        if len(eligible) <= FOLLOWUP_HOURLY_LIMIT:
+            break  # everyone eligible this scan has now been handled
+ 
+        cooldown = random.randint(FOLLOWUP_BATCH_COOLDOWN_MIN_SEC, FOLLOWUP_BATCH_COOLDOWN_MAX_SEC)
+        print(f"[followup] batch cap reached — cooling down {cooldown}s before the next batch")
+        time.sleep(cooldown)
+ 
+ 
+# ---------------------------------------------------------------------
+# MONGO-BACKED LOCK (guards against duplicate sends across multiple
+# gunicorn workers/processes — still pure Flask/Mongo, no new tooling)
+# ---------------------------------------------------------------------
+def try_acquire_followup_lock(ttl_seconds):
+    now = datetime.utcnow()
+    expires = now + timedelta(seconds=ttl_seconds)
+    owner = f"{socket.gethostname()}-{os.getpid()}"
+ 
+    # Take over a lock that's missing or has expired.
+    result = system_locks_collection.find_one_and_update(
+        {"_id": "followup_scheduler", "lockedUntil": {"$lt": now}},
+        {"$set": {"lockedUntil": expires, "lockedBy": owner, "lockedAt": now}},
+    )
+    if result is not None:
+        return True
+ 
+    # No stale lock found — try to create it fresh (only succeeds if no
+    # doc exists yet at all).
+    try:
+        system_locks_collection.insert_one({
+            "_id": "followup_scheduler", "lockedUntil": expires,
+            "lockedBy": owner, "lockedAt": now,
+        })
+        return True
+    except Exception:
+        return False  # someone else holds a valid, non-expired lock
+ 
+ 
+def followup_scheduler_loop():
+    print("[followup] scheduler loop started")
+    while True:
+        try:
+            if try_acquire_followup_lock(ttl_seconds=FOLLOWUP_RESCAN_INTERVAL_SEC - 60):
+                run_followup_scan_and_send()
+            else:
+                print("[followup] scheduler lock held by another process — skipping this cycle")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        time.sleep(FOLLOWUP_RESCAN_INTERVAL_SEC)
+ 
+ 
+_followup_thread_started = False
+ 
+ 
+def start_followup_scheduler():
+    """Starts the background follow-up thread exactly once per process,
+    and avoids a double-start under Flask's debug-mode reloader."""
+    global _followup_thread_started
+    if _followup_thread_started:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        threading.Thread(target=followup_scheduler_loop, daemon=True, name="followup-scheduler").start()
+        _followup_thread_started = True
+        print("[followup] scheduler thread launched")
+ 
+ 
+start_followup_scheduler()
+ 
+ 
+# =====================================================================
+# ROUTES
+# =====================================================================
+@app.route("/followups")
+def followups_page():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return redirect("/")
+    return render_template(
+        "followups.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role"),
+    )
+ 
+ 
+def _compute_followup_stats():
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=FOLLOWUP_WINDOW_DAYS)
+ 
+    counts = {0: 0, 1: 0, 2: 0}
+    manual = 0
+    query = {"Created At": {"$exists": True}}
+ 
+    for coll_name in FOLLOWUP_COLLECTIONS:
+        for lead in db[coll_name].find(query, {"followup_send": 1, "LeadType": 1, "Created At": 1}):
+            lead_type = _normalize_lead_type_field(lead.get("LeadType"))
+            if lead_type in FOLLOWUP_LEAD_TYPES_EXCLUDED:
+                continue
+            created_dt = parse_created_at_str(lead.get("Created At"))
+            if not created_dt or created_dt < window_start or created_dt > now:
+                continue
+ 
+            count = lead.get("followup_send", 0)
+            try:
+                count = int(count)
+            except (TypeError, ValueError):
+                count = 0
+ 
+            if count >= FOLLOWUP_MAX_ATTEMPTS:
+                manual += 1
+            else:
+                counts[count] = counts.get(count, 0) + 1
+ 
+    today_start = datetime(now.year, now.month, now.day)
+    return {
+        "pending": counts.get(0, 0),
+        "followup1": counts.get(1, 0),
+        "followup2": counts.get(2, 0),
+        "manualRequired": manual,
+        "sentToday": followup_logs_collection.count_documents({"status": "sent", "createdAt": {"$gte": today_start}}),
+        "failedToday": followup_logs_collection.count_documents({"status": "failed", "createdAt": {"$gte": today_start}}),
+        "sentTotal": followup_logs_collection.count_documents({"status": "sent"}),
+        "failedTotal": followup_logs_collection.count_documents({"status": "failed"}),
+    }
+ 
+ 
+@app.route("/api/followup/stats", methods=["GET"])
+def followup_stats():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    data = cached("followup_stats", 20, _compute_followup_stats)
+    return jsonify({"success": True, **data}), 200
+ 
+ 
+@app.route("/api/followup/leads", methods=["GET"])
+def followup_leads_list():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    bucket = request.args.get("bucket", "pending")
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=FOLLOWUP_WINDOW_DAYS)
+ 
+    def _clean(v, default="-"):
+        if v is None or v == "":
+            return default
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return v
+ 
+    # --- activity-log buckets: sent / failed ---
+    if bucket in ("sent", "failed"):
+        logs = list(followup_logs_collection.find({"status": bucket}).sort("createdAt", -1).limit(300))
+        data = [{
+            "leadId": l.get("leadId"),
+            "collection": l.get("collection"),
+            "name": _clean(l.get("name")),
+            "phone": l.get("phone"),
+            "attempt": l.get("attempt"),
+            "message": l.get("message"),
+            "status": l.get("status"),
+            "error": l.get("error"),
+            "at": format_ist(l.get("createdAt")) if isinstance(l.get("createdAt"), datetime) else "-",
+        } for l in logs]
+        return jsonify({"success": True, "bucket": bucket, "count": len(data), "data": data}), 200
+ 
+    # --- lead-stage buckets: pending / followup1 / followup2 / manual ---
+    target_count = {"pending": 0, "followup1": 1, "followup2": 2}.get(bucket)
+    is_manual = bucket in ("followup3", "manual")
+    if target_count is None and not is_manual:
+        return jsonify({"success": False, "message": "Invalid bucket"}), 400
+ 
+    out = []
+    for coll_name in FOLLOWUP_COLLECTIONS:
+        for lead in db[coll_name].find():
+            lead_type = _normalize_lead_type_field(lead.get("LeadType"))
+            if lead_type in FOLLOWUP_LEAD_TYPES_EXCLUDED:
+                continue
+            created_dt = parse_created_at_str(lead.get("Created At"))
+            if not created_dt or created_dt < window_start or created_dt > now:
+                continue
+ 
+            count = lead.get("followup_send", 0)
+            try:
+                count = int(count)
+            except (TypeError, ValueError):
+                count = 0
+ 
+            if is_manual:
+                if count < FOLLOWUP_MAX_ATTEMPTS:
+                    continue
+            else:
+                if count != target_count:
+                    continue
+ 
+            phone = normalize_number(lead.get("Phone Number", ""))
+            if phone and not phone.startswith("91"):
+                phone = "91" + phone
+ 
+            end_doc = (db["endData"].find_one({"Number": phone}) or {}) if phone else {}
+ 
+            out.append({
+                "id": str(lead["_id"]),
+                "collection": coll_name,
+                "leadType": lead_type,
+                "name": _clean(lead.get("Lead Name") or lead.get("Name"), "Unknown"),
+                "phone": phone or "-",
+                "location": _clean(lead.get("Location Interested In") or lead.get("Property Location")),
+                "propertyType": _clean(lead.get("Property Type")),
+                "budget": _clean(lead.get("Budget Range") or lead.get("Expected Price")),
+                "createdAt": format_ist(created_dt),
+                "followupCount": count,
+                "lastFollowupAt": format_ist(lead.get("lastFollowupAt")) if isinstance(lead.get("lastFollowupAt"), datetime) else "-",
+                "callStatus": _clean(end_doc.get("Call Status")),
+                "interestLevel": _clean(end_doc.get("Interest Level")),
+                "followupHistory": [
+                    {
+                        "attempt": h.get("attempt"),
+                        "message": h.get("message"),
+                        "status": h.get("status"),
+                        "sentAt": format_ist(h.get("sentAt")) if isinstance(h.get("sentAt"), datetime) else "-",
+                    }
+                    for h in (lead.get("followupHistory") or [])
+                ],
+            })
+ 
+    out.sort(key=lambda x: x["createdAt"], reverse=True)
+    return jsonify({"success": True, "bucket": bucket, "count": len(out), "data": out}), 200
+ 
+ 
+@app.route("/api/followup/trigger", methods=["POST"])
+def followup_trigger():
+    """Admin-only manual kick, for testing/ops — runs one scan in the
+    background so the request returns immediately."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    threading.Thread(target=run_followup_scan_and_send, daemon=True, name="followup-manual-trigger").start()
+    return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200                
         
 
-    app.run(host="0.0.0.0", port=8000)
+app.run(host="0.0.0.0", port=8000)
