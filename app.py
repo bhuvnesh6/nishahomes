@@ -5795,7 +5795,6 @@ def import_leads_page():
         return redirect("/")
     return render_template("import_leads.html")
 
-if __name__ == "__main__":
     import sys
     #remove_assign_to_from_leads()
 
@@ -6623,5 +6622,5 @@ def followup_trigger():
     threading.Thread(target=run_followup_scan_and_send, daemon=True, name="followup-manual-trigger").start()
     return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200                
         
-
-app.run(host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
