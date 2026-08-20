@@ -6086,14 +6086,50 @@ FOLLOWUP_MIN_GAP_MINUTES = 5        # don't message if the customer texted in th
 FOLLOWUP_MAX_GAP_DAYS = 7           # don't message if it's been over a week since they last texted
 FOLLOWUP_MAX_ATTEMPTS = 3           # no automatic followups after the 3rd — becomes "manual required"
  
-FOLLOWUP_HOURLY_LIMIT = 30          # leads processed per batch (see notes above re: 30 vs 35)
-FOLLOWUP_SEND_WAIT_MIN_SEC = 60     # 1 min
-FOLLOWUP_SEND_WAIT_MAX_SEC = 300    # 5 min   -> random wait between individual sends
-FOLLOWUP_BATCH_COOLDOWN_MIN_SEC = 600   # 10 min
-FOLLOWUP_BATCH_COOLDOWN_MAX_SEC = 900   # 15 min  -> random wait between batches if leads are left over
-FOLLOWUP_RESCAN_INTERVAL_SEC = 3600     # re-scan for newly-eligible leads every hour
+FOLLOWUP_HOURLY_LIMIT = 35          # leads processed per batch
+ 
+FOLLOWUP_SEND_WAIT_MIN_MINUTES = 1  # random wait between individual sends: 1-3 min,
+FOLLOWUP_SEND_WAIT_MAX_MINUTES = 3  # can land on a decimal (1.2, 2.6, ...), not just whole minutes
+ 
+FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES = 7   # after a 35-message batch, cool down 7-10 min
+FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES = 10  # before starting on any leads left over
+ 
+FOLLOWUP_BUSINESS_START_HOUR = 10   # 10:00 AM IST — no sends before this
+FOLLOWUP_BUSINESS_END_HOUR = 19     # 7:00 PM IST — no sends at/after this
+ 
+FOLLOWUP_RESCAN_INTERVAL_SEC = 3600     # re-scan for newly-eligible leads every hour (during business hours)
  
 FOLLOWUP_MISTRAL_KEY = MISTRAL_API_KEY  # reuses the existing autofill key; swap to MISTRAL_API_KEY2 if you'd rather keep quotas separate
+ 
+# Brand sign-off + CTA-word library, from your Nisha Homes message-format
+# doc. Scoped to just the follow-up system so it doesn't touch the
+# existing BRAND_CONTACT_NUMBER/BRAND_WEBSITE constants used by the
+# image/video branding code elsewhere in this file.
+FOLLOWUP_CONTACT_LINE = "📞 7303515710 / 7303755710\n🌐 www.nishahomes.com"
+FOLLOWUP_CTA_LIBRARY = ["YES", "OPTIONS", "HELP", "SEARCH", "CALL", "PRICE", "LOCATION", "BUDGET"]
+ 
+# Maps the 3 automatic attempts we currently support onto the "purpose
+# per message" idea from your doc (Remind -> Understand requirement ->
+# Offer help / human check-in). Attempt 4+ never happens automatically
+# (that's the "manual calling" bucket), so only 1-3 are defined.
+FOLLOWUP_STAGE_GUIDANCE = {
+    1: (
+        "This is the FIRST follow-up. Purpose: a warm welcome/acknowledgement — remind them "
+        "who Nisha Homes is and that you're here to help with their property/accommodation "
+        "requirement in Delhi NCR. Keep it low-pressure, not salesy."
+    ),
+    2: (
+        "This is the SECOND follow-up. Purpose: get them talking with an easy, low-effort "
+        "question about their requirement (buy / rent / sell / invest / PG, their location, "
+        "budget, or timeline) — something they can answer in one word or a short reply."
+    ),
+    3: (
+        "This is the THIRD and FINAL automatic follow-up before this lead is handed to a "
+        "human caller. Purpose: a polite final check-in — ask directly if they're still "
+        "looking, and mention that a simple one-word reply is completely fine. Don't sound "
+        "desperate or pushy."
+    ),
+}
  
 followup_logs_collection = db["followupLogs"]
 system_locks_collection = db["systemLocks"]
@@ -6127,14 +6163,35 @@ def ist_date_str(dt_utc):
     return ist.strftime("%Y-%m-%d")
  
  
+def get_ist_now():
+    """Current time shifted to IST, same convention as format_ist()."""
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
+ 
+ 
+def is_within_business_hours():
+    """True between 10:00 AM and 7:00 PM IST (7pm itself is already closed)."""
+    hour = get_ist_now().hour
+    return FOLLOWUP_BUSINESS_START_HOUR <= hour < FOLLOWUP_BUSINESS_END_HOUR
+ 
+ 
+def seconds_until_next_business_window():
+    """How long to sleep before the next 10am-IST window opens."""
+    ist_now = get_ist_now()
+    today_start = ist_now.replace(hour=FOLLOWUP_BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
+    target = today_start if ist_now.hour < FOLLOWUP_BUSINESS_START_HOUR else today_start + timedelta(days=1)
+    return max(60, int((target - ist_now).total_seconds()))
+ 
+ 
 # ---------------------------------------------------------------------
 # MISTRAL — SHORT NATURAL FOLLOW-UP MESSAGE GENERATION
 # ---------------------------------------------------------------------
-def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number):
+def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number, previous_messages=None):
     """
-    Uses Mistral to write a short, natural WhatsApp follow-up message for
-    this lead, informed by the lead's own details AND its call-log history
-    (so the message doesn't ignore what a human agent already discussed).
+    Uses Mistral to write a short, natural WhatsApp follow-up for this
+    lead, following the Nisha Homes message format: warm/conversational
+    tone, one clear reply-word CTA per message (rotated so it's never the
+    same word/phrasing twice to the same lead), a short brand sign-off,
+    and a different "purpose" per attempt (see FOLLOWUP_STAGE_GUIDANCE).
     Returns plain text, or None on failure.
     """
     if not FOLLOWUP_MISTRAL_KEY:
@@ -6152,6 +6209,11 @@ def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number):
             "remarks": c.get("CallerRemarks"),
         })
  
+    previous_texts = [
+        h.get("message", "") for h in (previous_messages or [])
+        if h.get("message") and h.get("status") == "sent"
+    ]
+ 
     context = {
         "customerName": lead_ctx.get("name"),
         "location": lead_ctx.get("location"),
@@ -6163,21 +6225,32 @@ def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number):
         "lastInterestLevel": (end_data or {}).get("Interest Level", ""),
         "lastCallerRemarks": (end_data or {}).get("Caller Remarks", ""),
         "callHistory": call_summary,
+        "previouslySentToThisLead": previous_texts,
     }
  
+    stage_guidance = FOLLOWUP_STAGE_GUIDANCE.get(attempt_number, FOLLOWUP_STAGE_GUIDANCE[3])
+ 
     system_prompt = (
-        "You are a friendly real-estate sales assistant for Nisha Homes, writing a short "
-        "WhatsApp follow-up message to a property lead. Use the lead's details and call "
-        "history (if any) below to write a natural, warm, non-pushy follow-up in 2-3 short "
-        "sentences, in a conversational WhatsApp tone (not a formal email). "
-        f"This is follow-up attempt {attempt_number} of {FOLLOWUP_MAX_ATTEMPTS} for this lead — "
-        "attempt 1 should read as a gentle check-in, attempt 2 should add a small bit of new "
-        "value or a soft nudge (e.g. mention availability/options), and attempt 3 should read "
-        "as a polite final check-in before pausing outreach. "
-        "If call history shows an objection or a specific interest, acknowledge it briefly. "
-        "Do not invent property details that aren't given. Do not use markdown or emojis "
-        "sparingly is fine but don't overdo it. Reply with ONLY the message text — no quotes, "
-        "no preamble, no explanation."
+        "You are 'Nisha' from Nisha Homes, a real-estate advisory business in Delhi NCR, "
+        "writing a short WhatsApp follow-up to a property/accommodation lead. Write in first "
+        "person as Nisha, in a warm, natural, conversational WhatsApp tone — short sentences, "
+        "not a formal email, light and occasional emoji use (not excessive). Keep the whole "
+        "message concise: about 2-4 short lines plus the sign-off.\n\n"
+        f"{stage_guidance}\n\n"
+        "Use the lead's own details and call history below (if any) so the message feels "
+        "personal and relevant — reference their location, property type or budget if known, "
+        "and briefly acknowledge anything specific from a past call (an objection, stated "
+        "interest, etc). Do not invent details that aren't given.\n\n"
+        "End the message with exactly ONE simple, easy-to-answer call-to-action asking them "
+        "to reply with a single word — choose ONE word from this list, and pick one that is "
+        f"different from anything already sent to this lead: {', '.join(FOLLOWUP_CTA_LIBRARY)}.\n\n"
+        "Close with a short brand sign-off on its own line(s), reusing exactly this contact "
+        f"block (you may shorten 'Nisha Homes' branding around it, but keep the numbers and "
+        f"site as-is):\n{FOLLOWUP_CONTACT_LINE}\n\n"
+        "CRITICAL — never repeat a message. If 'previouslySentToThisLead' below is non-empty, "
+        "your new message must read differently from every message listed there, and must not "
+        "reuse the same CTA word or phrases like 'just checking in'.\n\n"
+        "Reply with ONLY the WhatsApp message text — no quotes, no preamble, no explanation."
     )
  
     payload = {
@@ -6305,7 +6378,12 @@ def process_single_followup(ctx):
     end_doc = db["endData"].find_one({"Number": phone}) or {}
     call_logs = list(call_logs_collection.find({"Number": phone}).sort("CreatedAt", -1).limit(5))
  
-    message = generate_followup_message(ctx, end_doc, call_logs, attempt_number)
+    # Fetch this lead's own follow-up history so Mistral never repeats a
+    # message or CTA word it already sent.
+    lead_doc = db[coll_name].find_one({"_id": lead_id}, {"followupHistory": 1}) or {}
+    previous_messages = lead_doc.get("followupHistory", [])
+ 
+    message = generate_followup_message(ctx, end_doc, call_logs, attempt_number, previous_messages)
     if not message:
         followup_logs_collection.insert_one({
             "leadId": str(lead_id), "collection": coll_name, "phone": phone,
@@ -6369,27 +6447,42 @@ def process_single_followup(ctx):
 # ---------------------------------------------------------------------
 def run_followup_scan_and_send():
     while True:
+        if not is_within_business_hours():
+            print("[followup] outside business hours (10am-7pm IST) — pausing until next window")
+            return
+ 
         eligible = get_eligible_followup_leads()
         if not eligible:
             print("[followup] no eligible leads this scan")
-            break
+            return
  
         batch = eligible[:FOLLOWUP_HOURLY_LIMIT]
         print(f"[followup] processing batch of {len(batch)} lead(s) (of {len(eligible)} eligible)")
+ 
         for ctx in batch:
+            if not is_within_business_hours():
+                print("[followup] business hours ended mid-batch — pausing until next window")
+                return
             try:
                 process_single_followup(ctx)
             except Exception:
                 import traceback
                 traceback.print_exc()
-            time.sleep(random.randint(FOLLOWUP_SEND_WAIT_MIN_SEC, FOLLOWUP_SEND_WAIT_MAX_SEC))
+ 
+            wait_minutes = round(random.uniform(FOLLOWUP_SEND_WAIT_MIN_MINUTES, FOLLOWUP_SEND_WAIT_MAX_MINUTES), 1)
+            print(f"[followup] waiting {wait_minutes} min before the next send")
+            time.sleep(wait_minutes * 60)
  
         if len(eligible) <= FOLLOWUP_HOURLY_LIMIT:
-            break  # everyone eligible this scan has now been handled
+            return  # everyone eligible this scan has now been handled
  
-        cooldown = random.randint(FOLLOWUP_BATCH_COOLDOWN_MIN_SEC, FOLLOWUP_BATCH_COOLDOWN_MAX_SEC)
-        print(f"[followup] batch cap reached — cooling down {cooldown}s before the next batch")
-        time.sleep(cooldown)
+        if not is_within_business_hours():
+            print("[followup] business hours ended before next batch — pausing until next window")
+            return
+ 
+        cooldown_minutes = round(random.uniform(FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES, FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES), 1)
+        print(f"[followup] batch cap ({FOLLOWUP_HOURLY_LIMIT}) reached — cooling down {cooldown_minutes} min")
+        time.sleep(cooldown_minutes * 60)
  
  
 # ---------------------------------------------------------------------
@@ -6425,6 +6518,12 @@ def followup_scheduler_loop():
     print("[followup] scheduler loop started")
     while True:
         try:
+            if not is_within_business_hours():
+                sleep_for = seconds_until_next_business_window()
+                print(f"[followup] outside business hours (10am-7pm IST) — sleeping {sleep_for}s until next window")
+                time.sleep(sleep_for)
+                continue
+ 
             if try_acquire_followup_lock(ttl_seconds=FOLLOWUP_RESCAN_INTERVAL_SEC - 60):
                 run_followup_scan_and_send()
             else:
@@ -6620,7 +6719,9 @@ def followup_trigger():
     if session.get("role") != "admin":
         return jsonify({"success": False, "message": "Admin only"}), 403
     threading.Thread(target=run_followup_scan_and_send, daemon=True, name="followup-manual-trigger").start()
-    return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200                
+    return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200
+ 
+
         
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
