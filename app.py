@@ -6091,8 +6091,8 @@ FOLLOWUP_HOURLY_LIMIT = 35          # leads processed per batch
 FOLLOWUP_SEND_WAIT_MIN_MINUTES = 1  # random wait between individual sends: 1-3 min,
 FOLLOWUP_SEND_WAIT_MAX_MINUTES = 3  # can land on a decimal (1.2, 2.6, ...), not just whole minutes
  
-FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES = 7   # after a 35-message batch, cool down 7-10 min
-FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES = 10  # before starting on any leads left over
+FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES = 10   # after a 35-message batch, cool down 7-10 min
+FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES = 20  # before starting on any leads left over
  
 FOLLOWUP_BUSINESS_START_HOUR = 10   # 10:00 AM IST — no sends before this
 FOLLOWUP_BUSINESS_END_HOUR = 19     # 7:00 PM IST — no sends at/after this

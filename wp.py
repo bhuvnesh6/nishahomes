@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WIREBASE_API_URL = "https://wirebase.phishnix.site/api/public/send"
+WIREBASE_API_URL = "https://wirebase.sanjivanitechno.com/api/public/send"
 WIREBASE_API_KEY = os.getenv("WIREBASE_API_KEY")
 WIREBASE_INSTANCE_NAME = os.getenv("WIREBASE_INSTANCE_NAME", "Nishahomes")
 
