@@ -726,7 +726,7 @@ FONT_BOLD = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
 FONT_REG  = os.path.join(FONT_DIR, "DejaVuSans.ttf")
 BRAND_ORANGE = (237, 128, 73)
 BRAND_NAVY_SOLID = (16, 19, 28)   # solid, not the old semi-transparent tuple
-
+BRAND_GOLD = (196, 164, 92)       # NEW: champagne-gold accent for brand name + hairlines
 
 BRAND_CONTACT_NUMBER = "91 73035 15710"   # <-- change this ONE line if the number is different
 BRAND_WEBSITE = "nishahomes.com"           # <-- change this ONE line if the website changes
@@ -918,17 +918,16 @@ def _indian_price_words(price_str):
 
 def build_banner_image(image_bytes, fields):
     """
-    Returns branded JPEG bytes styled after the reference design:
-    orange top bar -> the ORIGINAL, UNCROPPED photo -> a solid navy info
-    panel appended below the photo (title / location / price / config) ->
-    divider -> contact bar.
+    Returns branded JPEG bytes styled after the gold+navy reference design:
+    navy top bar (gold brand name + tagline, phone top-right) -> thin gold
+    hairline -> the ORIGINAL, UNCROPPED photo with an orange deal-type pill
+    -> navy info panel (title / location / price / config) -> thin gold
+    hairline -> navy contact bar (phone + website, stacked).
 
-    Title/locality/config lines are wrapped and truncated using REAL
-    pixel measurement (draw.textlength), not an estimated "chars per
-    line" — the estimate was undersizing for bold/caps text and letting
-    lines run off the right edge. panel_h is now measured from the
-    actual content instead of a fixed W*0.40, so nothing gets clipped
-    or painted over by the contact bar below it.
+    Title/locality/config lines are wrapped and truncated using REAL pixel
+    measurement (draw.textlength). panel_h is measured from the actual
+    content instead of a fixed ratio, so nothing gets clipped or painted
+    over by the contact bar below it.
     """
     CONTACT_NUMBER = "+91 73035 15710"   # fixed branding contact number
 
@@ -940,8 +939,11 @@ def build_banner_image(image_bytes, fields):
         img = img.resize((TARGET_W, new_h), Image.LANCZOS)
     W, H = img.size
 
-    top_bar_h = int(W * 0.095)
-    contact_h = int(W * 0.11)
+    # Top/contact bars are taller than before — each now carries TWO lines
+    # (brand name + tagline on top, phone + website on the bottom) instead
+    # of one, to match the reference layout.
+    top_bar_h = int(W * 0.135)
+    contact_h = int(W * 0.145)
     pad_x = int(W * 0.045)
     panel_pad_top = int(W * 0.09)
     panel_pad_bottom = int(W * 0.035)
@@ -964,8 +966,6 @@ def build_banner_image(image_bytes, fields):
         return text + "…"
 
     def _wrap_title(text, font, max_w, max_lines):
-        """Greedy word-wrap measured in real pixels, capped at max_lines,
-        ellipsizing the last line if content still remains."""
         words = (text or "").split()
         if not words:
             return [""]
@@ -1019,24 +1019,33 @@ def build_banner_image(image_bytes, fields):
     canvas.paste(img, (0, top_bar_h))
     draw = ImageDraw.Draw(canvas, "RGBA")
 
-    # ---------- TOP BAR ----------
-    draw.rectangle([0, 0, W, top_bar_h], fill=BRAND_ORANGE)
-    f_brand = _font("bold", int(top_bar_h * 0.42))
-    f_tag   = _font("regular", int(top_bar_h * 0.24))
-    draw.text((int(W * 0.035), top_bar_h * 0.28), "NISHA HOMES", font=f_brand, fill="white")
-    tag = "Trusted Real Estate Advisor"
-    tag_w = draw.textlength(tag, font=f_tag)
-    draw.text((W - tag_w - int(W * 0.035), top_bar_h * 0.40), tag, font=f_tag, fill="white")
+    # ---------- TOP BAR (navy, gold brand name, phone top-right) ----------
+    draw.rectangle([0, 0, W, top_bar_h], fill=BRAND_NAVY_SOLID)
 
-    # ---------- DEAL-TYPE PILL ----------
+    f_brand    = _font("bold", int(top_bar_h * 0.30))
+    f_tag      = _font("regular", int(top_bar_h * 0.16))
+    f_topphone = _font("bold", int(top_bar_h * 0.20))
+
+    brand_x = int(W * 0.035)
+    draw.text((brand_x, top_bar_h * 0.20), "NISHA HOMES", font=f_brand, fill=BRAND_GOLD)
+    draw.text((brand_x, top_bar_h * 0.58), "Your Trusted Real Estate Advisor", font=f_tag, fill=(220, 222, 228))
+
+    phone_label = "\u260E  " + CONTACT_NUMBER
+    phone_w = draw.textlength(phone_label, font=f_topphone)
+    draw.text((W - phone_w - int(W * 0.035), top_bar_h * 0.42), phone_label, font=f_topphone, fill="white")
+
+    # thin gold hairline separating the top bar from the photo
+    draw.line([(0, top_bar_h - 1), (W, top_bar_h - 1)], fill=(*BRAND_GOLD, 220), width=3)
+
+    # ---------- DEAL-TYPE PILL (orange bg, white text — overlaid on photo) ----------
     deal = (fields.get("dealType") or "For Sale").upper()
     f_pill = _font("bold", int(W * 0.032))
     pill_pad_x = int(W * 0.03)
     pill_h = int(W * 0.06)
     pill_w = draw.textlength(deal, font=f_pill) + pill_pad_x * 2
     px, py = int(W * 0.035), top_bar_h + int(W * 0.03)
-    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2, fill=(255, 255, 255, 245))
-    draw.text((px + pill_pad_x, py + pill_h * 0.20), deal, font=f_pill, fill=BRAND_ORANGE)
+    draw.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=pill_h // 2, fill=(*BRAND_ORANGE, 255))
+    draw.text((px + pill_pad_x, py + pill_h * 0.20), deal, font=f_pill, fill="white")
 
     # ---------- INFO PANEL (height = panel_h measured above) ----------
     panel_top = top_bar_h + H
@@ -1063,22 +1072,17 @@ def build_banner_image(image_bytes, fields):
     if sub_line:
         draw.text((pad_x, y), sub_line, font=f_meta, fill=(210, 214, 224))
 
-    # ---------- DIVIDER + CONTACT BAR ----------
+    # ---------- DIVIDER + CONTACT BAR (navy, gold hairline, phone/website stacked) ----------
     divider_y = panel_top + panel_h
-    draw.line([(pad_x, divider_y - 1), (W - pad_x, divider_y - 1)], fill=(255, 255, 255, 40), width=2)
+    draw.line([(0, divider_y - 1), (W, divider_y - 1)], fill=(*BRAND_GOLD, 220), width=3)
     draw.rectangle([0, divider_y, W, divider_y + contact_h], fill=BRAND_NAVY_SOLID)
 
-    icon_r = int(contact_h * 0.30)
-    icon_cx, icon_cy = pad_x + icon_r, divider_y + contact_h // 2
-    draw.ellipse([icon_cx - icon_r, icon_cy - icon_r, icon_cx + icon_r, icon_cy + icon_r], fill=BRAND_ORANGE)
-    f_icon = _font("bold", int(icon_r * 1.1))
-    icon_glyph = "\u260E"
-    icon_glyph_w = draw.textlength(icon_glyph, font=f_icon)
-    draw.text((icon_cx - icon_glyph_w / 2, icon_cy - f_icon.size * 0.62), icon_glyph, font=f_icon, fill="white")
+    f_contact = _font("bold", int(W * 0.036))
+    f_web     = _font("regular", int(W * 0.028))
 
-    f_contact = _font("bold", int(W * 0.034))
-    contact_display = f"{CONTACT_NUMBER}  •  {BRAND_WEBSITE}"
-    draw.text((icon_cx + icon_r * 1.7, icon_cy - f_contact.size * 0.55), contact_display, font=f_contact, fill="white")
+    contact_y = divider_y + int(contact_h * 0.22)
+    draw.text((pad_x, contact_y), "\u260E  " + CONTACT_NUMBER, font=f_contact, fill="white")
+    draw.text((pad_x, contact_y + int(f_contact.size * 1.5)), BRAND_WEBSITE, font=f_web, fill=BRAND_GOLD)
 
     out = io.BytesIO()
     canvas.save(out, format="JPEG", quality=92)
