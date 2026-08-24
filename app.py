@@ -6752,61 +6752,6 @@ def _store_webhook_payload(entry):
         del _webhook_history[WEBHOOK_HISTORY_MAX:]
 
 
-@app.route("/webhook/nishahomes-ai", methods=["GET", "POST"])
-def nishahomes_ai_webhook():
-    """
-    Public webhook endpoint for WhatsApp automation / API providers.
-
-    GET  -> handles provider verification handshakes (hub.mode /
-            hub.verify_token / hub.challenge) if the provider needs one.
-            With no verification query params, just confirms the
-            endpoint is alive (handy for a quick browser check).
-    POST -> accepts ANY JSON (or form/raw) body the provider sends,
-            stores it in-memory as the latest received payload, and
-            returns 200 immediately so the provider doesn't retry.
-    """
-    if request.method == "GET":
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-
-        if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN and challenge:
-            return challenge, 200
-
-        return jsonify({"status": "ok", "message": "Nisha Homes AI webhook is live"}), 200
-
-    # POST
-    try:
-        if request.is_json:
-            body = request.get_json(silent=True)
-        else:
-            raw = request.get_data(as_text=True)
-            try:
-                body = json.loads(raw) if raw else {}
-            except Exception:
-                body = {"raw": raw, "form": request.form.to_dict()}
-
-        now = datetime.utcnow()
-        entry = {
-            "receivedAt": now.isoformat() + "Z",
-            "receivedAtFormatted": format_ist(now),
-            "method": "POST",
-            "sourceIp": request.headers.get("X-Forwarded-For", request.remote_addr),
-            "headers": dict(request.headers),
-            "queryArgs": request.args.to_dict(),
-            "body": body
-        }
-        _store_webhook_payload(entry)
-        print(f"[webhook] payload received at {entry['receivedAtFormatted']}")
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        # Still return 200 where possible — most providers hammer retries
-        # on non-2xx, and a malformed body isn't worth losing the webhook.
-        return jsonify({"success": False, "message": str(e)}), 200
-
-    return jsonify({"success": True}), 200
 
 
 @app.route("/api/webhook/latest", methods=["GET"])
