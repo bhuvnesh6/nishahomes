@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Webhook Viewer · Nisha Homes AI</title>
+<style>
+:root {
+  --primary:       #2D3142;
+  --primary-deep:  #1e2235;
+  --primary-mid:   #3a3f56;
+  --primary-light: #4a5070;
+  --accent:        #EF8354;
+  --accent-light:  #FFA07A;
+  --accent-glow:   rgba(239,131,84,0.22);
+  --bg:            #FAF9F6;
+  --text:          #2D3142;
+  --text-soft:     #6B7280;
+  --text-faint:    rgba(255,255,255,0.45);
+  --border:        #E5E7EB;
+  --border-dark:   rgba(255,255,255,0.10);
+  --success:       #10B981;
+  --warm:          #F59E0B;
+  --hot:           #EF4444;
+  --info:          #3B82F6;
+  --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
+  --sh:            0 6px 24px rgba(45,49,66,0.10);
+  --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
+  --sidebar-w:     240px;
+  --topbar-h:      60px;
+  --radius:        14px;
+  --radius-sm:     8px;
+  --radius-pill:   100px;
+  --transition:    all 0.28s cubic-bezier(0.22,1,0.36,1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+}
+
+/* ---------- Topbar ---------- */
+.topbar {
+  height: var(--topbar-h);
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  box-shadow: var(--sh-sm);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-brand .dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+
+.topbar-brand h1 {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.topbar-brand span {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-dark);
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.status-pill .live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+}
+
+/* ---------- Page shell ---------- */
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.page-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.page-head p {
+  color: var(--text-soft);
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+
+.head-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--primary);
+  transition: var(--transition);
+  user-select: none;
+}
+
+.btn:hover {
+  border-color: var(--primary-light);
+  box-shadow: var(--sh-sm);
+  transform: translateY(-1px);
+}
+
+.btn:active { transform: translateY(0); }
+
+.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-accent:hover {
+  background: var(--accent-light);
+  border-color: var(--accent-light);
+  box-shadow: 0 6px 18px var(--accent-glow);
+}
+
+.btn-accent.copied {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-soft);
+}
+
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.switch.on { background: var(--accent); }
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 17px; height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--sh-sm);
+  transition: var(--transition);
+}
+
+.switch.on::after { left: 19px; }
+
+/* ---------- Meta strip ---------- */
+.meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.meta-chip {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  min-width: 150px;
+  box-shadow: var(--sh-sm);
+}
+
+.meta-chip .label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-soft);
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.meta-chip .value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--primary);
+  word-break: break-word;
+}
+
+/* ---------- Canvas / JSON viewer ---------- */
+.canvas-card {
+  background: var(--primary-deep);
+  border-radius: var(--radius);
+  box-shadow: var(--sh-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-dark);
+}
+
+.canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--primary);
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.canvas-header .traffic {
+  display: flex;
+  gap: 6px;
+}
+.canvas-header .traffic span {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.canvas-header .traffic span:nth-child(1) { background: var(--hot); }
+.canvas-header .traffic span:nth-child(2) { background: var(--warm); }
+.canvas-header .traffic span:nth-child(3) { background: var(--success); }
+
+.canvas-header .filename {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  font-weight: 600;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.canvas-body {
+  padding: 20px;
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.canvas-body pre {
+  margin: 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #E5E7EB;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* basic JSON token colors */
+.tok-key    { color: var(--accent-light); }
+.tok-string { color: #A7F3D0; }
+.tok-number { color: #93C5FD; }
+.tok-bool   { color: #FCA5A5; }
+.tok-null   { color: #9CA3AF; }
+
+.canvas-body::-webkit-scrollbar { width: 10px; height: 10px; }
+.canvas-body::-webkit-scrollbar-thumb {
+  background: var(--primary-mid);
+  border-radius: 10px;
+}
+.canvas-body::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Empty state ---------- */
+.empty-state {
+  text-align: center;
+  padding: 70px 20px;
+  color: var(--text-faint);
+}
+.empty-state .icon {
+  font-size: 34px;
+  margin-bottom: 10px;
+  opacity: 0.6;
+}
+.empty-state h3 {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.empty-state p {
+  font-size: 12.5px;
+  max-width: 360px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+.empty-state code {
+  background: rgba(255,255,255,0.08);
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: var(--accent-light);
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--primary);
+  color: #fff;
+  padding: 11px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--sh-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.toast .dot { color: var(--success); }
+
+@media (max-width: 600px) {
+  .page { padding: 22px 14px 50px; }
+  .canvas-body { max-height: 55vh; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">
+    <span class="dot"></span>
+    <h1>NISHA HOMES <span>AI Webhook Viewer</span></h1>
+  </div>
+  <div class="status-pill">
+    <span class="live-dot"></span>
+    <span id="pollStatusText">Listening for events…</span>
+  </div>
+</div>
+
+<div class="page">
+
+  <div class="page-head">
+    <div>
+      <h2>Latest Webhook Response</h2>
+      <p>Live feed from <code style="font-family:monospace">/webhook/nishahomes-ai</code> — auto-refreshes, no data stored beyond the most recent request.</p>
+    </div>
+    <div class="head-actions">
+      <div class="toggle-wrap">
+        <span>Auto-refresh</span>
+        <div class="switch on" id="autoToggle"></div>
+      </div>
+      <button class="btn btn-ghost" id="refreshBtn">↻ Refresh</button>
+      <button class="btn btn-accent" id="copyBtn">⧉ Copy JSON</button>
+    </div>
+  </div>
+
+  <div class="meta-strip" id="metaStrip" style="display:none;">
+    <div class="meta-chip">
+      <div class="label">Received At (IST)</div>
+      <div class="value" id="metaReceivedAt">—</div>
+    </div>
+    <div class="meta-chip">
+      <div class="label">Source IP</div>
+      <div class="value" id="metaSourceIp">—</div>
+    </div>
+    <div class="meta-chip">
+      <div class="label">Content Type</div>
+      <div class="value" id="metaContentType">—</div>
+    </div>
+  </div>
+
+  <div class="canvas-card">
+    <div class="canvas-header">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="filename" id="canvasFilename">latest-response.json</div>
+    </div>
+    <div class="canvas-body" id="canvasBody">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">⌁</div>
+        <h3>No webhook events received yet</h3>
+        <p>Point your WhatsApp API provider to<br><code>/webhook/nishahomes-ai</code><br>and this panel will update automatically.</p>
+      </div>
+      <pre id="jsonOutput" style="display:none;"></pre>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"><span class="dot">●</span><span id="toastText">Copied to clipboard</span></div>
+
+<script>
+const POLL_INTERVAL_MS = 4000;
+let autoRefresh = true;
+let pollTimer = null;
+let latestPayload = null;
+
+const els = {
+  emptyState: document.getElementById('emptyState'),
+  jsonOutput: document.getElementById('jsonOutput'),
+  metaStrip: document.getElementById('metaStrip'),
+  metaReceivedAt: document.getElementById('metaReceivedAt'),
+  metaSourceIp: document.getElementById('metaSourceIp'),
+  metaContentType: document.getElementById('metaContentType'),
+  canvasFilename: document.getElementById('canvasFilename'),
+  pollStatusText: document.getElementById('pollStatusText'),
+  autoToggle: document.getElementById('autoToggle'),
+  refreshBtn: document.getElementById('refreshBtn'),
+  copyBtn: document.getElementById('copyBtn'),
+  toast: document.getElementById('toast'),
+  toastText: document.getElementById('toastText'),
+};
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function syntaxHighlight(jsonStr) {
+  const escaped = escapeHtml(jsonStr);
+  return escaped.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(\.\d+)?([eE][+-]?\d+)?)/g,
+    (match) => {
+      let cls = 'tok-number';
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? 'tok-key' : 'tok-string';
+      } else if (/true|false/.test(match)) {
+        cls = 'tok-bool';
+      } else if (/null/.test(match)) {
+        cls = 'tok-null';
+      }
+      return `<span class="${cls}">${match}</span>`;
+    }
+  );
+}
+
+function renderPayload(entry) {
+  if (!entry) {
+    els.emptyState.style.display = 'block';
+    els.jsonOutput.style.display = 'none';
+    els.metaStrip.style.display = 'none';
+    els.canvasFilename.textContent = 'latest-response.json';
+    return;
+  }
+
+  latestPayload = entry;
+  els.emptyState.style.display = 'none';
+  els.jsonOutput.style.display = 'block';
+  els.metaStrip.style.display = 'flex';
+
+  const pretty = JSON.stringify(entry, null, 2);
+  els.jsonOutput.innerHTML = syntaxHighlight(pretty);
+
+  els.metaReceivedAt.textContent = entry.receivedAtFormatted || '—';
+  els.metaSourceIp.textContent = entry.sourceIp || '—';
+  const ct = (entry.headers && (entry.headers['Content-Type'] || entry.headers['content-type'])) || '—';
+  els.metaContentType.textContent = ct;
+  els.canvasFilename.textContent = `webhook-${(entry.receivedAt || '').replace(/[:.]/g,'-')}.json`;
+}
+
+async function fetchLatest() {
+  try {
+    const res = await fetch('/api/webhook/latest', { cache: 'no-store' });
+    const json = await res.json();
+    renderPayload(json.data);
+    els.pollStatusText.textContent = autoRefresh ? 'Listening for events…' : 'Auto-refresh paused';
+  } catch (err) {
+    els.pollStatusText.textContent = 'Connection issue — retrying…';
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(fetchLatest, POLL_INTERVAL_MS);
+}
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+els.autoToggle.addEventListener('click', () => {
+  autoRefresh = !autoRefresh;
+  els.autoToggle.classList.toggle('on', autoRefresh);
+  if (autoRefresh) {
+    startPolling();
+    els.pollStatusText.textContent = 'Listening for events…';
+  } else {
+    stopPolling();
+    els.pollStatusText.textContent = 'Auto-refresh paused';
+  }
+});
+
+els.refreshBtn.addEventListener('click', fetchLatest);
+
+els.copyBtn.addEventListener('click', async () => {
+  if (!latestPayload) {
+    showToast('Nothing to copy yet');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(latestPayload, null, 2));
+    els.copyBtn.classList.add('copied');
+    els.copyBtn.innerHTML = '✓ Copied';
+    showToast('JSON copied to clipboard');
+    setTimeout(() => {
+      els.copyBtn.classList.remove('copied');
+      els.copyBtn.innerHTML = '⧉ Copy JSON';
+    }, 1600);
+  } catch (err) {
+    showToast('Copy failed — select manually');
+  }
+});
+
+function showToast(msg) {
+  els.toastText.textContent = msg;
+  els.toast.classList.add('show');
+  setTimeout(() => els.toast.classList.remove('show'), 2200);
+}
+
+fetchLatest();
+startPolling();
+</script>
+
+</body>
+</html>

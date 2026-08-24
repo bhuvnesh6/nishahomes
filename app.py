@@ -6725,6 +6725,104 @@ def followup_trigger():
     threading.Thread(target=run_followup_scan_and_send, daemon=True, name="followup-manual-trigger").start()
     return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200
  
+ 
+ #webhook handler 
+
+# =====================================================================
+# NEW: PUBLIC WEBHOOK - "Nisha Homes AI" (WhatsApp automation inbound)
+# In-memory only (no DB, as requested) — holds just the most recent
+# payload received, plus a short rolling history for convenience.
+# Restarting the process clears this by design.
+# =====================================================================
+_webhook_lock = threading.Lock()
+_latest_webhook_payload = None   # dict, see _store_webhook_payload()
+_webhook_history = []            # most-recent-first, capped
+WEBHOOK_HISTORY_MAX = 25
+
+# Used only if the provider does a GET-based verification handshake
+# (e.g. Meta/WhatsApp Cloud API's hub.verify_token). Set in .env if needed.
+WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "nishahomes_verify")
+
+
+def _store_webhook_payload(entry):
+    global _latest_webhook_payload
+    with _webhook_lock:
+        _latest_webhook_payload = entry
+        _webhook_history.insert(0, entry)
+        del _webhook_history[WEBHOOK_HISTORY_MAX:]
+
+
+@app.route("/webhook/nishahomes-ai", methods=["GET", "POST"])
+def nishahomes_ai_webhook():
+    """
+    Public webhook endpoint for WhatsApp automation / API providers.
+
+    GET  -> handles provider verification handshakes (hub.mode /
+            hub.verify_token / hub.challenge) if the provider needs one.
+            With no verification query params, just confirms the
+            endpoint is alive (handy for a quick browser check).
+    POST -> accepts ANY JSON (or form/raw) body the provider sends,
+            stores it in-memory as the latest received payload, and
+            returns 200 immediately so the provider doesn't retry.
+    """
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+
+        if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN and challenge:
+            return challenge, 200
+
+        return jsonify({"status": "ok", "message": "Nisha Homes AI webhook is live"}), 200
+
+    # POST
+    try:
+        if request.is_json:
+            body = request.get_json(silent=True)
+        else:
+            raw = request.get_data(as_text=True)
+            try:
+                body = json.loads(raw) if raw else {}
+            except Exception:
+                body = {"raw": raw, "form": request.form.to_dict()}
+
+        now = datetime.utcnow()
+        entry = {
+            "receivedAt": now.isoformat() + "Z",
+            "receivedAtFormatted": format_ist(now),
+            "method": "POST",
+            "sourceIp": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "headers": dict(request.headers),
+            "queryArgs": request.args.to_dict(),
+            "body": body
+        }
+        _store_webhook_payload(entry)
+        print(f"[webhook] payload received at {entry['receivedAtFormatted']}")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        # Still return 200 where possible — most providers hammer retries
+        # on non-2xx, and a malformed body isn't worth losing the webhook.
+        return jsonify({"success": False, "message": str(e)}), 200
+
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/webhook/latest", methods=["GET"])
+def get_latest_webhook_payload():
+    """Powers the viewer page — returns the most recent payload received
+    on /webhook/nishahomes-ai, or null if nothing has arrived yet."""
+    with _webhook_lock:
+        data = _latest_webhook_payload
+    return jsonify({"success": True, "data": data}), 200
+
+
+@app.route("/webhook-viewer")
+def webhook_viewer_page():
+    if not session.get("user_id"):
+        return redirect("/")
+    return render_template("webhook_viewer.html") 
 
         
 if __name__ == "__main__":
