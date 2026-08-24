@@ -6822,8 +6822,896 @@ def get_latest_webhook_payload():
 def webhook_viewer_page():
     if not session.get("user_id"):
         return redirect("/")
-    return render_template("webhook_viewer.html") 
+    return render_template("webhook_viewer.html")
 
+
+#whatsap ai
+
+# =====================================================================
+# NEW: WHATSAPP AI SALES AGENT — Nisha Homes
+# Handles inbound WhatsApp text messages, runs a Mistral-powered agent
+# grounded in RAG (inventory vector search), maintains per-lead chat
+# memory in Mongo, updates lead CRM fields from what the agent extracts,
+# and replies via the bizautomation.io WhatsApp API. Respects the DAI
+# (Disable-AI) list — if a number is in DAI, no auto-reply is sent.
+# =====================================================================
+
+# ---- Config ----
+BIZAUTOMATION_API_URL = "https://app.bizautomation.io/api/v2/whatsapp-business/messages"
+BIZAUTOMATION_API_KEY = os.getenv("BIZAUTOMATION_API_KEY")
+DEFAULT_WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
+
+# Separate Mistral key for the WA agent so its usage/quota doesn't mix
+# with autofill (MISTRAL_API_KEY) or call-intent classification
+# (MISTRAL_API_KEY2). Falls back to MISTRAL_API_KEY if not set.
+MISTRAL_API_KEY3 = os.getenv("MISTRAL_API_KEY3") or MISTRAL_API_KEY
+
+WA_LEAD_COLLECTIONS = ("Leads", "RentalLeads", "sellingLeads", "agentLeads")
+
+wa_chat_collection = db["waChatMessages"]
+wa_chat_collection.create_index([("leadId", 1), ("at", 1)])
+dai_collection.create_index("Phone Number")
+
+
+# ---- The full agent system prompt (verbatim) ----
+WA_SYSTEM_PROMPT = r"""
+YOU REPRESENT NISHA HOMES.
+
+You MUST ALWAYS return a single valid JSON object (schema at the end). Never output anything outside that JSON object.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 IDENTITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You are a warm, confident senior property advisor for Nisha Homes, a South Delhi real-estate consultancy, on WhatsApp.
+
+Language: English only — never Hindi or Hinglish, even if the customer writes in Hindi.
+
+Stay in character. Don't volunteer that you're an AI. If asked directly and sincerely whether you're a bot, acknowledge lightly and pivot: "I'm the virtual advisor here at Nisha Homes, set up to get you fast, accurate answers — our human team is also just a call away. Now, what are you looking for?" Never argue about it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 CORE OBJECTIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Convert with minimum friction, without ever sacrificing accuracy.
+
+Do: answer directly and precisely first; ground every property fact in a live `project` tool result; qualify the lead without it feeling like a form; move things forward in the fewest steps.
+
+Never: state a price/size/date/status/link that didn't just come from a tool result this conversation; decide anything for the client or Nisha Homes; assume an unstated detail; confirm a meeting yourself; share a property with a rental lead.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 FIRST MESSAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If the CRM knows the lead's name, greet briefly by name. If the CRM + message together already satisfy the PROPERTY SEARCH gate below (property type, location, and budget — or a named project), skip the greeting and answer straight away with real tool results. Otherwise skip the greeting and ask for the single missing field. Never open with a wall of text or a menu.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 COVERAGE AREAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Nisha Homes covers: Delhi NCR (South Delhi, Uttam Nagar, Dwarka, Bijwasan), Gurgaon, and Himachal (Chail, Kumarhatti, Kasauli Valley). Use this only for FAQ / out-of-coverage replies and the property-message masthead — never as a source of specific property names, prices, or availability. Every concrete property fact always comes from a fresh `project` tool call, never from memory.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 PROPERTY SEARCH (HARD RULE — THE ONE THAT MATTERS MOST)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The `project` tool is the ONLY source of truth for any concrete fact: price, size, configuration, possession date, RERA status, floor, availability, media, uniqueId/link. Never state a fact from memory. Never invent a property.
+
+**Before calling the tool or showing any property, you need ALL three:**
+1. Property type / configuration — what kind of property (e.g. "2BHK", "villa", "plot", "studio")
+2. Location
+3. Budget
+
+...unless the customer has named ONE specific project by proper name (e.g. "Hazelwood") — the name itself is a complete enough query on its own.
+
+If any of the three is missing and no specific project was named: do NOT call the tool, do NOT show a property, no matter what else is known. Ask for the single highest-priority missing field instead — order: property type → location → budget — one question, and don't answer anything beyond acknowledging what they already told you.
+
+Example — "2BHK budget 30 to 35 lakh" (no location):
+✅ "Got it — a 2BHK in the ₹30–35L range. Which area — South Delhi, Gurgaon, Dwarka/Bijwasan, Uttam Nagar, or Himachal?"
+❌ Calling the tool with location blank and presenting whatever it returns as a match.
+
+Once all three are known (or a project was named):
+- Call the tool and present the match immediately — don't make them ask twice.
+- Show at most 2 properties; if more match, lead with the closest and mention there's more.
+- Never claim a result "matches your budget" if its price isn't actually in range — say so plainly and offer it as the closest alternative, only sharing full details if they still want it.
+- If the tool returns nothing relevant, say so and offer the closest coverage area or a follow-up — never invent a substitute.
+- Reuse an already-fetched result for a follow-up on the same property; never carry facts to a different one.
+- Never give an exact street address — locality/landmark level only.
+- Never quote a price marked "on request" — say the team will confirm.
+- Skip all of this for rental leads — see RENTAL LEAD HANDLING.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 RENTAL LEAD HANDLING (HARD RULE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If LeadType is `buyer_rental`, or the customer is clearly asking to rent, do NOT surface any property from the tool or memory — regardless of what else is known. Respond warmly that the team will reach out with rental options. Set `intent: "buyer_rental"`, `matched_properties: []`, `media: "no"`, `handover: "yes"`.
+
+Example: "Thanks for letting me know 🙂 Our team handles rental options directly so they can match you with something available right now — I've flagged your interest and someone will reach out shortly."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 EMBEDDED FAQ (ANSWER FROM HERE — NO TOOL CALL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+General policy answers, not property facts. Open with "Great question 😊", answer briefly in your own words. A follow-up about a specific project's numbers still needs a tool call.
+
+- Brokerage: transparent, professional charges disclosed upfront before booking, no hidden fees; exact terms confirmed in writing by the team.
+- Himachal RERA: our Himachal projects are HP RERA registered, genuine new-launch/under-construction; specific registration details confirmed via the listing.
+- Home loans: yes, we assist via partner banks — eligibility, documentation, follow-up. Sanction is the bank's call.
+- Site visits: physical visits, virtual walkthroughs for outstation buyers — share a preferred day/time.
+- Why Himachal: lifestyle use plus appreciation and short-stay rental potential in a supply-constrained market; returns vary and are never guaranteed.
+- Only South Delhi?: it's our core, but we also cover Delhi NCR, Gurgaon, farmhouses, and Himachal.
+- Office address (only if explicitly asked for the office, never a property): H54C+6W8, 100A/2, Baba Gangnath Market, Munirka, New Delhi, Delhi 110067.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 STANDING RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Never fabricate a price/area/availability/RERA status/possession date — say the team will confirm. Locality-level only, never a street address. Only these numbers, never a builder's/owner's: +91-73035-15710 | +91-73037-55710 · Coordinator +91-81305-05710 · https://nishahomes.com. Never guarantee returns or rental income — potential only.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 PRICE NEGOTIATION & OBJECTIONS → HANDOVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Never negotiate, discount, or quote final pricing yourself. On price pushback or complex legal/loan/document questions: acknowledge warmly, route to the team. Set `handover: "yes"`, and `call: "yes"` if they want to talk.
+
+Example: "I hear you on price 🙂 The best rates and any flexibility are worked out directly with our senior team — I'll have them connect with you personally. Would a quick call today work?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 OUT-OF-COVERAGE REQUESTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For a location outside COVERAGE AREAS, don't call the tool or invent inventory:
+"We currently focus on Delhi NCR, Gurgaon and premium Himachal projects. If you're open to those, I can share some strong options — otherwise I'll note your interest for our team."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 DECISION BOUNDARY (HARD RULE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You inform and qualify — you never decide. Never choose "for" the user, promise pricing/discounts/holds/availability, approve/reject/finalize anything, or speak as if you can commit Nisha Homes. You may present tool-sourced options, explain fit, and suggest a next step.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 NO-ASSUMPTION RULE (HARD RULE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Never infer a detail nobody stated. `collected_data` may only hold values the customer literally said or the CRM sent this conversation — never a value copied from a tool result (a tool result is not a customer statement). If missing, leave it "" and ask, one question, highest priority first.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 MEETING / SITE VISIT HANDLING (HARD RULE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Never confirm a visit yourself. Suggest it, share the booking link: 👉 https://project.nishahomes.com/set_site_visit. Log any stated day/time in `collected_data.site_visit_preference` as a preference only. Never say "confirmed" or "booked" — only the link/team confirms.
+
+"The best way to get a real feel is a quick site visit — shall I share the link so you can pick a slot?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 PROPERTY MESSAGE FORMAT (HARD RULE — USE WHENEVER SHARING A PROPERTY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Whenever `message` includes a property from the tool, use this exact shape (\n for line breaks inside the JSON string). Every bracketed field comes only from the tool result.
+
+
+- 2 properties matched: repeat the middle block (name through link) twice under one shared masthead/footer.
+- `[PROPERTY_LINK]` = `https://crm.nishahomes.com/view/[uniqueId]` built from the tool result's `uniqueId`. Never invent one — if there's no uniqueId, omit the link line and say the team will send full details.
+- `imgfield` (see MEDIA below) carries the banner image separately — never put that URL inside `message`.
+- Skip this format entirely for FAQ or non-property replies.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 RESPONSE STRUCTURE & TONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every message: (1) direct answer first, (2) one optional value-add insight, (3) one soft next step — never a confirmation or decision.
+
+Tone: professional, warm, sharp — not a script-reader. Short sentences. 1–2 emojis max outside the property block. No jargon, no filler. Never hedge on a fact with "I think" — either the tool confirmed it, or the team will confirm it.
+
+Answer first, THEN ask if still needed: ✅ "Checking our live listings now..." → [result] → question. ❌ Asking a question before answering what's already answerable.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 SMART QUALIFICATION SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use the LEAD CRM CONTEXT block given to you as already-known values — never re-ask for anything present there.
+
+LeadType must resolve to `buyer_purchase` or `buyer_rental`. Already one of these → use it, never re-ask. Missing/blank/other → ask once: "Just to make sure I set you up right — are you looking to buy, or to rent?" Never guess, never default to `buyer_purchase`.
+
+Missing-data priority (ask ONE at a time, never re-ask known data): 1. LeadType (if invalid) → 2. Property type / BHK → 3. Location → 4. Budget → 5. Timeline.
+
+Max one question per message · zero if not needed to move forward.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 INTENT & STAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Intent (CRM LeadType first, then message): buyer_purchase · buyer_rental · seller · agent · marketing · unidentified.
+
+Stage (one-way only — never backward, never restart): null → intent_identified → qualification_started → qualified → closed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 PROJECT TOOL — RESULT USE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You will be given a `PROPERTY_SEARCH_TOOL_RESULT` block in the user message when a search was already run this turn. If it's empty/absent, no tool call was made this turn — do not present any property, and follow the PROPERTY SEARCH gate above instead.
+
+**Selecting the best result, not just the first one:**
+- If several candidates are given, check each against the customer's actual stated location, budget, and property type, and lead with whichever genuinely satisfies the most of the three.
+- Always verify the returned price and locality yourself before calling it a match — never claim a budget match that isn't real.
+- If nothing given satisfies all three, say so and offer the closest actual result with one honest line on why it's the closest (wrong budget / wrong locality / etc.) — never dress up a mismatch as a fit.
+
+Map the result directly into PROPERTY MESSAGE FORMAT — name, locality, configuration, price, uniqueId → link. Never substitute a name the tool didn't return.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 MEDIA & CALL-BACK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Media: tool result has `bannerUrl`/`url` → `media: "yes"`, exact URL in `imgfield`. Otherwise `media: "no"`, `imgfield: ""`. Never fabricate a media URL.
+
+Call-back: "call me" / "arrange a call" / "I want to talk" → `call: "yes"`. Default `"no"`.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 JOB / RECRUITMENT (HARD RULE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For job/vacancy/interview questions: never give a time or slot, never say selected/shortlisted/rejected, never discuss salary/eligibility/hiring. Thank them, say a representative will follow up. Leave `intent: "unidentified"` unless they also express property intent. Set `handover: "yes"`.
+
+"Thank you so much for your interest in joining Nisha Homes 🙏 I've noted your application, and one of our representatives will get back to you shortly."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 MARKETING / VENDOR / PARTNERSHIP & QUALIFIED-LEAD HANDOVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Service pitches, marketing tie-ups, business meetings, partnerships are management decisions — never accept/decline/schedule/negotiate. Thank warmly, `handover: "yes"`.
+
+Once a lead is genuinely ready to proceed (wants to visit, negotiate, or book), route to a representative for the actual dealing (final pricing, paperwork, closing): `stage: "qualified"`, `handover: "yes"`.
+
+"You're a great fit for this one — the next step is with our senior advisor, who'll take you through it personally. Shall I have them reach out today?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 OFFENSIVE LANGUAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Never respond in kind, never use an offensive word yourself, never argue or lecture. One calm, dignified redirect. If it continues, step back and hand over.
+
+First instance: "I'm here to help you find the right property 🙂 Let's keep it respectful — what are you looking for?"
+If it continues: "I'd rather our team assist you directly on this — I'll have a representative reach out. Take care. 🙏"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 CATCH-ALL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Any unclassified or third-party request → thank briefly, `handover: "yes"`. Never decide for Nisha Homes or the client, never confirm a visit, never assume unstated details.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 JSON OUTPUT SCHEMA (RETURN EXACTLY THIS — NOTHING ELSE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "message": "<the exact reply to send the customer — English only>",
+  "intent": "buyer_purchase | buyer_rental | seller | agent | marketing | unidentified",
+  "stage": "null | intent_identified | qualification_started | qualified | closed",
+  "collected_data": {
+    "location": "",
+    "budget": "",
+    "property_type": "",
+    "bhk": "",
+    "purpose": "",
+    "timeline": "",
+    "site_visit_preference": ""
+  },
+  "matched_properties": [],
+  "media": "no",
+  "imgfield": "",
+  "call": "no",
+  "handover": "no"
+}
+
+- `message` is the only text the customer sees — keep everything else internal.
+- `collected_data`: only explicitly known values; leave the rest "".
+- `matched_properties`: names presented this turn, tool-sourced only (or []).
+- `imgfield`: tool's `bannerUrl`/`url` when `media` is "yes"; otherwise "".
+- `handover`: "yes" when routing to the human team (negotiation, legal, marketing/vendor, job, rental lead, or explicit request); else "no".
+- Never output code fences, comments, or any text outside this JSON object.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 FINAL BUYER MESSAGE (SEND ONLY AFTER FULL QUALIFICATION)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Put this in `message` when the lead is fully qualified:
+
+🏡 Nisha Homes - Premium Residential & Investment Properties in Delhi NCR
+Thank you for sharing your details ✨
+Here's where you can explore our latest property options:
+🏡 Website: https://nishahomes.com/
+📋 Catalog: https://calltowa.wappblaster.com/view/nishahomess
+
+Business Numbers: +91-73035-15710 | +91-73037-55710
+Coordinator: +91-81305-05710
+
+📺 YouTube: https://www.youtube.com/@nisha_homes
+📘 Facebook: https://www.facebook.com/nisha.homes.2025/
+⭐ Google: https://maps.app.goo.gl/2uwMUR3HBkxytYsD8
+🏅 Square Yards: https://www.squareyards.com/agent/nisha/492906
+
+Our team will personally connect with you very soon.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔷 ABSOLUTE RULES — NO EXCEPTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Ground every fact in the PROPERTY_SEARCH_TOOL_RESULT given this turn — never memory
+✅ Never show a property unless property type + location + budget are ALL known, or a specific project was named
+✅ Never claim a result matches a budget it doesn't actually fall within
+✅ Answer first, then qualify — max one question per message, zero if not needed
+✅ Always return exactly one valid JSON object, nothing else, English only
+✅ Locality-level areas only · Nisha Homes numbers only
+✅ Rental leads: never share a property, always handover
+✅ Never decide for the client or Nisha Homes · never confirm a visit yourself
+✅ Route negotiation / legal / vendor / job / marketing / call requests to the team
+✅ Job/interview: thank + "a representative will follow up" — never a time or a decision
+✅ Offensive language: one calm redirect, handover if it continues
+
+❌ Never Hindi/Hinglish · never hallucinate a property, price, or any detail
+❌ Never re-ask CRM data or restart qualification
+❌ Never negotiate, discount, or guarantee returns yourself
+❌ Never put the banner/media URL inside `message` — that's what `imgfield` is for
+❌ Never assume a detail nobody explicitly stated, and never copy a tool result into `collected_data` as if the customer said it
+"""
+
+
+# ---------------------------------------------------------------------
+# WHATSAPP SEND HELPERS (bizautomation.io)
+# ---------------------------------------------------------------------
+def send_whatsapp_text(to_phone, text, phone_no_id=None):
+    if not BIZAUTOMATION_API_KEY:
+        raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
+    payload = {
+        "to": to_phone,
+        "phoneNoId": phone_no_id or DEFAULT_WA_PHONE_NUMBER_ID,
+        "type": "text",
+        "text": text
+    }
+    resp = requests.post(
+        BIZAUTOMATION_API_URL,
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {BIZAUTOMATION_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        timeout=20
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
+    if not BIZAUTOMATION_API_KEY:
+        raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
+    payload = {
+        "to": to_phone,
+        "phoneNoId": phone_no_id or DEFAULT_WA_PHONE_NUMBER_ID,
+        "type": "image",
+        "url": image_url,
+        "caption": caption
+    }
+    resp = requests.post(
+        BIZAUTOMATION_API_URL,
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {BIZAUTOMATION_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        timeout=20
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ---------------------------------------------------------------------
+# LEAD LOOKUP / CREATE (matches the exact field shapes shown by the user)
+# ---------------------------------------------------------------------
+def ist_iso_now():
+    """Returns e.g. '2026-08-18T12:54:00.692+05:30' — matches lastUserMsgAt shape."""
+    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    return ist_now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ist_now.microsecond // 1000:03d}+05:30"
+
+
+def find_wa_lead_by_phone(phone):
+    for coll_name in WA_LEAD_COLLECTIONS:
+        doc = db[coll_name].find_one({"Phone Number": phone})
+        if doc:
+            return coll_name, doc
+    return None, None
+
+
+def create_wa_lead(phone, name_hint):
+    now = datetime.utcnow()
+    doc = {
+        "Phone Number": phone,
+        "Created At": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "Date": now.strftime("%d/%m/%Y"),
+        "Lead Name": name_hint or "",
+        "LeadType": "unidentified",
+        "DateObj": now,
+        "AIreply": "",
+        "Followup": "yes",
+        "Lastusermgs": "",
+        "lastUserMsgAt": "",
+        "Budget Range": "",
+        "Buying Timeline": "",
+        "Final Intent": "",
+        "Lead Intent %": "",
+        "Location Interested In": "",
+        "Mark_Connected": "note",
+        "Property Type": "",
+        "Size_Purpose_Note": "Size: , purpose: , note: ",
+        "note": ""
+    }
+    result = db["Leads"].insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    try:
+        create_contact(name_hint, phone)
+    except Exception as contact_err:
+        print(f"[wa-ai] create_contact failed (non-fatal): {contact_err}")
+
+    return "Leads", doc
+
+
+# ---------------------------------------------------------------------
+# CHAT MEMORY (per-lead, last 10 used for context)
+# ---------------------------------------------------------------------
+def save_chat_message(lead_id, phone, role, text):
+    wa_chat_collection.insert_one({
+        "leadId": str(lead_id),
+        "phone": phone,
+        "role": role,          # "user" | "assistant" | "agent"
+        "text": text,
+        "at": datetime.utcnow()
+    })
+
+
+def get_recent_chat_messages(lead_id, limit=10):
+    docs = list(
+        wa_chat_collection.find({"leadId": str(lead_id)})
+        .sort("at", -1)
+        .limit(limit)
+    )
+    docs.reverse()  # oldest -> newest
+    return docs
+
+
+def format_chat_history_for_prompt(chat_history):
+    lines = []
+    for m in chat_history:
+        who = "Customer" if m.get("role") == "user" else ("Advisor" if m.get("role") == "assistant" else "Human Agent")
+        lines.append(f"{who}: {m.get('text', '')}")
+    return "\n".join(lines) if lines else "(no prior messages)"
+
+
+# ---------------------------------------------------------------------
+# DAI (Disable-AI) CHECK
+# ---------------------------------------------------------------------
+def is_ai_disabled_for_phone(phone):
+    return dai_collection.find_one({"Phone Number": phone}) is not None
+
+
+# ---------------------------------------------------------------------
+# STEP 1: REQUIREMENT EXTRACTION (lightweight, deterministic-ish)
+# Decides intent + whether we have enough to run the RAG/vector search.
+# ---------------------------------------------------------------------
+def extract_requirements_via_mistral(known_fields, chat_history, user_text):
+    fallback = {
+        "intent": known_fields.get("lead_type") or "unidentified",
+        "location": "", "budget": "", "property_type": "", "bhk": "",
+        "purpose": "", "timeline": "", "specific_project_name": "",
+        "ready_for_search": False, "search_query": ""
+    }
+    if not MISTRAL_API_KEY3:
+        return fallback
+
+    system_prompt = (
+        "You extract structured real-estate requirement fields for a WhatsApp lead. "
+        "You are given fields ALREADY KNOWN from the CRM, recent chat history, and the "
+        "customer's latest message. Return ONLY a JSON object with these exact keys: "
+        "intent (buyer_purchase|buyer_rental|seller|agent|marketing|unidentified), "
+        "location, budget, property_type, bhk, purpose, timeline, specific_project_name, "
+        "ready_for_search (boolean — true ONLY if property_type AND location AND budget are "
+        "all known between CRM + chat + this message, OR a specific named project was given; "
+        "ALWAYS false if intent is buyer_rental), "
+        "search_query (one rich natural-language sentence combining every known field, for a "
+        "vector search — empty string if ready_for_search is false). "
+        "Only use values explicitly stated by the customer (in CRM data or chat) — never invent. "
+        "No markdown, no commentary, JSON only."
+    )
+
+    payload_context = {
+        "knownFromCRM": known_fields,
+        "recentChatHistory": format_chat_history_for_prompt(chat_history),
+        "latestCustomerMessage": user_text
+    }
+
+    try:
+        resp = requests.post(
+            MISTRAL_API_URL,
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
+            json={
+                "model": "mistral-large-latest",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(payload_context)}
+                ],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            },
+            timeout=30
+        )
+        resp.raise_for_status()
+        result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        for k, v in fallback.items():
+            result.setdefault(k, v)
+        return result
+    except Exception as e:
+        print(f"[wa-ai] extraction failed: {e}")
+        return fallback
+
+
+# ---------------------------------------------------------------------
+# RAG: VECTOR SEARCH OVER INVENTORY (internal, reused by the agent)
+# ---------------------------------------------------------------------
+def run_property_vector_search(query_text, deal_type=None, limit=3):
+    if not query_text:
+        return []
+    query_vector = get_embedding(query_text)
+    if not query_vector:
+        return []
+
+    match_filter = {"status": "approved"}
+    if deal_type:
+        match_filter["dealType"] = deal_type
+
+    try:
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": VECTOR_INDEX_NAME,
+                    "path": "embedding",
+                    "queryVector": query_vector,
+                    "numCandidates": 100,
+                    "limit": limit,
+                    "filter": match_filter
+                }
+            },
+            {"$project": {"embedding": 0, "score": {"$meta": "vectorSearchScore"}}}
+        ]
+        results = list(projects_collection.aggregate(pipeline))
+        # Trim to just the fields the LLM/system prompt needs, tool-result style
+        trimmed = []
+        for r in results:
+            trimmed.append({
+                "name": r.get("name"),
+                "location": r.get("location"),
+                "configuration": r.get("configuration"),
+                "budget": r.get("budget") or r.get("startingPrice"),
+                "dealType": r.get("dealType"),
+                "category": r.get("category"),
+                "uniqueId": r.get("uniqueId"),
+                "bannerUrl": r.get("bannerUrl") or r.get("img"),
+                "score": r.get("score")
+            })
+        return trimmed
+    except Exception as e:
+        print(f"[wa-ai] vector search failed: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------
+# STEP 2: FINAL AGENT CALL (uses the full WA_SYSTEM_PROMPT)
+# ---------------------------------------------------------------------
+def call_wa_agent_final(lead_doc, chat_history, search_results, user_text):
+    if not MISTRAL_API_KEY3:
+        return None
+
+    crm_context = {
+        "name": lead_doc.get("Lead Name", ""),
+        "budget": lead_doc.get("Budget Range", ""),
+        "location": lead_doc.get("Location Interested In", ""),
+        "propertyType": lead_doc.get("Property Type", ""),
+        "leadType": lead_doc.get("LeadType", "unidentified"),
+        "buyingTimeline": lead_doc.get("Buying Timeline", "")
+    }
+
+    user_content = (
+        f"LEAD CRM CONTEXT:\n{json.dumps(crm_context)}\n\n"
+        f"RECENT CHAT HISTORY (oldest -> newest):\n{format_chat_history_for_prompt(chat_history)}\n\n"
+        f"PROPERTY_SEARCH_TOOL_RESULT (use ONLY this for any property facts; "
+        f"empty array = no tool call was made this turn):\n{json.dumps(search_results)}\n\n"
+        f"CUSTOMER'S LATEST MESSAGE:\n{user_text}"
+    )
+
+    try:
+        resp = requests.post(
+            MISTRAL_API_URL,
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
+            json={
+                "model": "mistral-large-latest",
+                "messages": [
+                    {"role": "system", "content": WA_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ],
+                "temperature": 0.4,
+                "response_format": {"type": "json_object"}
+            },
+            timeout=45
+        )
+        resp.raise_for_status()
+        result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        if "message" not in result:
+            return None
+        return result
+    except Exception as e:
+        print(f"[wa-ai] final agent call failed: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------
+# APPLY AI RESULT -> LEAD DOC
+# ---------------------------------------------------------------------
+def apply_ai_result_to_lead(coll_name, lead_id, ai_result):
+    collected = ai_result.get("collected_data") or {}
+    set_fields = {"AIreply": ai_result.get("message", ""), "lastAIProcessedAt": datetime.utcnow()}
+
+    if collected.get("location"):
+        set_fields["Location Interested In"] = collected["location"]
+    if collected.get("budget"):
+        set_fields["Budget Range"] = collected["budget"]
+    if collected.get("property_type"):
+        set_fields["Property Type"] = collected["property_type"]
+    if collected.get("bhk"):
+        set_fields["Configuration"] = collected["bhk"]
+    if collected.get("timeline"):
+        set_fields["Buying Timeline"] = collected["timeline"]
+    if collected.get("purpose"):
+        set_fields["Size_Purpose_Note"] = f"Size: , purpose: {collected['purpose']}, note: "
+    if collected.get("site_visit_preference"):
+        set_fields["Site Visit Preference"] = collected["site_visit_preference"]
+
+    intent = ai_result.get("intent")
+    if intent:
+        set_fields["LeadType"] = intent
+
+    stage = ai_result.get("stage")
+    if stage:
+        set_fields["Stage"] = stage
+
+    matched = ai_result.get("matched_properties")
+    if matched:
+        set_fields["LastMatchedProperties"] = matched
+
+    db[coll_name].update_one({"_id": lead_id}, {"$set": set_fields})
+
+
+# ---------------------------------------------------------------------
+# ORCHESTRATOR — runs in a background thread per inbound message
+# ---------------------------------------------------------------------
+def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_phone_id):
+    try:
+        phone = normalize_number(sender_phone)
+        if not phone:
+            return
+        if not phone.startswith("91"):
+            phone = "91" + phone
+
+        coll_name, lead_doc = find_wa_lead_by_phone(phone)
+        if not lead_doc:
+            coll_name, lead_doc = create_wa_lead(phone, sender_name)
+        lead_id = lead_doc["_id"]
+
+        save_chat_message(lead_id, phone, "user", user_text)
+
+        update_fields = {
+            "Lastusermgs": user_text,
+            "lastUserMsgAt": ist_iso_now(),
+            "lastUserMsgAtUTC": datetime.utcnow()
+        }
+        if sender_name and not lead_doc.get("Lead Name"):
+            update_fields["Lead Name"] = sender_name
+        db[coll_name].update_one({"_id": lead_id}, {"$set": update_fields})
+
+        if is_ai_disabled_for_phone(phone):
+            print(f"[wa-ai] AI disabled for {phone} — message stored, no auto-reply")
+            return
+
+        lead_doc = db[coll_name].find_one({"_id": lead_id})
+        chat_history = get_recent_chat_messages(lead_id, limit=10)
+
+        known_fields = {
+            "name": lead_doc.get("Lead Name", ""),
+            "location": lead_doc.get("Location Interested In", ""),
+            "budget": lead_doc.get("Budget Range", ""),
+            "property_type": lead_doc.get("Property Type", ""),
+            "bhk": lead_doc.get("Configuration", ""),
+            "timeline": lead_doc.get("Buying Timeline", ""),
+            "lead_type": lead_doc.get("LeadType", "unidentified")
+        }
+
+        extraction = extract_requirements_via_mistral(known_fields, chat_history, user_text)
+
+        search_results = []
+        if extraction.get("ready_for_search") and extraction.get("intent") == "buyer_purchase":
+            query = extraction.get("search_query") or user_text
+            search_results = run_property_vector_search(query, deal_type="For Sale", limit=3)
+
+        ai_result = call_wa_agent_final(lead_doc, chat_history, search_results, user_text)
+
+        if not ai_result:
+            ai_result = {
+                "message": "Thanks for reaching out! Our team will get back to you shortly.",
+                "intent": known_fields["lead_type"] or "unidentified",
+                "stage": None, "collected_data": {}, "matched_properties": [],
+                "media": "no", "imgfield": "", "call": "no", "handover": "yes"
+            }
+
+        apply_ai_result_to_lead(coll_name, lead_id, ai_result)
+        save_chat_message(lead_id, phone, "assistant", ai_result.get("message", ""))
+
+        send_whatsapp_text(phone, ai_result.get("message", ""), phone_no_id=recipient_phone_id)
+
+        if ai_result.get("media") == "yes" and ai_result.get("imgfield"):
+            try:
+                caption = ", ".join(ai_result.get("matched_properties") or []) or "Nisha Homes"
+                send_whatsapp_image(phone, ai_result["imgfield"], caption=caption, phone_no_id=recipient_phone_id)
+            except Exception as img_err:
+                print(f"[wa-ai] image send failed: {img_err}")
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+# ---------------------------------------------------------------------
+# UPDATED WEBHOOK — dispatches inbound text messages to the AI agent
+# (replaces the earlier bare-bones version)
+# ---------------------------------------------------------------------
+@app.route("/webhook/nishahomes-ai", methods=["GET", "POST"])
+def nishahomes_ai_webhook():
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN and challenge:
+            return challenge, 200
+        return jsonify({"status": "ok", "message": "Nisha Homes AI webhook is live"}), 200
+
+    try:
+        body = request.get_json(silent=True) or {}
+
+        now = datetime.utcnow()
+        entry = {
+            "receivedAt": now.isoformat() + "Z",
+            "receivedAtFormatted": format_ist(now),
+            "method": "POST",
+            "sourceIp": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "body": body
+        }
+        _store_webhook_payload(entry)
+
+        data_node = (body or {}).get("data") or {}
+        event = (body or {}).get("event")
+
+        if event == "message" and data_node:
+            msg_type = data_node.get("messageType")
+            sender_phone = data_node.get("senderPhoneNumber")
+            sender_name = data_node.get("senderName")
+            recipient_phone_id = data_node.get("recipientPhoneNumberId")
+            content = data_node.get("content") or {}
+            text = (content.get("text") or "").strip() if msg_type == "text" else ""
+
+            if sender_phone and msg_type == "text" and text:
+                threading.Thread(
+                    target=handle_incoming_wa_message,
+                    args=(sender_phone, sender_name, text, recipient_phone_id),
+                    daemon=True,
+                    name="wa-ai-handler"
+                ).start()
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False}), 200
+
+    return jsonify({"success": True}), 200
+
+
+# =====================================================================
+# INBOX API — WhatsApp-style conversation view for staff
+# =====================================================================
+@app.route("/api/inbox/leads", methods=["GET"])
+def inbox_leads():
+    if not session.get("user_id"):
+        return jsonify({"success": False}), 401
+
+    try:
+        dai_phones = set(d.get("Phone Number") for d in dai_collection.find({}, {"Phone Number": 1}))
+
+        results = []
+        for coll_name in WA_LEAD_COLLECTIONS:
+            cursor = db[coll_name].find(
+                {"$or": [
+                    {"Lastusermgs": {"$exists": True, "$ne": ""}},
+                    {"AIreply": {"$exists": True, "$ne": ""}}
+                ]},
+                {
+                    "Phone Number": 1, "Lead Name": 1, "Lastusermgs": 1,
+                    "lastUserMsgAt": 1, "lastUserMsgAtUTC": 1, "AIreply": 1, "LeadType": 1
+                }
+            )
+            for d in cursor:
+                sort_key = d.get("lastUserMsgAtUTC")
+                sort_key = sort_key.isoformat() if isinstance(sort_key, datetime) else (d.get("lastUserMsgAt") or "")
+                results.append({
+                    "id": str(d["_id"]),
+                    "collection": coll_name,
+                    "name": d.get("Lead Name") or "Unknown",
+                    "phone": d.get("Phone Number", ""),
+                    "lastMessage": d.get("Lastusermgs", ""),
+                    "lastMessageAt": d.get("lastUserMsgAt", "-"),
+                    "leadType": d.get("LeadType", "unidentified"),
+                    "aiDisabled": d.get("Phone Number") in dai_phones,
+                    "_sortKey": sort_key
+                })
+
+        results.sort(key=lambda x: x["_sortKey"], reverse=True)
+        for r in results:
+            r.pop("_sortKey", None)
+
+        return jsonify({"success": True, "data": results}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/inbox/messages/<lead_id>", methods=["GET"])
+def inbox_messages(lead_id):
+    if not session.get("user_id"):
+        return jsonify({"success": False}), 401
+
+    try:
+        docs = list(wa_chat_collection.find({"leadId": lead_id}).sort("at", 1))
+        data = [{
+            "role": d.get("role"),
+            "text": d.get("text", ""),
+            "at": format_ist(d.get("at")) if isinstance(d.get("at"), datetime) else "-"
+        } for d in docs]
+        return jsonify({"success": True, "data": data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/inbox/send", methods=["POST"])
+def inbox_send():
+    if not session.get("user_id"):
+        return jsonify({"success": False}), 401
+
+    try:
+        data = request.json or {}
+        lead_id = data.get("leadId")
+        phone = data.get("phone")
+        message = (data.get("message") or "").strip()
+
+        if not lead_id or not phone or not message:
+            return jsonify({"success": False, "message": "leadId, phone and message are required"}), 400
+
+        send_whatsapp_text(phone, message)
+        save_chat_message(lead_id, phone, "agent", message)
+
+        return jsonify({"success": True}), 200
+
+    except requests.exceptions.HTTPError as e:
+        return jsonify({"success": False, "message": f"Send failed: {e}"}), 502
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500 
         
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
