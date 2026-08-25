@@ -6834,8 +6834,14 @@ If the CRM knows the lead's name, greet briefly by name. If the CRM + message to
 🔷 COVERAGE AREAS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Nisha Homes covers: Delhi NCR (South Delhi, Uttam Nagar, Dwarka, Bijwasan), Gurgaon, and Himachal (Chail, Kumarhatti, Kasauli Valley). Use this only for FAQ / out-of-coverage replies and the property-message masthead — never as a source of specific property names, prices, or availability. Every concrete property fact always comes from a fresh `project` tool call, never from memory.
+Nisha Homes covers all of Delhi NCR — Delhi (South Delhi, Uttam Nagar, Dwarka, Bijwasan and other areas), Gurgaon, Noida, Greater Noida, Ghaziabad — plus premium Himachal projects (Chail, Kumarhatti, Kasauli Valley). This list is for FAQ/masthead purposes only — never the source of truth for whether a specific area is covered.
 
+**Never decide coverage from memory or from this list alone.** Every user message includes a `LOCATION_COVERAGE_CHECK` block whenever the customer has named a location this turn. Trust that block completely:
+- `"covered": true` → treat the area as fully in-coverage and proceed with the normal PROPERTY SEARCH flow — never say it's out of coverage.
+- `"covered": false` → only then use the OUT-OF-COVERAGE reply below.
+- If no `LOCATION_COVERAGE_CHECK` block is present, no location has been identified yet this turn — don't make a coverage claim either way, just continue normally (e.g. asking for the missing field).
+
+Every concrete property fact always comes from a fresh `project` tool call, never from memory.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔷 PROPERTY SEARCH (HARD RULE — THE ONE THAT MATTERS MOST)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -6905,8 +6911,8 @@ Example: "I hear you on price 🙂 The best rates and any flexibility are worked
 🔷 OUT-OF-COVERAGE REQUESTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-For a location outside COVERAGE AREAS, don't call the tool or invent inventory:
-"We currently focus on Delhi NCR, Gurgaon and premium Himachal projects. If you're open to those, I can share some strong options — otherwise I'll note your interest for our team."
+Only send this reply when `LOCATION_COVERAGE_CHECK.covered` is explicitly `false` for the customer's named location — never based on assumption or the static COVERAGE AREAS list:
+"We currently focus on Delhi NCR, Gurgaon, Noida, Greater Noida, Ghaziabad, and premium Himachal projects. If you're open to those, I can share some strong options — otherwise I'll note your interest for our team."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔷 DECISION BOUNDARY (HARD RULE)
@@ -7151,17 +7157,60 @@ def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
     resp.raise_for_status()
     return resp.json()
 
+def build_property_caption(prop):
+    """
+    Builds the full WhatsApp image caption in the exact card format
+    requested — property facts, then description, then CTAs and
+    Nisha Homes brand footer.
+    """
+    def _fmt_price(p):
+        if not p:
+            return ""
+        s = str(p).strip()
+        cleaned = re.sub(r"[^\d]", "", s)
+        if cleaned and cleaned == s.replace(",", ""):
+            return f"{int(cleaned):,}"
+        return s
 
-def build_whatsapp_caption(ai_result):
-    """
-    Mirrors the n8n 'cleaned_message' idea: a short WhatsApp image
-    caption instead of dumping the full formatted property message
-    (which already went out as the preceding text message).
-    """
-    matched = ai_result.get("matched_properties") or []
-    if matched:
-        return f"🏡 {', '.join(matched)} — Nisha Homes"
-    return "🏡 Nisha Homes — Your Trusted Real Estate Advisor"
+    lines = []
+
+    lines.append(f"🏡 {prop.get('name') or ''}")
+    if prop.get("location"):
+        lines.append(f"📍 {prop['location']}")
+    if prop.get("price"):
+        lines.append(f"💰 {_fmt_price(prop['price'])}")
+    if prop.get("configuration"):
+        lines.append(f"🛏️ {prop['configuration']}")
+    if prop.get("superArea"):
+        lines.append(f"📐 {prop['superArea']} {prop.get('areaUnit') or 'sqft'}")
+    if prop.get("category"):
+        lines.append(f"🏢 {prop['category']}")
+    if prop.get("furnishing"):
+        lines.append(f"🛋️ {prop['furnishing']}")
+    if prop.get("facing"):
+        lines.append(f"🧭 {prop['facing']}-facing")
+    if prop.get("possession"):
+        lines.append(f"🏗️ {prop['possession']}")
+
+    lines.append("────────────────────")
+
+    desc = prop.get("description") or prop.get("quickNotes") or ""
+    if desc:
+        lines.append(desc)
+
+    lines.append("📅 Schedule Your Private Site Visit")
+    lines.append("🏡 Request Complete Property Details")
+    lines.append("🔗 More listings: https://www.squareyards.com/agent/nisha/492906")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("🏡 Nisha Homes")
+    lines.append("Your Trusted Real Estate Advisor")
+    lines.append("💬 Chat with Nisha Homes")
+    lines.append("https://wa.me/917303515710")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+
+    caption = "\n".join(lines)
+    # WhatsApp caption hard limit
+    return caption[:1024]
 
 # ---------------------------------------------------------------------
 # LEAD LOOKUP / CREATE (matches the exact field shapes shown by the user)
@@ -7393,6 +7442,75 @@ def parse_price_to_number(price_str):
 # NAMED-PROJECT LOOKUP — when the customer names a specific project,
 # search by name first (exact/partial) before falling back to vectors.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# COVERAGE CHECK — real signal instead of the LLM guessing from a
+# static list. True if the named location matches a known serviced
+# city/area OR matches an actual approved inventory location in Mongo.
+# ---------------------------------------------------------------------
+KNOWN_COVERAGE_CITIES = [
+    "delhi", "south delhi", "uttam nagar", "dwarka", "bijwasan",
+    "gurgaon", "gurugram", "noida", "greater noida", "ghaziabad",
+    "himachal", "chail", "kumarhatti", "kasauli"
+]
+
+def check_location_coverage(location_text):
+    """
+    Returns {"queried": "<location>", "covered": bool, "matchedInventoryCount": int}
+    or None if no location text was given. Checks (a) the static known-city
+    list and (b) live approved inventory in Mongo — either match counts as covered.
+    """
+    if not location_text or not location_text.strip():
+        return None
+
+    loc = location_text.strip().lower()
+
+    known_match = any(city in loc or loc in city for city in KNOWN_COVERAGE_CITIES)
+
+    inventory_count = 0
+    try:
+        safe = re.escape(location_text.strip())
+        inventory_count = projects_collection.count_documents({
+            "status": "approved",
+            "location": {"$regex": safe, "$options": "i"}
+        })
+    except Exception as e:
+        print(f"[wa-ai] coverage inventory check failed: {e}")
+
+    covered = known_match or inventory_count > 0
+    return {
+        "queried": location_text.strip(),
+        "covered": covered,
+        "matchedInventoryCount": inventory_count
+    }
+
+
+def _trim_property_for_agent(doc, score=None):
+    return {
+        "name": doc.get("name"),
+        "location": doc.get("location"),
+        "configuration": doc.get("configuration"),
+        "price": doc.get("budget") or doc.get("startingPrice"),
+        "dealType": doc.get("dealType"),
+        "category": doc.get("category") or doc.get("propertyType"),
+        "furnishing": doc.get("furnishing"),
+        "possession": doc.get("possession"),
+        "uniqueId": doc.get("uniqueId"),
+        "bannerUrl": doc.get("bannerUrl") or doc.get("img"),
+        # NEW: extra fields needed for the WhatsApp caption card
+        "superArea": doc.get("superArea"),
+        "carpetArea": doc.get("carpetArea"),
+        "areaUnit": doc.get("areaUnit") or "sqft",
+        "floor": doc.get("floor"),
+        "bathrooms": doc.get("bathrooms"),
+        "parking": doc.get("parking"),
+        "facing": doc.get("facing"),
+        "description": doc.get("description"),
+        "quickNotes": doc.get("quickNotes"),
+        "score": score if score is not None else doc.get("score")
+    }
+
+
+
 def find_property_by_name(name_query, limit=3):
     if not name_query or not name_query.strip():
         return []
@@ -7407,20 +7525,7 @@ def find_property_by_name(name_query, limit=3):
         print(f"[wa-ai] name search failed: {e}")
         return []
 
-def _trim_property_for_agent(doc, score=None):
-    return {
-        "name": doc.get("name"),
-        "location": doc.get("location"),
-        "configuration": doc.get("configuration"),
-        "price": doc.get("budget") or doc.get("startingPrice"),
-        "dealType": doc.get("dealType"),
-        "category": doc.get("category") or doc.get("propertyType"),
-        "furnishing": doc.get("furnishing"),
-        "possession": doc.get("possession"),
-        "uniqueId": doc.get("uniqueId"),
-        "bannerUrl": doc.get("bannerUrl") or doc.get("img"),
-        "score": score if score is not None else doc.get("score")
-    }
+
 
 
 # ---------------------------------------------------------------------
@@ -7556,7 +7661,8 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
 # ---------------------------------------------------------------------
 # STEP 2: FINAL AGENT CALL (uses the full WA_SYSTEM_PROMPT)
 # ---------------------------------------------------------------------
-def call_wa_agent_final(lead_doc, chat_history, search_results, user_text):
+
+def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, location_coverage=None):
     if not MISTRAL_API_KEY3:
         return None
 
@@ -7569,9 +7675,15 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text):
         "buyingTimeline": lead_doc.get("Buying Timeline", "")
     }
 
+    coverage_block = (
+        f"LOCATION_COVERAGE_CHECK:\n{json.dumps(location_coverage)}\n\n"
+        if location_coverage else ""
+    )
+
     user_content = (
         f"LEAD CRM CONTEXT:\n{json.dumps(crm_context)}\n\n"
         f"RECENT CHAT HISTORY (oldest -> newest):\n{format_chat_history_for_prompt(chat_history)}\n\n"
+        f"{coverage_block}"
         f"PROPERTY_SEARCH_TOOL_RESULT (use ONLY this for any property facts; "
         f"empty array = no tool call was made this turn):\n{json.dumps(search_results)}\n\n"
         f"CUSTOMER'S LATEST MESSAGE:\n{user_text}"
@@ -7600,8 +7712,7 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text):
     except Exception as e:
         print(f"[wa-ai] final agent call failed: {e}")
         return None
-
-
+    
 # ---------------------------------------------------------------------
 # APPLY AI RESULT -> LEAD DOC
 # ---------------------------------------------------------------------
@@ -7685,7 +7796,13 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         extraction = extract_requirements_via_mistral(known_fields, chat_history, user_text)
 
-        
+        # ---- COVERAGE CHECK: real signal, never LLM guesswork ----
+        candidate_location = (extraction.get("location") or known_fields["location"] or "").strip()
+        location_coverage = check_location_coverage(candidate_location) if candidate_location else None
+        if location_coverage:
+            print(f"[wa-ai] coverage check for {phone}: {location_coverage}")
+
+        # ---- RAG SEARCH: named project first, else scored vector search ----
         search_results = []
         if extraction.get("intent") != "buyer_rental":
             named_project = (extraction.get("specific_project_name") or "").strip()
@@ -7724,38 +7841,10 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
                       f"named={extraction.get('specific_project_name')!r}, "
                       f"ready_for_search={extraction.get('ready_for_search')})")
 
-            if named_project:
-                search_results = find_property_by_name(named_project, limit=3)
-                if not search_results:
-                    # fall back to vector search using the project name as the query
-                    search_results = run_property_vector_search(
-                        query_text=named_project,
-                        deal_type="For Sale",
-                        location=extraction.get("location") or known_fields["location"],
-                        budget=extraction.get("budget") or known_fields["budget"],
-                        property_type=extraction.get("property_type") or known_fields["property_type"],
-                        bhk=extraction.get("bhk") or known_fields["bhk"],
-                        limit=3
-                    )
-            elif extraction.get("ready_for_search"):
-                query = extraction.get("search_query") or user_text
-                search_results = run_property_vector_search(
-                    query_text=query,
-                    deal_type="For Sale",
-                    location=extraction.get("location") or known_fields["location"],
-                    budget=extraction.get("budget") or known_fields["budget"],
-                    property_type=extraction.get("property_type") or known_fields["property_type"],
-                    bhk=extraction.get("bhk") or known_fields["bhk"],
-                    limit=3
-                )
-
-            if search_results:
-                print(f"[wa-ai] {len(search_results)} candidate(s) for {phone} — "
-                      f"top: {search_results[0].get('name')} "
-                      f"(score={search_results[0].get('_matchScore')}, "
-                      f"reasons={search_results[0].get('_matchReasons')})")
-
-        ai_result = call_wa_agent_final(lead_doc, chat_history, search_results, user_text)
+        ai_result = call_wa_agent_final(
+            lead_doc, chat_history, search_results, user_text,
+            location_coverage=location_coverage
+        )
 
         if not ai_result:
             ai_result = {
@@ -7772,7 +7861,23 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         if ai_result.get("media") == "yes" and ai_result.get("imgfield"):
             try:
-                caption = build_whatsapp_caption(ai_result)
+                # Match the AI's chosen property name back to the full
+                # search_results record so the caption can include real
+                # price/area/facing/description instead of just the name.
+                matched_names = ai_result.get("matched_properties") or []
+                matched_prop = None
+                if matched_names and search_results:
+                    for prop in search_results:
+                        if prop.get("name") == matched_names[0]:
+                            matched_prop = prop
+                            break
+
+                if matched_prop:
+                    caption = build_property_caption(matched_prop)
+                else:
+                    # Fallback: minimal card if we can't find the full record
+                    caption = build_property_caption({"name": matched_names[0] if matched_names else "Nisha Homes"})
+
                 send_whatsapp_image(
                     to_phone=phone,
                     image_url=ai_result["imgfield"],
