@@ -7126,6 +7126,9 @@ def send_whatsapp_text(to_phone, text, phone_no_id=None):
     return resp.json()
 
 
+# ---------------------------------------------------------------------
+# WHATSAPP SEND HELPERS (bizautomation.io)
+# ---------------------------------------------------------------------
 def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
     if not BIZAUTOMATION_API_KEY:
         raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
@@ -7148,6 +7151,17 @@ def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
     resp.raise_for_status()
     return resp.json()
 
+
+def build_whatsapp_caption(ai_result):
+    """
+    Mirrors the n8n 'cleaned_message' idea: a short WhatsApp image
+    caption instead of dumping the full formatted property message
+    (which already went out as the preceding text message).
+    """
+    matched = ai_result.get("matched_properties") or []
+    if matched:
+        return f"🏡 {', '.join(matched)} — Nisha Homes"
+    return "🏡 Nisha Homes — Your Trusted Real Estate Advisor"
 
 # ---------------------------------------------------------------------
 # LEAD LOOKUP / CREATE (matches the exact field shapes shown by the user)
@@ -7301,9 +7315,173 @@ def extract_requirements_via_mistral(known_fields, chat_history, user_text):
 # ---------------------------------------------------------------------
 # RAG: VECTOR SEARCH OVER INVENTORY (internal, reused by the agent)
 # ---------------------------------------------------------------------
-def run_property_vector_search(query_text, deal_type=None, limit=3):
+# ---------------------------------------------------------------------
+# BUDGET PARSING — turns messy budget strings into a numeric range (₹)
+# so vector-search results can actually be checked against the
+# customer's stated budget instead of just trusted blindly.
+# ---------------------------------------------------------------------
+def parse_budget_to_range(budget_str):
+    """
+    Parses free-text budget strings into (min_rupees, max_rupees).
+    Handles: "30-35 lakh", "₹80L", "1.5 Crore", "80,00,000", "1.2Cr - 1.8Cr",
+    "under 50 lakh", "50L+". Returns (None, None) if unparseable.
+    """
+    if not budget_str:
+        return None, None
+
+    s = str(budget_str).lower().replace(",", "").replace("₹", "").strip()
+    s = s.replace("crores", "cr").replace("crore", "cr").replace("lakhs", "l").replace("lakh", "l")
+
+    def to_number(token):
+        token = token.strip()
+        if not token:
+            return None
+        try:
+            if "cr" in token:
+                return float(token.replace("cr", "").strip()) * 1_00_00_000
+            if "l" in token:
+                return float(token.replace("l", "").strip()) * 1_00_000
+            return float(token)
+        except ValueError:
+            return None
+
+    # Range: "30-35 l" / "1.2cr-1.8cr" / "30 to 35 l"
+    range_match = re.search(r"([\d.]+\s*(?:cr|l)?)\s*(?:-|to)\s*([\d.]+\s*(?:cr|l)?)", s)
+    if range_match:
+        a_raw, b_raw = range_match.group(1), range_match.group(2)
+        # if only the second has a unit, apply it to both (e.g. "30-35l")
+        unit_match = re.search(r"(cr|l)", b_raw)
+        if unit_match and not re.search(r"(cr|l)", a_raw):
+            a_raw = a_raw.strip() + unit_match.group(1)
+        a, b = to_number(a_raw), to_number(b_raw)
+        if a and b:
+            return min(a, b), max(a, b)
+
+    # Single value with "under"/"below"/"max" -> treat as upper bound
+    under_match = re.search(r"(?:under|below|max|upto|up to)\s*([\d.]+\s*(?:cr|l)?)", s)
+    if under_match:
+        val = to_number(under_match.group(1))
+        if val:
+            return None, val
+
+    # Single value with "+"/"above"/"min" -> treat as lower bound
+    above_match = re.search(r"([\d.]+\s*(?:cr|l)?)\s*(?:\+|above|min)", s)
+    if above_match:
+        val = to_number(above_match.group(1))
+        if val:
+            return val, None
+
+    # Bare single value -> treat as a loose target (±15% band)
+    single_match = re.search(r"([\d.]+\s*(?:cr|l)?)", s)
+    if single_match:
+        val = to_number(single_match.group(1))
+        if val:
+            return val * 0.85, val * 1.15
+
+    return None, None
+
+
+def parse_price_to_number(price_str):
+    """Same numeric parsing but for a listing's own price field (single value)."""
+    lo, hi = parse_budget_to_range(price_str)
+    if lo and hi:
+        return (lo + hi) / 2
+    return hi or lo
+
+
+# ---------------------------------------------------------------------
+# NAMED-PROJECT LOOKUP — when the customer names a specific project,
+# search by name first (exact/partial) before falling back to vectors.
+# ---------------------------------------------------------------------
+def find_property_by_name(name_query, limit=3):
+    if not name_query or not name_query.strip():
+        return []
+    safe = re.escape(name_query.strip())
+    try:
+        docs = list(projects_collection.find(
+            {"status": "approved", "name": {"$regex": safe, "$options": "i"}},
+            {"embedding": 0}
+        ).limit(limit))
+        return [_trim_property_for_agent(d, score=1.0) for d in docs]
+    except Exception as e:
+        print(f"[wa-ai] name search failed: {e}")
+        return []
+
+
+def _trim_property_for_agent(doc, score=None):
+    return {
+        "name": doc.get("name"),
+        "location": doc.get("location"),
+        "configuration": doc.get("configuration"),
+        "price": doc.get("budget") or doc.get("startingPrice"),
+        "dealType": doc.get("dealType"),
+        "category": doc.get("category") or doc.get("propertyType"),
+        "furnishing": doc.get("furnishing"),
+        "possession": doc.get("possession"),
+        "uniqueId": doc.get("uniqueId"),
+        "bannerUrl": doc.get("bannerUrl") or doc.get("img"),
+        "score": score if score is not None else doc.get("score")
+    }
+
+
+# ---------------------------------------------------------------------
+# SCORING — ranks vector-search candidates against what the customer
+# actually stated (location / budget / property type), instead of
+# trusting embedding similarity alone. Embedding rank is still used as
+# a tiebreaker, but real-field matches dominate.
+# ---------------------------------------------------------------------
+def score_property_against_requirements(prop, location, budget_min, budget_max, property_type, bhk):
+    score = 0.0
+    reasons = []
+
+    prop_location = (prop.get("location") or "").lower()
+    if location and location.lower().strip() in prop_location:
+        score += 3
+        reasons.append("location_match")
+    elif location:
+        reasons.append("location_mismatch")
+
+    prop_price = parse_price_to_number(prop.get("price") or prop.get("budget"))
+    if prop_price and (budget_min or budget_max):
+        lo = budget_min or 0
+        hi = budget_max or float("inf")
+        if lo <= prop_price <= hi:
+            score += 3
+            reasons.append("budget_match")
+        else:
+            # partial credit if within 15% of the band, so "closest" still ranks above wildly-off results
+            tolerance = (hi - lo) * 0.15 if hi != float("inf") else lo * 0.15
+            if (lo - tolerance) <= prop_price <= (hi + tolerance):
+                score += 1
+                reasons.append("budget_close")
+            else:
+                reasons.append("budget_mismatch")
+
+    prop_category = (prop.get("category") or "").lower()
+    if property_type and property_type.lower().strip() in prop_category:
+        score += 2
+        reasons.append("type_match")
+
+    prop_config = (prop.get("configuration") or "").lower()
+    if bhk and bhk.lower().strip() in prop_config:
+        score += 2
+        reasons.append("bhk_match")
+
+    # embedding similarity as a small tiebreaker
+    score += (prop.get("score") or 0) * 0.5
+
+    return score, reasons
+
+
+# ---------------------------------------------------------------------
+# RAG: VECTOR SEARCH OVER INVENTORY — now with real ranking against
+# stated requirements instead of returning raw embedding order.
+# ---------------------------------------------------------------------
+def run_property_vector_search(query_text, deal_type=None, location="", budget=None,
+                                 property_type="", bhk="", limit=3):
     if not query_text:
         return []
+
     query_vector = get_embedding(query_text)
     if not query_vector:
         return []
@@ -7311,6 +7489,8 @@ def run_property_vector_search(query_text, deal_type=None, limit=3):
     match_filter = {"status": "approved"}
     if deal_type:
         match_filter["dealType"] = deal_type
+
+    budget_min, budget_max = parse_budget_to_range(budget) if budget else (None, None)
 
     try:
         pipeline = [
@@ -7320,32 +7500,30 @@ def run_property_vector_search(query_text, deal_type=None, limit=3):
                     "path": "embedding",
                     "queryVector": query_vector,
                     "numCandidates": 100,
-                    "limit": limit,
+                    "limit": 12,  # pull more candidates than we need so scoring has room to rerank
                     "filter": match_filter
                 }
             },
             {"$project": {"embedding": 0, "score": {"$meta": "vectorSearchScore"}}}
         ]
-        results = list(projects_collection.aggregate(pipeline))
-        # Trim to just the fields the LLM/system prompt needs, tool-result style
-        trimmed = []
-        for r in results:
-            trimmed.append({
-                "name": r.get("name"),
-                "location": r.get("location"),
-                "configuration": r.get("configuration"),
-                "budget": r.get("budget") or r.get("startingPrice"),
-                "dealType": r.get("dealType"),
-                "category": r.get("category"),
-                "uniqueId": r.get("uniqueId"),
-                "bannerUrl": r.get("bannerUrl") or r.get("img"),
-                "score": r.get("score")
-            })
-        return trimmed
+        raw_results = list(projects_collection.aggregate(pipeline))
     except Exception as e:
         print(f"[wa-ai] vector search failed: {e}")
         return []
 
+    trimmed = [_trim_property_for_agent(d, score=d.get("score")) for d in raw_results]
+
+    scored = []
+    for prop in trimmed:
+        s, reasons = score_property_against_requirements(
+            prop, location, budget_min, budget_max, property_type, bhk
+        )
+        prop["_matchScore"] = s
+        prop["_matchReasons"] = reasons
+        scored.append(prop)
+
+    scored.sort(key=lambda p: p["_matchScore"], reverse=True)
+    return scored[:limit]
 
 # ---------------------------------------------------------------------
 # STEP 2: FINAL AGENT CALL (uses the full WA_SYSTEM_PROMPT)
@@ -7479,10 +7657,41 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         extraction = extract_requirements_via_mistral(known_fields, chat_history, user_text)
 
+        # ---- RAG SEARCH: named project first, else scored vector search ----
         search_results = []
-        if extraction.get("ready_for_search") and extraction.get("intent") == "buyer_purchase":
-            query = extraction.get("search_query") or user_text
-            search_results = run_property_vector_search(query, deal_type="For Sale", limit=3)
+        if extraction.get("intent") == "buyer_purchase":
+            named_project = (extraction.get("specific_project_name") or "").strip()
+
+            if named_project:
+                search_results = find_property_by_name(named_project, limit=3)
+                if not search_results:
+                    # fall back to vector search using the project name as the query
+                    search_results = run_property_vector_search(
+                        query_text=named_project,
+                        deal_type="For Sale",
+                        location=extraction.get("location") or known_fields["location"],
+                        budget=extraction.get("budget") or known_fields["budget"],
+                        property_type=extraction.get("property_type") or known_fields["property_type"],
+                        bhk=extraction.get("bhk") or known_fields["bhk"],
+                        limit=3
+                    )
+            elif extraction.get("ready_for_search"):
+                query = extraction.get("search_query") or user_text
+                search_results = run_property_vector_search(
+                    query_text=query,
+                    deal_type="For Sale",
+                    location=extraction.get("location") or known_fields["location"],
+                    budget=extraction.get("budget") or known_fields["budget"],
+                    property_type=extraction.get("property_type") or known_fields["property_type"],
+                    bhk=extraction.get("bhk") or known_fields["bhk"],
+                    limit=3
+                )
+
+            if search_results:
+                print(f"[wa-ai] {len(search_results)} candidate(s) for {phone} — "
+                      f"top: {search_results[0].get('name')} "
+                      f"(score={search_results[0].get('_matchScore')}, "
+                      f"reasons={search_results[0].get('_matchReasons')})")
 
         ai_result = call_wa_agent_final(lead_doc, chat_history, search_results, user_text)
 
@@ -7501,15 +7710,19 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         if ai_result.get("media") == "yes" and ai_result.get("imgfield"):
             try:
-                caption = ", ".join(ai_result.get("matched_properties") or []) or "Nisha Homes"
-                send_whatsapp_image(phone, ai_result["imgfield"], caption=caption, phone_no_id=recipient_phone_id)
+                caption = build_whatsapp_caption(ai_result)
+                send_whatsapp_image(
+                    to_phone=phone,
+                    image_url=ai_result["imgfield"],
+                    caption=caption,
+                    phone_no_id=recipient_phone_id
+                )
             except Exception as img_err:
                 print(f"[wa-ai] image send failed: {img_err}")
 
     except Exception:
         import traceback
         traceback.print_exc()
-
 
 # ---------------------------------------------------------------------
 # UPDATED WEBHOOK — dispatches inbound text messages to the AI agent
