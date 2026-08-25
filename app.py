@@ -5322,7 +5322,7 @@ def upload_project_v2():
 # VECTOR SEARCH / RAG - INVENTORY EMBEDDINGS
 # =============================
 MISTRAL_EMBED_URL = "https://api.mistral.ai/v1/embeddings"
-VECTOR_INDEX_NAME = "searchdata"  # must match your Atlas Search index name exactly
+VECTOR_INDEX_NAME = "ProjectsSearch"  # must match your Atlas Search index name exactly
 
 
 def get_embedding(text: str):
@@ -7407,7 +7407,6 @@ def find_property_by_name(name_query, limit=3):
         print(f"[wa-ai] name search failed: {e}")
         return []
 
-
 def _trim_property_for_agent(doc, score=None):
     return {
         "name": doc.get("name"),
@@ -7449,7 +7448,6 @@ def score_property_against_requirements(prop, location, budget_min, budget_max, 
             score += 3
             reasons.append("budget_match")
         else:
-            # partial credit if within 15% of the band, so "closest" still ranks above wildly-off results
             tolerance = (hi - lo) * 0.15 if hi != float("inf") else lo * 0.15
             if (lo - tolerance) <= prop_price <= (hi + tolerance):
                 score += 1
@@ -7467,12 +7465,34 @@ def score_property_against_requirements(prop, location, budget_min, budget_max, 
         score += 2
         reasons.append("bhk_match")
 
-    # embedding similarity as a small tiebreaker
     score += (prop.get("score") or 0) * 0.5
-
     return score, reasons
 
 
+def fallback_scored_search(deal_type, location, budget, property_type, bhk, limit=3):
+    try:
+        match_filter = {"status": "approved"}
+        if deal_type:
+            match_filter["dealType"] = deal_type
+
+        docs = list(projects_collection.find(match_filter, {"embedding": 0}).limit(200))
+        budget_min, budget_max = parse_budget_to_range(budget) if budget else (None, None)
+
+        scored = []
+        for d in docs:
+            prop = _trim_property_for_agent(d, score=0)
+            s, reasons = score_property_against_requirements(
+                prop, location, budget_min, budget_max, property_type, bhk
+            )
+            prop["_matchScore"] = s
+            prop["_matchReasons"] = reasons
+            scored.append(prop)
+
+        scored.sort(key=lambda p: p["_matchScore"], reverse=True)
+        return scored[:limit]
+    except Exception as e:
+        print(f"[wa-ai] fallback scored search failed: {e}")
+        return []
 # ---------------------------------------------------------------------
 # RAG: VECTOR SEARCH OVER INVENTORY — now with real ranking against
 # stated requirements instead of returning raw embedding order.
@@ -7484,7 +7504,8 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
 
     query_vector = get_embedding(query_text)
     if not query_vector:
-        return []
+        print("[wa-ai] could not embed query — falling back to plain scored search")
+        return fallback_scored_search(deal_type, location, budget, property_type, bhk, limit)
 
     match_filter = {"status": "approved"}
     if deal_type:
@@ -7500,7 +7521,7 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
                     "path": "embedding",
                     "queryVector": query_vector,
                     "numCandidates": 100,
-                    "limit": 12,  # pull more candidates than we need so scoring has room to rerank
+                    "limit": 12,
                     "filter": match_filter
                 }
             },
@@ -7508,8 +7529,16 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
         ]
         raw_results = list(projects_collection.aggregate(pipeline))
     except Exception as e:
-        print(f"[wa-ai] vector search failed: {e}")
-        return []
+        # CHANGED: this used to swallow the error and just return [] — now
+        # it logs the actual pymongo/Atlas error (e.g. "index not found")
+        # so a misconfigured index name is obvious in the logs instead of
+        # looking like "genuinely no matching inventory", and falls back
+        # to a plain Mongo scan so the agent still finds something.
+        print(f"[wa-ai] $vectorSearch FAILED (index='{VECTOR_INDEX_NAME}'): {e}")
+        return fallback_scored_search(deal_type, location, budget, property_type, bhk, limit)
+
+    if not raw_results:
+        print(f"[wa-ai] $vectorSearch returned 0 candidates for query={query_text!r}")
 
     trimmed = [_trim_property_for_agent(d, score=d.get("score")) for d in raw_results]
 
@@ -7524,7 +7553,6 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
 
     scored.sort(key=lambda p: p["_matchScore"], reverse=True)
     return scored[:limit]
-
 # ---------------------------------------------------------------------
 # STEP 2: FINAL AGENT CALL (uses the full WA_SYSTEM_PROMPT)
 # ---------------------------------------------------------------------
@@ -7657,10 +7685,44 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         extraction = extract_requirements_via_mistral(known_fields, chat_history, user_text)
 
-        # ---- RAG SEARCH: named project first, else scored vector search ----
+        
         search_results = []
-        if extraction.get("intent") == "buyer_purchase":
+        if extraction.get("intent") != "buyer_rental":
             named_project = (extraction.get("specific_project_name") or "").strip()
+
+            if named_project:
+                search_results = find_property_by_name(named_project, limit=3)
+                if not search_results:
+                    search_results = run_property_vector_search(
+                        query_text=named_project,
+                        deal_type="For Sale",
+                        location=extraction.get("location") or known_fields["location"],
+                        budget=extraction.get("budget") or known_fields["budget"],
+                        property_type=extraction.get("property_type") or known_fields["property_type"],
+                        bhk=extraction.get("bhk") or known_fields["bhk"],
+                        limit=3
+                    )
+            elif extraction.get("ready_for_search"):
+                query = extraction.get("search_query") or user_text
+                search_results = run_property_vector_search(
+                    query_text=query,
+                    deal_type="For Sale",
+                    location=extraction.get("location") or known_fields["location"],
+                    budget=extraction.get("budget") or known_fields["budget"],
+                    property_type=extraction.get("property_type") or known_fields["property_type"],
+                    bhk=extraction.get("bhk") or known_fields["bhk"],
+                    limit=3
+                )
+
+            if search_results:
+                print(f"[wa-ai] {len(search_results)} candidate(s) for {phone} — "
+                      f"top: {search_results[0].get('name')} "
+                      f"(score={search_results[0].get('_matchScore')}, "
+                      f"reasons={search_results[0].get('_matchReasons')})")
+            else:
+                print(f"[wa-ai] no candidates found for {phone} (query context: "
+                      f"named={extraction.get('specific_project_name')!r}, "
+                      f"ready_for_search={extraction.get('ready_for_search')})")
 
             if named_project:
                 search_results = find_property_by_name(named_project, limit=3)
