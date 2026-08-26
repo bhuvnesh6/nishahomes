@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Webhooks — Nisha Homes CRM</title>
+<style>
+  :root{
+    --navy:#10131c;
+    --navy2:#171b28;
+    --panel:#1c2030;
+    --border:#2a2f42;
+    --gold:#c4a45c;
+    --orange:#ed8049;
+    --text:#e7e9f0;
+    --muted:#8b90a5;
+    --green:#4caf7d;
+    --red:#e05a5a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--navy);
+    color:var(--text);
+    min-height:100vh;
+  }
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 28px;
+    background:var(--navy2);
+    border-bottom:1px solid var(--border);
+  }
+  header .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  header .brand-name{
+    font-weight:700;
+    letter-spacing:.5px;
+    color:var(--gold);
+    font-size:18px;
+  }
+  header .brand-sub{
+    font-size:12px;
+    color:var(--muted);
+  }
+  header a.back{
+    color:var(--muted);
+    text-decoration:none;
+    font-size:13px;
+    border:1px solid var(--border);
+    padding:7px 14px;
+    border-radius:8px;
+    transition:.15s;
+  }
+  header a.back:hover{
+    color:var(--text);
+    border-color:var(--gold);
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns:360px 1fr;
+    gap:20px;
+    padding:24px;
+    max-width:1400px;
+    margin:0 auto;
+  }
+  @media (max-width: 920px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:20px;
+  }
+  .card h2{
+    margin:0 0 4px 0;
+    font-size:16px;
+    color:var(--text);
+  }
+  .card .hint{
+    margin:0 0 16px 0;
+    font-size:12.5px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+
+  select, button, input{
+    font-family:inherit;
+    font-size:14px;
+  }
+  select{
+    width:100%;
+    padding:10px 12px;
+    background:var(--navy2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--text);
+    outline:none;
+  }
+  select:focus{border-color:var(--gold);}
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    padding:10px 16px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--navy2);
+    color:var(--text);
+    cursor:pointer;
+    transition:.15s;
+    white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--gold);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-primary{
+    background:linear-gradient(135deg, var(--orange), #d96a34);
+    border-color:transparent;
+    color:#fff;
+    font-weight:600;
+  }
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-danger{
+    background:transparent;
+    border-color:var(--red);
+    color:var(--red);
+  }
+  .btn-danger:hover{background:rgba(224,90,90,.1);}
+  .btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;}
+
+  .row{display:flex;gap:10px;margin-top:12px;}
+  .row > *{flex:1;}
+
+  .webhook-url-box{
+    margin-top:16px;
+    background:var(--navy2);
+    border:1px solid var(--gold);
+    border-radius:10px;
+    padding:12px 14px;
+    display:none;
+  }
+  .webhook-url-box.show{display:block;}
+  .webhook-url-box label{
+    display:block;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.6px;
+    color:var(--gold);
+    margin-bottom:6px;
+  }
+  .webhook-url-row{
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .webhook-url-row code{
+    flex:1;
+    background:var(--navy);
+    padding:8px 10px;
+    border-radius:6px;
+    font-size:12.5px;
+    color:#9fd8ff;
+    word-break:break-all;
+  }
+
+  .divider{
+    height:1px;
+    background:var(--border);
+    margin:20px 0;
+  }
+
+  .webhook-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    max-height:340px;
+    overflow-y:auto;
+  }
+  .webhook-item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:10px 12px;
+    background:var(--navy2);
+    border:1px solid var(--border);
+    border-radius:9px;
+    cursor:pointer;
+    transition:.15s;
+  }
+  .webhook-item:hover{border-color:var(--gold);}
+  .webhook-item.active{border-color:var(--orange);background:#241c17;}
+  .webhook-item .who{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width:0;
+  }
+  .webhook-item .who .name{
+    font-size:13.5px;
+    font-weight:600;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .webhook-item .who .meta{
+    font-size:11px;
+    color:var(--muted);
+  }
+  .webhook-item .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--border);
+    flex-shrink:0;
+  }
+  .webhook-item .dot.live{background:var(--green);box-shadow:0 0 6px var(--green);}
+
+  .empty-list{
+    font-size:12.5px;
+    color:var(--muted);
+    text-align:center;
+    padding:20px 0;
+  }
+
+  /* CANVAS PANEL */
+  .canvas-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .canvas-header .who-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .avatar{
+    width:38px;height:38px;
+    border-radius:50%;
+    background:linear-gradient(135deg, var(--gold), var(--orange));
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:#10131c;
+    font-size:15px;
+    flex-shrink:0;
+  }
+  .who-title .name{font-size:16px;font-weight:700;}
+  .who-title .sub{font-size:12px;color:var(--muted);}
+
+  .status-pill{
+    font-size:11.5px;
+    padding:5px 10px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    color:var(--muted);
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .status-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--border);}
+  .status-pill.live{border-color:var(--green);color:var(--green);}
+  .status-pill.live .dot{background:var(--green);box-shadow:0 0 6px var(--green);}
+
+  .canvas-toolbar{
+    display:flex;
+    gap:8px;
+    margin-bottom:12px;
+    flex-wrap:wrap;
+  }
+
+  .canvas-box{
+    background:#0c0e15;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:18px;
+    min-height:420px;
+    max-height:65vh;
+    overflow:auto;
+    position:relative;
+  }
+  .canvas-box pre{
+    margin:0;
+    white-space:pre-wrap;
+    word-break:break-word;
+    font-family:"SF Mono",Consolas,Menlo,monospace;
+    font-size:13px;
+    line-height:1.6;
+    color:#c9f7c9;
+  }
+  .canvas-placeholder{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    height:380px;
+    color:var(--muted);
+    text-align:center;
+    gap:10px;
+    font-size:13.5px;
+  }
+  .canvas-placeholder .big-icon{font-size:34px;opacity:.6;}
+
+  .json-key{color:#89c4ff;}
+  .json-string{color:#c9f7c9;}
+  .json-number{color:#f4b866;}
+  .json-boolean{color:#e07ae0;}
+  .json-null{color:#8b90a5;}
+
+  .toast{
+    position:fixed;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--panel);
+    border:1px solid var(--gold);
+    color:var(--text);
+    padding:10px 18px;
+    border-radius:8px;
+    font-size:13px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .25s;
+    z-index:50;
+  }
+  .toast.show{opacity:1;}
+
+  .footer-note{
+    margin-top:10px;
+    font-size:11.5px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div>
+      <div class="brand-name">🔗 Team Webhooks</div>
+      <div class="brand-sub">Per-member unique webhook · live raw payload viewer</div>
+    </div>
+  </div>
+  <a class="back" href="/admin">← Back to Dashboard</a>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: generate + list -->
+  <div>
+    <div class="card">
+      <h2>Generate a Webhook</h2>
+      <p class="hint">
+        Pick a team member. This creates a unique URL — paste it into your
+        unofficial WhatsApp API (or n8n, etc.) as the callback/webhook
+        target for that person. Every hit overwrites their "latest payload"
+        below — nothing is queued or kept as history.
+      </p>
+
+      <select id="memberSelect">
+        <option value="">Loading team members…</option>
+      </select>
+
+      <div class="row">
+        <button class="btn btn-primary" id="generateBtn" disabled>Generate Webhook</button>
+        <button class="btn" id="regenerateBtn" disabled title="Invalidates the old URL and issues a new one">Regenerate</button>
+      </div>
+
+      <div class="webhook-url-box" id="urlBox">
+        <label>Webhook URL</label>
+        <div class="webhook-url-row">
+          <code id="urlText">—</code>
+          <button class="btn btn-sm" id="copyUrlBtn">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="card">
+      <h2>All Webhooks</h2>
+      <p class="hint">Click one to open its live canvas on the right.</p>
+      <div class="webhook-list" id="webhookList">
+        <div class="empty-list">No webhooks generated yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: canvas -->
+  <div class="card">
+    <div class="canvas-header">
+      <div class="who-title" id="whoTitle" style="display:none;">
+        <div class="avatar" id="avatarInitial">?</div>
+        <div>
+          <div class="name" id="canvasName">—</div>
+          <div class="sub" id="canvasMeta">—</div>
+        </div>
+      </div>
+      <div id="statusPillWrap"></div>
+    </div>
+
+    <div class="canvas-toolbar" id="toolbar" style="display:none;">
+      <button class="btn btn-sm" id="refreshBtn">↻ Refresh now</button>
+      <button class="btn btn-sm" id="autoRefreshBtn">⏸ Pause auto-refresh</button>
+      <button class="btn btn-sm" id="copyPayloadBtn">Copy raw JSON</button>
+      <button class="btn btn-sm btn-danger" id="deleteWebhookBtn">Delete webhook</button>
+    </div>
+
+    <div class="canvas-box" id="canvasBox">
+      <div class="canvas-placeholder">
+        <div class="big-icon">🛰️</div>
+        <div>Select a webhook on the left to view its latest raw response here.</div>
+      </div>
+    </div>
+
+    <div class="footer-note" id="lastReceivedNote"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = {
+  members: "/api/team-webhooks/members",
+  generate: "/api/team-webhooks/generate",
+  list: "/api/team-webhooks/list",
+  latest: (token) => `/api/team-webhooks/latest/${token}`,
+  del: (token) => `/api/team-webhooks/delete/${token}`,
+};
+
+let selectedMember = null;   // {number, name}
+let activeToken = null;
+let activeMemberName = null;
+let pollTimer = null;
+let autoRefreshOn = true;
+const POLL_INTERVAL_MS = 3000;
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+function fullUrl(path) {
+  return window.location.origin + path;
+}
+
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+}
+
+// ---------------- MEMBER DROPDOWN ----------------
+async function loadMembers() {
+  const sel = document.getElementById("memberSelect");
+  try {
+    const res = await fetch(API.members);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || "Failed to load members");
+
+    sel.innerHTML = '<option value="">-- Select a team member --</option>';
+    json.data.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m.number;
+      opt.textContent = `${m.name} (${m.role || "member"})${m.hasWebhook ? " ✓ has webhook" : ""}`;
+      opt.dataset.name = m.name;
+      opt.dataset.hasWebhook = m.hasWebhook ? "1" : "0";
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load — refresh page</option>';
+    console.error(e);
+  }
+}
+
+document.getElementById("memberSelect").addEventListener("change", (e) => {
+  const opt = e.target.selectedOptions[0];
+  const genBtn = document.getElementById("generateBtn");
+  const regenBtn = document.getElementById("regenerateBtn");
+  document.getElementById("urlBox").classList.remove("show");
+
+  if (!opt || !opt.value) {
+    selectedMember = null;
+    genBtn.disabled = true;
+    regenBtn.disabled = true;
+    return;
+  }
+  selectedMember = { number: opt.value, name: opt.dataset.name };
+  genBtn.disabled = false;
+  regenBtn.disabled = opt.dataset.hasWebhook !== "1";
+});
+
+async function generateWebhook(regenerate) {
+  if (!selectedMember) return;
+  try {
+    const res = await fetch(API.generate, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ number: selectedMember.number, regenerate: !!regenerate })
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || "Failed to generate");
+
+    const box = document.getElementById("urlBox");
+    const urlText = document.getElementById("urlText");
+    urlText.textContent = fullUrl(json.webhookUrl);
+    box.classList.add("show");
+
+    showToast(json.regenerated ? "Webhook regenerated — old URL is now invalid" : "Webhook ready");
+    await loadMembers();
+    await loadWebhookList();
+    selectWebhook(json.token, selectedMember.name);
+  } catch (e) {
+    showToast("Error: " + e.message);
+  }
+}
+
+document.getElementById("generateBtn").addEventListener("click", () => generateWebhook(false));
+document.getElementById("regenerateBtn").addEventListener("click", () => generateWebhook(true));
+
+document.getElementById("copyUrlBtn").addEventListener("click", () => {
+  const txt = document.getElementById("urlText").textContent;
+  navigator.clipboard.writeText(txt).then(() => showToast("Webhook URL copied"));
+});
+
+// ---------------- WEBHOOK LIST ----------------
+async function loadWebhookList() {
+  const listEl = document.getElementById("webhookList");
+  try {
+    const res = await fetch(API.list);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+
+    if (!json.data.length) {
+      listEl.innerHTML = '<div class="empty-list">No webhooks generated yet.</div>';
+      return;
+    }
+
+    listEl.innerHTML = "";
+    json.data.forEach(w => {
+      const item = document.createElement("div");
+      item.className = "webhook-item" + (w.token === activeToken ? " active" : "");
+      item.innerHTML = `
+        <div class="who">
+          <div class="name">${w.employeeName}</div>
+          <div class="meta">${w.employeeNumber} · ${w.lastReceivedAt ? "last hit " + w.lastReceivedAt : "never received"}</div>
+        </div>
+        <div class="dot ${w.lastReceivedAt ? "live" : ""}"></div>
+      `;
+      item.addEventListener("click", () => selectWebhook(w.token, w.employeeName));
+      listEl.appendChild(item);
+    });
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty-list">Failed to load webhooks.</div>';
+    console.error(e);
+  }
+}
+
+// ---------------- CANVAS ----------------
+function selectWebhook(token, name) {
+  activeToken = token;
+  activeMemberName = name;
+
+  document.getElementById("whoTitle").style.display = "flex";
+  document.getElementById("canvasName").textContent = name;
+  document.getElementById("avatarInitial").textContent = initials(name);
+  document.getElementById("toolbar").style.display = "flex";
+
+  loadWebhookList(); // refresh highlight state
+  fetchLatestPayload(true);
+
+  clearInterval(pollTimer);
+  autoRefreshOn = true;
+  document.getElementById("autoRefreshBtn").textContent = "⏸ Pause auto-refresh";
+  pollTimer = setInterval(() => fetchLatestPayload(false), POLL_INTERVAL_MS);
+}
+
+function syntaxHighlight(json) {
+  const jsonStr = JSON.stringify(json, null, 2)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return jsonStr.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|null|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    (match) => {
+      let cls = "json-number";
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? "json-key" : "json-string";
+      } else if (/true|false/.test(match)) {
+        cls = "json-boolean";
+      } else if (/null/.test(match)) {
+        cls = "json-null";
+      }
+      return `<span class="${cls}">${match}</span>`;
+    }
+  );
+}
+
+async function fetchLatestPayload(showLoadingState) {
+  if (!activeToken) return;
+  const canvasBox = document.getElementById("canvasBox");
+  const pillWrap = document.getElementById("statusPillWrap");
+  const note = document.getElementById("lastReceivedNote");
+
+  try {
+    const res = await fetch(API.latest(activeToken));
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || "Failed to fetch");
+
+    document.getElementById("canvasMeta").textContent =
+      `${json.employeeNumber} · webhook: /webhook/team/${activeToken.slice(0, 8)}…`;
+
+    if (json.payload === null || json.payload === undefined) {
+      canvasBox.innerHTML = `
+        <div class="canvas-placeholder">
+          <div class="big-icon">📭</div>
+          <div>No payload received yet on this webhook.<br>Waiting for the first hit…</div>
+        </div>`;
+      pillWrap.innerHTML = `<span class="status-pill"><span class="dot"></span> Waiting for data</span>`;
+      note.textContent = "";
+    } else {
+      canvasBox.innerHTML = `<pre>${syntaxHighlight(json.payload)}</pre>`;
+      pillWrap.innerHTML = `<span class="status-pill live"><span class="dot"></span> Live</span>`;
+      note.textContent = json.lastReceivedAt ? `Last received: ${json.lastReceivedAt} (IST)` : "";
+    }
+  } catch (e) {
+    if (showLoadingState) {
+      canvasBox.innerHTML = `<div class="canvas-placeholder"><div class="big-icon">⚠️</div><div>Failed to load payload.</div></div>`;
+    }
+    console.error(e);
+  }
+}
+
+document.getElementById("refreshBtn").addEventListener("click", () => fetchLatestPayload(true));
+
+document.getElementById("autoRefreshBtn").addEventListener("click", (e) => {
+  autoRefreshOn = !autoRefreshOn;
+  if (autoRefreshOn) {
+    pollTimer = setInterval(() => fetchLatestPayload(false), POLL_INTERVAL_MS);
+    e.target.textContent = "⏸ Pause auto-refresh";
+  } else {
+    clearInterval(pollTimer);
+    e.target.textContent = "▶ Resume auto-refresh";
+  }
+});
+
+document.getElementById("copyPayloadBtn").addEventListener("click", () => {
+  const pre = document.querySelector("#canvasBox pre");
+  if (!pre) { showToast("Nothing to copy yet"); return; }
+  navigator.clipboard.writeText(pre.innerText).then(() => showToast("Raw JSON copied"));
+});
+
+document.getElementById("deleteWebhookBtn").addEventListener("click", async () => {
+  if (!activeToken) return;
+  if (!confirm(`Delete the webhook for ${activeMemberName}? The URL will stop working immediately.`)) return;
+  try {
+    const res = await fetch(API.del(activeToken), { method: "DELETE" });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || "Failed to delete");
+    showToast("Webhook deleted");
+    clearInterval(pollTimer);
+    activeToken = null;
+    document.getElementById("whoTitle").style.display = "none";
+    document.getElementById("toolbar").style.display = "none";
+    document.getElementById("statusPillWrap").innerHTML = "";
+    document.getElementById("lastReceivedNote").textContent = "";
+    document.getElementById("canvasBox").innerHTML = `
+      <div class="canvas-placeholder">
+        <div class="big-icon">🛰️</div>
+        <div>Select a webhook on the left to view its latest raw response here.</div>
+      </div>`;
+    await loadMembers();
+    await loadWebhookList();
+  } catch (e) {
+    showToast("Error: " + e.message);
+  }
+});
+
+// ---------------- INIT ----------------
+loadMembers();
+loadWebhookList();
+setInterval(loadWebhookList, 10000); // keep left-side "last hit" times fresh
+</script>
+
+</body>
+</html>

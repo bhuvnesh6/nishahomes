@@ -8037,6 +8037,225 @@ def inbox_send():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500 
+
+
+#team whatsapp tracking system
+
+team_webhooks_collection = db["teamWebhooks"]
+team_webhooks_collection.create_index("token", unique=True)
+team_webhooks_collection.create_index("employeeNumber")
+ 
+ 
+def generate_webhook_token():
+    """Short, URL-safe, hard-to-guess token used in the public webhook path."""
+    return secrets.token_urlsafe(24).replace("_", "").replace("-", "")[:32]
+ 
+ 
+@app.route("/team-webhooks")
+def team_webhooks_page():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return redirect("/")
+    return render_template(
+        "team_webhooks.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
+    )
+ 
+ 
+@app.route("/api/team-webhooks/members", methods=["GET"])
+def team_webhooks_members():
+    """Every teamAssign member, flagged with whether they already have a webhook."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    try:
+        members = list(db["teamAssign"].find(
+            {},
+            {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1}
+        ).sort("Employee name", 1))
+ 
+        existing = {w["employeeNumber"]: w for w in team_webhooks_collection.find()}
+ 
+        data = []
+        for m in members:
+            num = m.get("Employee number")
+            if num is None:
+                continue
+            wh = existing.get(num)
+            data.append({
+                "name": m.get("Employee name", "Unknown"),
+                "number": num,
+                "role": (m.get("roll") or "").strip().lower(),
+                "active": m.get("Active", True),
+                "hasWebhook": bool(wh),
+                "token": wh.get("token") if wh else None
+            })
+ 
+        return jsonify({"success": True, "data": data}), 200
+ 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+ 
+@app.route("/api/team-webhooks/generate", methods=["POST"])
+def team_webhooks_generate():
+    """
+    Creates (or re-uses) a unique webhook token for one employee number.
+    Pass {"number": <employee number>, "regenerate": true} to force a
+    brand-new token for someone who already has one (invalidates the old
+    URL immediately since lookups are by token).
+    """
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    try:
+        data = request.json or {}
+        raw_number = data.get("number")
+        if raw_number is None:
+            return jsonify({"success": False, "message": "number is required"}), 400
+ 
+        try:
+            number = int(str(raw_number).strip())
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid employee number"}), 400
+ 
+        member = db["teamAssign"].find_one({"Employee number": number})
+        if not member:
+            return jsonify({"success": False, "message": "Team member not found"}), 404
+ 
+        existing = team_webhooks_collection.find_one({"employeeNumber": number})
+        if existing and not data.get("regenerate"):
+            return jsonify({
+                "success": True,
+                "token": existing["token"],
+                "webhookUrl": f"/webhook/team/{existing['token']}",
+                "regenerated": False
+            }), 200
+ 
+        token = generate_webhook_token()
+        now = datetime.utcnow()
+ 
+        team_webhooks_collection.update_one(
+            {"employeeNumber": number},
+            {
+                "$set": {
+                    "employeeNumber": number,
+                    "employeeName": member.get("Employee name", "Unknown"),
+                    "token": token,
+                    "regeneratedAt": now
+                },
+                "$setOnInsert": {"createdAt": now, "lastPayload": None, "lastReceivedAt": None}
+            },
+            upsert=True
+        )
+ 
+        return jsonify({
+            "success": True,
+            "token": token,
+            "webhookUrl": f"/webhook/team/{token}",
+            "regenerated": bool(existing)
+        }), 200
+ 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+ 
+@app.route("/api/team-webhooks/list", methods=["GET"])
+def team_webhooks_list():
+    """Every webhook that's been generated so far, newest activity first."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    try:
+        docs = list(team_webhooks_collection.find().sort("employeeName", 1))
+        data = [{
+            "employeeName": d.get("employeeName"),
+            "employeeNumber": d.get("employeeNumber"),
+            "token": d.get("token"),
+            "webhookUrl": f"/webhook/team/{d.get('token')}",
+            "createdAt": format_ist(d.get("createdAt")) if isinstance(d.get("createdAt"), datetime) else "-",
+            "lastReceivedAt": format_ist(d.get("lastReceivedAt")) if isinstance(d.get("lastReceivedAt"), datetime) else None
+        } for d in docs]
+        return jsonify({"success": True, "data": data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+ 
+@app.route("/api/team-webhooks/delete/<token>", methods=["DELETE"])
+def team_webhooks_delete(token):
+    """Admin-only — permanently kills a webhook URL (old token stops working)."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    team_webhooks_collection.delete_one({"token": token})
+    return jsonify({"success": True}), 200
+ 
+ 
+# ---------------------------------------------------------------------
+# PUBLIC INBOUND ENDPOINT — no session/auth check on purpose. This is
+# the URL you paste into your unofficial WhatsApp API / n8n / whatever,
+# per team member. Whatever raw JSON it POSTs here overwrites that
+# member's "latest payload" — nothing is queued or kept as history.
+# ---------------------------------------------------------------------
+@app.route("/webhook/team/<token>", methods=["GET", "POST"])
+def team_webhook_receiver(token):
+    doc = team_webhooks_collection.find_one({"token": token})
+    if not doc:
+        return jsonify({"success": False, "message": "Invalid webhook token"}), 404
+ 
+    if request.method == "GET":
+        # Some providers do a GET-based verification handshake on setup.
+        challenge = request.args.get("hub.challenge")
+        if challenge:
+            return challenge, 200
+        return jsonify({"success": True, "message": "Webhook is live"}), 200
+ 
+    try:
+        body = request.get_json(silent=True)
+        if body is None:
+            # Fall back gracefully if the sender posts form-data or plain text
+            # instead of JSON — still store SOMETHING so the canvas isn't blank.
+            body = request.form.to_dict() or request.data.decode("utf-8", errors="ignore")
+ 
+        now = datetime.utcnow()
+        team_webhooks_collection.update_one(
+            {"token": token},
+            {"$set": {
+                "lastPayload": body,
+                "lastReceivedAt": now,
+                "lastReceivedFormatted": format_ist(now)
+            }}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+    return jsonify({"success": True}), 200
+ 
+ 
+@app.route("/api/team-webhooks/latest/<token>", methods=["GET"])
+def team_webhooks_latest(token):
+    """Polled by the frontend canvas to show the latest raw payload live."""
+    if not session.get("user_id"):
+        return jsonify({"success": False}), 401
+ 
+    doc = team_webhooks_collection.find_one({"token": token})
+    if not doc:
+        return jsonify({"success": False, "message": "Invalid token"}), 404
+ 
+    return jsonify({
+        "success": True,
+        "employeeName": doc.get("employeeName"),
+        "employeeNumber": doc.get("employeeNumber"),
+        "payload": doc.get("lastPayload"),
+        "lastReceivedAt": format_ist(doc.get("lastReceivedAt")) if isinstance(doc.get("lastReceivedAt"), datetime) else None
+    }), 200
+ 
         
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
