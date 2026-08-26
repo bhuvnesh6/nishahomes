@@ -8041,14 +8041,66 @@ def inbox_send():
 
 #team whatsapp tracking system
 
+
 team_webhooks_collection = db["teamWebhooks"]
 team_webhooks_collection.create_index("token", unique=True)
 team_webhooks_collection.create_index("employeeNumber")
+ 
+team_webhook_messages_collection = db["teamWebhookMessages"]
+team_webhook_messages_collection.create_index([("token", 1), ("number", 1), ("timestamp", 1)])
+team_webhook_messages_collection.create_index([("token", 1), ("messageId", 1)], unique=True, sparse=True)
+ 
+LEAD_FLAG_COLLECTIONS = ["Leads", "RentalLeads", "sellingLeads", "agentLeads"]
  
  
 def generate_webhook_token():
     """Short, URL-safe, hard-to-guess token used in the public webhook path."""
     return secrets.token_urlsafe(24).replace("_", "").replace("-", "")[:32]
+ 
+ 
+def find_lead_by_phone_number(raw_number):
+    """
+    Matches an inbound WhatsApp sender number against the 4 lead
+    collections. Matches on the last 10 digits (not full normalized
+    string) since 'Phone Number' is stored in mixed formats across this
+    app (with/without country code, with/without '+', etc) — the last
+    10 digits are the one thing that's always the actual mobile number.
+    Returns {"collection", "leadId", "name", "leadType"} or None.
+    """
+    digits = re.sub(r"\D", "", str(raw_number or ""))
+    if not digits:
+        return None
+    last10 = digits[-10:] if len(digits) >= 10 else digits
+    if len(last10) < 10:
+        return None
+ 
+    safe = re.escape(last10)
+    for coll_name in LEAD_FLAG_COLLECTIONS:
+        try:
+            lead = db[coll_name].find_one({"Phone Number": {"$regex": safe}})
+        except Exception:
+            lead = None
+        if lead:
+            return {
+                "collection": coll_name,
+                "leadId": str(lead["_id"]),
+                "name": lead.get("Lead Name") or lead.get("Name") or "Unknown",
+                "leadType": _normalize_lead_type_field(lead.get("LeadType"))
+            }
+    return None
+ 
+ 
+def _parse_wa_timestamp(ts_raw, fallback):
+    """Parses the ISO timestamp shape used by this WhatsApp provider,
+    e.g. '2026-08-26T07:08:15.000Z'. Falls back to server time."""
+    if not ts_raw:
+        return fallback
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(str(ts_raw).strip(), fmt)
+        except ValueError:
+            continue
+    return fallback
  
  
 @app.route("/team-webhooks")
@@ -8065,7 +8117,7 @@ def team_webhooks_page():
  
 @app.route("/api/team-webhooks/members", methods=["GET"])
 def team_webhooks_members():
-    """Every teamAssign member, flagged with whether they already have a webhook."""
+    """Every teamAssign member, flagged with webhook status + quick stats."""
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
  
@@ -8083,14 +8135,29 @@ def team_webhooks_members():
             if num is None:
                 continue
             wh = existing.get(num)
-            data.append({
+            entry = {
                 "name": m.get("Employee name", "Unknown"),
                 "number": num,
                 "role": (m.get("roll") or "").strip().lower(),
                 "active": m.get("Active", True),
                 "hasWebhook": bool(wh),
-                "token": wh.get("token") if wh else None
-            })
+                "token": wh.get("token") if wh else None,
+                "lastReceivedAt": None,
+                "conversationCount": 0,
+                "leadConversationCount": 0
+            }
+            if wh:
+                token = wh.get("token")
+                entry["lastReceivedAt"] = (
+                    format_ist(wh.get("lastReceivedAt"))
+                    if isinstance(wh.get("lastReceivedAt"), datetime) else None
+                )
+                numbers = team_webhook_messages_collection.distinct("number", {"token": token})
+                entry["conversationCount"] = len(numbers)
+                entry["leadConversationCount"] = len(
+                    team_webhook_messages_collection.distinct("number", {"token": token, "isLead": True})
+                )
+            data.append(entry)
  
         return jsonify({"success": True, "data": data}), 200
  
@@ -8105,8 +8172,7 @@ def team_webhooks_generate():
     """
     Creates (or re-uses) a unique webhook token for one employee number.
     Pass {"number": <employee number>, "regenerate": true} to force a
-    brand-new token for someone who already has one (invalidates the old
-    URL immediately since lookups are by token).
+    brand-new token (invalidates the old URL immediately).
     """
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
@@ -8135,6 +8201,7 @@ def team_webhooks_generate():
                 "regenerated": False
             }), 200
  
+        old_token = existing.get("token") if existing else None
         token = generate_webhook_token()
         now = datetime.utcnow()
  
@@ -8152,6 +8219,12 @@ def team_webhooks_generate():
             upsert=True
         )
  
+        # Regenerating orphans old messages under the dead token — drop them
+        # so the new inbox starts clean instead of carrying stale history
+        # under a token that no longer routes anywhere.
+        if old_token:
+            team_webhook_messages_collection.delete_many({"token": old_token})
+ 
         return jsonify({
             "success": True,
             "token": token,
@@ -8165,50 +8238,29 @@ def team_webhooks_generate():
         return jsonify({"success": False, "message": str(e)}), 500
  
  
-@app.route("/api/team-webhooks/list", methods=["GET"])
-def team_webhooks_list():
-    """Every webhook that's been generated so far, newest activity first."""
-    if session.get("role") not in ("admin", "emp"):
-        return jsonify({"success": False, "message": "Staff only"}), 403
- 
-    try:
-        docs = list(team_webhooks_collection.find().sort("employeeName", 1))
-        data = [{
-            "employeeName": d.get("employeeName"),
-            "employeeNumber": d.get("employeeNumber"),
-            "token": d.get("token"),
-            "webhookUrl": f"/webhook/team/{d.get('token')}",
-            "createdAt": format_ist(d.get("createdAt")) if isinstance(d.get("createdAt"), datetime) else "-",
-            "lastReceivedAt": format_ist(d.get("lastReceivedAt")) if isinstance(d.get("lastReceivedAt"), datetime) else None
-        } for d in docs]
-        return jsonify({"success": True, "data": data}), 200
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
- 
- 
 @app.route("/api/team-webhooks/delete/<token>", methods=["DELETE"])
 def team_webhooks_delete(token):
-    """Admin-only — permanently kills a webhook URL (old token stops working)."""
+    """Admin-only — permanently kills a webhook URL and its message history."""
     if session.get("role") != "admin":
         return jsonify({"success": False, "message": "Admin only"}), 403
     team_webhooks_collection.delete_one({"token": token})
+    team_webhook_messages_collection.delete_many({"token": token})
     return jsonify({"success": True}), 200
  
  
 # ---------------------------------------------------------------------
-# PUBLIC INBOUND ENDPOINT — no session/auth check on purpose. This is
-# the URL you paste into your unofficial WhatsApp API / n8n / whatever,
-# per team member. Whatever raw JSON it POSTs here overwrites that
-# member's "latest payload" — nothing is queued or kept as history.
+# PUBLIC INBOUND ENDPOINT — no session/auth check on purpose. Paste this
+# URL into your unofficial WhatsApp API per team member. Every inbound
+# 1:1 message becomes its own stored message; group messages update the
+# webhook's raw lastPayload for debugging but aren't turned into a chat.
 # ---------------------------------------------------------------------
 @app.route("/webhook/team/<token>", methods=["GET", "POST"])
 def team_webhook_receiver(token):
-    doc = team_webhooks_collection.find_one({"token": token})
-    if not doc:
+    wh = team_webhooks_collection.find_one({"token": token})
+    if not wh:
         return jsonify({"success": False, "message": "Invalid webhook token"}), 404
  
     if request.method == "GET":
-        # Some providers do a GET-based verification handshake on setup.
         challenge = request.args.get("hub.challenge")
         if challenge:
             return challenge, 200
@@ -8217,11 +8269,10 @@ def team_webhook_receiver(token):
     try:
         body = request.get_json(silent=True)
         if body is None:
-            # Fall back gracefully if the sender posts form-data or plain text
-            # instead of JSON — still store SOMETHING so the canvas isn't blank.
-            body = request.form.to_dict() or request.data.decode("utf-8", errors="ignore")
+            body = request.form.to_dict() or {}
  
         now = datetime.utcnow()
+ 
         team_webhooks_collection.update_one(
             {"token": token},
             {"$set": {
@@ -8230,6 +8281,46 @@ def team_webhook_receiver(token):
                 "lastReceivedFormatted": format_ist(now)
             }}
         )
+ 
+        raw_number = body.get("number") if isinstance(body, dict) else None
+        message_text = body.get("message") if isinstance(body, dict) else None
+        is_group = bool(body.get("isGroup")) if isinstance(body, dict) else False
+ 
+        if raw_number and message_text and not is_group:
+            number = normalize_number(raw_number)
+            if number and len(number) == 10:
+                number = "91" + number
+ 
+            message_id = body.get("messageId") or secrets.token_hex(12)
+            msg_dt = _parse_wa_timestamp(body.get("timestamp"), now)
+            lead_match = find_lead_by_phone_number(number)
+ 
+            try:
+                team_webhook_messages_collection.update_one(
+                    {"token": token, "messageId": message_id},
+                    {"$setOnInsert": {
+                        "token": token,
+                        "employeeNumber": wh.get("employeeNumber"),
+                        "messageId": message_id,
+                        "number": number,
+                        "pushName": body.get("pushName") or number,
+                        "message": message_text,
+                        "isGroup": is_group,
+                        "groupId": body.get("groupId"),
+                        "instanceId": body.get("instanceId"),
+                        "instanceName": body.get("instanceName"),
+                        "timestamp": msg_dt,
+                        "receivedAt": now,
+                        "isLead": bool(lead_match),
+                        "leadName": lead_match.get("name") if lead_match else None,
+                        "leadType": lead_match.get("leadType") if lead_match else None,
+                        "leadCollection": lead_match.get("collection") if lead_match else None,
+                    }},
+                    upsert=True
+                )
+            except Exception as msg_err:
+                print(f"[team-webhook] failed to store message for token={token}: {msg_err}")
+ 
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -8238,23 +8329,94 @@ def team_webhook_receiver(token):
     return jsonify({"success": True}), 200
  
  
-@app.route("/api/team-webhooks/latest/<token>", methods=["GET"])
-def team_webhooks_latest(token):
-    """Polled by the frontend canvas to show the latest raw payload live."""
-    if not session.get("user_id"):
-        return jsonify({"success": False}), 401
+@app.route("/api/team-webhooks/conversations/<token>", methods=["GET"])
+def team_webhooks_conversations(token):
+    """Chat-list data: one row per WhatsApp number this member has heard from."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
  
-    doc = team_webhooks_collection.find_one({"token": token})
-    if not doc:
+    wh = team_webhooks_collection.find_one({"token": token})
+    if not wh:
         return jsonify({"success": False, "message": "Invalid token"}), 404
  
-    return jsonify({
-        "success": True,
-        "employeeName": doc.get("employeeName"),
-        "employeeNumber": doc.get("employeeNumber"),
-        "payload": doc.get("lastPayload"),
-        "lastReceivedAt": format_ist(doc.get("lastReceivedAt")) if isinstance(doc.get("lastReceivedAt"), datetime) else None
-    }), 200
+    try:
+        pipeline = [
+            {"$match": {"token": token}},
+            {"$sort": {"timestamp": 1}},
+            {"$group": {
+                "_id": "$number",
+                "pushName": {"$last": "$pushName"},
+                "lastMessage": {"$last": "$message"},
+                "lastTimestamp": {"$last": "$timestamp"},
+                "messageCount": {"$sum": 1},
+                "isLead": {"$last": "$isLead"},
+                "leadName": {"$last": "$leadName"},
+                "leadType": {"$last": "$leadType"},
+            }},
+            {"$sort": {"lastTimestamp": -1}}
+        ]
+        rows = list(team_webhook_messages_collection.aggregate(pipeline))
+        data = [{
+            "number": r["_id"],
+            "pushName": r.get("pushName") or r["_id"],
+            "lastMessage": r.get("lastMessage", ""),
+            "lastTimestamp": format_ist(r.get("lastTimestamp")) if isinstance(r.get("lastTimestamp"), datetime) else "-",
+            "lastTimestampRaw": r["lastTimestamp"].isoformat() if isinstance(r.get("lastTimestamp"), datetime) else None,
+            "messageCount": r.get("messageCount", 0),
+            "isLead": bool(r.get("isLead")),
+            "leadName": r.get("leadName"),
+            "leadType": r.get("leadType"),
+        } for r in rows]
+ 
+        return jsonify({
+            "success": True,
+            "employeeName": wh.get("employeeName"),
+            "employeeNumber": wh.get("employeeNumber"),
+            "data": data
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
+ 
+@app.route("/api/team-webhooks/messages/<token>/<number>", methods=["GET"])
+def team_webhooks_messages(token, number):
+    """Full message thread for one WhatsApp number under one member's webhook."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+ 
+    wh = team_webhooks_collection.find_one({"token": token})
+    if not wh:
+        return jsonify({"success": False, "message": "Invalid token"}), 404
+ 
+    try:
+        docs = list(team_webhook_messages_collection.find(
+            {"token": token, "number": number}
+        ).sort("timestamp", 1))
+ 
+        data = [{
+            "messageId": d.get("messageId"),
+            "message": d.get("message", ""),
+            "timestamp": format_ist(d.get("timestamp")) if isinstance(d.get("timestamp"), datetime) else "-",
+            "timestampRaw": d["timestamp"].isoformat() if isinstance(d.get("timestamp"), datetime) else None,
+        } for d in docs]
+ 
+        latest = docs[-1] if docs else {}
+        return jsonify({
+            "success": True,
+            "number": number,
+            "pushName": latest.get("pushName") or number,
+            "isLead": bool(latest.get("isLead")),
+            "leadName": latest.get("leadName"),
+            "leadType": latest.get("leadType"),
+            "data": data
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+ 
  
         
 if __name__ == "__main__":
