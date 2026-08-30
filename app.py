@@ -6789,7 +6789,7 @@ DEFAULT_WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
 # Separate Mistral key for the WA agent so its usage/quota doesn't mix
 # with autofill (MISTRAL_API_KEY) or call-intent classification
 # (MISTRAL_API_KEY2). Falls back to MISTRAL_API_KEY if not set.
-MISTRAL_API_KEY3 = os.getenv("MISTRAL_API_KEY3") or MISTRAL_API_KEY
+MISTRAL_API_KEY3 = os.getenv("MISTRAL_API_KEY2") or MISTRAL_API_KEY
 
 WA_LEAD_COLLECTIONS = ("Leads", "RentalLeads", "sellingLeads", "agentLeads")
 
@@ -7664,6 +7664,8 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
 
 def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, location_coverage=None):
     if not MISTRAL_API_KEY3:
+        print("[wa-ai] FATAL: MISTRAL_API_KEY3 (and fallback MISTRAL_API_KEY) not set in .env — "
+              "the WhatsApp AI agent cannot run at all and every reply will use the generic fallback.")
         return None
 
     crm_context = {
@@ -7689,6 +7691,7 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, locat
         f"CUSTOMER'S LATEST MESSAGE:\n{user_text}"
     )
 
+    resp = None
     try:
         resp = requests.post(
             MISTRAL_API_URL,
@@ -7705,12 +7708,27 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, locat
             timeout=45
         )
         resp.raise_for_status()
-        result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        raw_content = resp.json()["choices"][0]["message"]["content"]
+        try:
+            result = json.loads(raw_content)
+        except json.JSONDecodeError as je:
+            print(f"[wa-ai] Mistral returned non-JSON content, could not parse: {je}\n"
+                  f"[wa-ai] RAW CONTENT WAS:\n{raw_content[:2000]}")
+            return None
+
         if "message" not in result:
+            print(f"[wa-ai] Mistral JSON was valid but missing 'message' key. Full result: {result}")
             return None
         return result
+
+    except requests.exceptions.HTTPError as e:
+        body = resp.text[:2000] if resp is not None else "(no response object)"
+        print(f"[wa-ai] final agent call HTTP error: {e}\n[wa-ai] RESPONSE BODY:\n{body}")
+        return None
     except Exception as e:
-        print(f"[wa-ai] final agent call failed: {e}")
+        import traceback
+        print(f"[wa-ai] final agent call failed with unexpected exception: {e}")
+        traceback.print_exc()
         return None
     
 # ---------------------------------------------------------------------
