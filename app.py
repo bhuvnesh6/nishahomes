@@ -618,7 +618,7 @@ def call_mistral_generate(extracted_text, schema):
     )
 
     payload = {
-        "model": "mistral-large-latest",
+        "model": "mistral-small-latest",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": extracted_text[:12000] or "No text could be extracted."}
@@ -687,7 +687,7 @@ def classify_lead_intent(lead_snapshot: dict, call_log: dict):
     )
 
     payload = {
-        "model": "mistral-large-latest",
+        "model": "mistral-small-latest",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(context)}
@@ -6258,7 +6258,7 @@ def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number, pre
     )
  
     payload = {
-        "model": "mistral-large-latest",
+        "model": "mistral-small-latest",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(context)},
@@ -7341,7 +7341,7 @@ def extract_requirements_via_mistral(known_fields, chat_history, user_text):
             MISTRAL_API_URL,
             headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
             json={
-                "model": "mistral-large-latest",
+                "model": "mistral-small-latest",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(payload_context)}
@@ -7697,7 +7697,7 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, locat
             MISTRAL_API_URL,
             headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
             json={
-                "model": "mistral-large-latest",
+                "model": "mistral-small-latest",
                 "messages": [
                     {"role": "system", "content": WA_SYSTEM_PROMPT},
                     {"role": "user", "content": user_content}
