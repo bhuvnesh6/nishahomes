@@ -6855,6 +6855,10 @@ The `project` tool is the ONLY source of truth for any concrete fact: price, siz
 
 ...unless the customer has named ONE specific project by proper name (e.g. "Hazelwood") — the name itself is a complete enough query on its own.
 
+**"NCR" alone is NOT a location (hard rule):** If the customer says only "NCR", "Delhi NCR", "NCR region" or similar without naming a specific city/area (Gurgaon, Noida, Greater Noida, Ghaziabad, South Delhi, Dwarka, Bijwasan, Uttam Nagar, a named locality, etc.), treat location as still UNKNOWN. Do not call the tool or show a property on "NCR" alone — ask them which specific area within NCR they mean, e.g.: "NCR is quite wide 🙂 Could you tell me which area specifically — Gurgaon, Noida, South Delhi, Dwarka, or somewhere else?"
+
+**Newest stated location always wins (hard rule):** If the customer's LATEST message names a location that's different from what's already in the CRM or was said earlier in this chat, always use the NEW one going forward — never keep using the old/CRM location once they've changed or corrected it. Set `collected_data.location` to the new value in this case.
+
 If any of the three is missing and no specific project was named: do NOT call the tool, do NOT show a property, no matter what else is known. Ask for the single highest-priority missing field instead — order: property type → location → budget — one question, and don't answer anything beyond acknowledging what they already told you.
 
 Example — "2BHK budget 30 to 35 lakh" (no location):
@@ -7314,7 +7318,7 @@ def extract_requirements_via_mistral(known_fields, chat_history, user_text):
     }
     if not MISTRAL_API_KEY3:
         return fallback
-
+#new system prompt
     system_prompt = (
         "You extract structured real-estate requirement fields for a WhatsApp lead. "
         "You are given fields ALREADY KNOWN from the CRM, recent chat history, and the "
@@ -7327,6 +7331,12 @@ def extract_requirements_via_mistral(known_fields, chat_history, user_text):
         "search_query (one rich natural-language sentence combining every known field, for a "
         "vector search — empty string if ready_for_search is false). "
         "Only use values explicitly stated by the customer (in CRM data or chat) — never invent. "
+        "RULE - 'NCR' is not a location: if the only location given (CRM or chat) is a bare "
+        "'NCR' / 'Delhi NCR' / 'NCR region' with no specific city or area named, treat location "
+        "as empty string and ready_for_search as false, even if budget and property_type are known. "
+        "RULE - newest location wins: if the customer's latest message states a location that "
+        "conflicts with the CRM's knownFromCRM.location or an earlier chat message, output the "
+        "NEW location from the latest message, not the old one. "
         "No markdown, no commentary, JSON only."
     )
 
@@ -7875,9 +7885,16 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
         apply_ai_result_to_lead(coll_name, lead_id, ai_result)
         save_chat_message(lead_id, phone, "assistant", ai_result.get("message", ""))
 
-        send_whatsapp_text(phone, ai_result.get("message", ""), phone_no_id=recipient_phone_id)
+        sending_media = ai_result.get("media") == "yes" and bool(ai_result.get("imgfield"))
 
-        if ai_result.get("media") == "yes" and ai_result.get("imgfield"):
+        # CHANGED: when a property is being shared, send ONLY the image+caption —
+        # never a separate text bubble as well. The caption already carries every
+        # property detail (build_property_caption), so a duplicate text message
+        # is redundant/spammy. Non-property replies (FAQ, qualification questions,
+        # handover, etc.) still go out as plain text exactly as before.
+        if not sending_media:
+            send_whatsapp_text(phone, ai_result.get("message", ""), phone_no_id=recipient_phone_id)
+        else:
             try:
                 # Match the AI's chosen property name back to the full
                 # search_results record so the caption can include real
@@ -7904,6 +7921,12 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
                 )
             except Exception as img_err:
                 print(f"[wa-ai] image send failed: {img_err}")
+                # Safety net: if the image send itself fails, still get the
+                # customer SOME reply instead of total silence.
+                try:
+                    send_whatsapp_text(phone, ai_result.get("message", ""), phone_no_id=recipient_phone_id)
+                except Exception as text_err:
+                    print(f"[wa-ai] fallback text send also failed: {text_err}")
 
     except Exception:
         import traceback
