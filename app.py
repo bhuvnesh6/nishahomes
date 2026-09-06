@@ -3416,51 +3416,72 @@ def export_leads():
         max_calls = 0
         skipped = 0
 
+        # ---- PASS 1: group items by target collection, batch-fetch lead docs by _id ----
+        items_by_collection = {}
         for item in leads_input:
+            collection_name = COLLECTION_MAP.get(item.get("type", "buying"), "Leads")
+            items_by_collection.setdefault(collection_name, []).append(item)
+
+        lead_docs_by_key = {}   # (collection_name, lead_id_str) -> doc
+        for collection_name, items in items_by_collection.items():
+            ids = []
+            for item in items:
+                lid = item.get("id")
+                if lid:
+                    try:
+                        ids.append(ObjectId(lid))
+                    except Exception:
+                        pass
+            if ids:
+                for d in db[collection_name].find({"_id": {"$in": ids}}):
+                    lead_docs_by_key[(collection_name, str(d["_id"]))] = d
+
+        # ---- PASS 2: normalize phones, fall back to a regex lookup ONLY for
+        # rows that had no usable id-based match, and collect every phone we
+        # still need endData/call-log info for ----
+        prepared = []
+        phones_needed = set()
+
+        for item in leads_input:
+            lead_id = item.get("id")
+            lead_type = item.get("type", "buying")
+            collection_name = COLLECTION_MAP.get(lead_type, "Leads")
+
+            raw_phone = item.get("phone", "")
+            phone = normalize_number(raw_phone)
+            valid_phone = bool(phone) and len(phone) >= 8
+            if valid_phone and not phone.startswith("91"):
+                phone = "91" + phone
+
+            lead_doc = lead_docs_by_key.get((collection_name, str(lead_id))) if lead_id else None
+            if not lead_doc and valid_phone:
+                try:
+                    safe_phone = re.escape(phone)
+                    lead_doc = db[collection_name].find_one({"Phone Number": {"$regex": safe_phone}})
+                except Exception:
+                    lead_doc = None
+
+            prepared.append((item, lead_type, phone, valid_phone, raw_phone, lead_doc or {}))
+            if valid_phone:
+                phones_needed.add(phone)
+
+        # ---- PASS 3: ONE batched query each for endData + callLogs instead
+        # of one query per row (this was the N+1 hotspot causing the 502) ----
+        end_data_map = {}
+        if phones_needed:
+            for ed in end_collection.find({"Number": {"$in": list(phones_needed)}}):
+                end_data_map[ed.get("Number")] = ed
+
+        call_logs_map = {}
+        if phones_needed:
+            for c in call_logs_collection.find({"Number": {"$in": list(phones_needed)}}).sort("CreatedAt", 1):
+                call_logs_map.setdefault(c.get("Number"), []).append(c)
+
+        # ---- PASS 4: build rows purely from in-memory data ----
+        for item, lead_type, phone, valid_phone, raw_phone, lead_doc in prepared:
             try:
-                lead_id = item.get("id")
-                lead_type = item.get("type", "buying")
-                collection_name = COLLECTION_MAP.get(lead_type, "Leads")
-
-                raw_phone = item.get("phone", "")
-                phone = normalize_number(raw_phone)
-
-                valid_phone = bool(phone) and len(phone) >= 8
-                if valid_phone and not phone.startswith("91"):
-                    phone = "91" + phone
-
-                lead_doc = None
-
-                if lead_id:
-                    try:
-                        lead_doc = db[collection_name].find_one({"_id": ObjectId(lead_id)})
-                    except Exception:
-                        lead_doc = None
-
-                if not lead_doc and valid_phone:
-                    try:
-                        safe_phone = re.escape(phone)
-                        lead_doc = db[collection_name].find_one(
-                            {"Phone Number": {"$regex": safe_phone}}
-                        )
-                    except Exception:
-                        lead_doc = None
-
-                lead_doc = lead_doc or {}
-
-                end_doc = {}
-                call_logs = []
-                if valid_phone:
-                    try:
-                        end_doc = end_collection.find_one({"Number": phone}) or {}
-                    except Exception as end_err:
-                        print(f"[export] end-data lookup failed for {phone}: {end_err}")
-                    try:
-                        call_logs = list(
-                            call_logs_collection.find({"Number": phone}).sort("CreatedAt", 1)
-                        )
-                    except Exception as log_err:
-                        print(f"[export] call-log lookup failed for {phone}: {log_err}")
+                end_doc = end_data_map.get(phone, {}) if valid_phone else {}
+                call_logs = call_logs_map.get(phone, []) if valid_phone else []
 
                 max_calls = max(max_calls, len(call_logs))
 
