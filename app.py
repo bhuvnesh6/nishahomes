@@ -529,10 +529,62 @@ def parse_created_at_str(s):
         return None
 
 # =============================
-# AI PROPERTY AUTOFILL (Mistral)
+# AI PROPERTY AUTOFILL (Sanjivani LLM)
 # =============================
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+LLM_CHAT_URL = "https://llm.sanjivanitechno.com/v1/chat/completions"
+LLM_EMBED_URL = "https://llm.sanjivanitechno.com/v1/embeddings"
+LLM_CHAT_MODEL = "gemma-4-31b"
+LLM_EMBED_MODEL = "bge-small-en-v1.5"
+
+# Kept for backward compatibility with code below that still references
+# these names — all point at the same new key/model now.
+MISTRAL_API_KEY = LLM_API_KEY
+MISTRAL_API_URL = LLM_CHAT_URL
+
+
+def _extract_json_from_llm(raw_content):
+    """Strips ```json fences (if the model adds them) before parsing."""
+    if raw_content is None:
+        return None
+    text = raw_content.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return json.loads(text)
+
+
+def call_llm_chat(system_prompt, user_content, temperature=0.3, timeout=60, model=None):
+    """
+    Shared chat-completion caller for the Sanjivani LLM endpoint
+    (OpenAI-compatible /v1/chat/completions). Returns the raw text content
+    of the model's reply. Raises on HTTP errors.
+    """
+    if not LLM_API_KEY:
+        raise RuntimeError("LLM_API_KEY not configured in .env")
+
+    payload = {
+        "model": model or LLM_CHAT_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": temperature
+    }
+
+    resp = requests.post(
+        LLM_CHAT_URL,
+        headers={
+            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json=payload,
+        timeout=timeout
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
 
 # Schema for the PARTNER "Add Inventory" form (Image 1)
 INVENTORY_FIELDS_SCHEMA = {
@@ -604,9 +656,9 @@ def extract_text_from_pdf(pdf_path):
 
 
 def call_mistral_generate(extracted_text, schema):
-    """Sends extracted OCR/PDF text to Mistral and asks it to fill the given field schema, returning parsed JSON."""
-    if not MISTRAL_API_KEY:
-        raise RuntimeError("MISTRAL_API_KEY not configured in .env")
+    """Sends extracted OCR/PDF text to the LLM and asks it to fill the given field schema, returning parsed JSON."""
+    if not LLM_API_KEY:
+        raise RuntimeError("LLM_API_KEY not configured in .env")
 
     system_prompt = (
         "You are a real-estate data-entry assistant. Given raw text extracted "
@@ -617,32 +669,17 @@ def call_mistral_generate(extracted_text, schema):
         f"Fields and guidance: {json.dumps(schema)}"
     )
 
-    payload = {
-        "model": "mistral-small-latest",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": extracted_text[:12000] or "No text could be extracted."}
-        ],
-        "temperature": 0.3,
-        "response_format": {"type": "json_object"}
-    }
-
-    resp = requests.post(
-        MISTRAL_API_URL,
-        headers={
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json=payload,
+    content = call_llm_chat(
+        system_prompt,
+        extracted_text[:12000] or "No text could be extracted.",
+        temperature=0.3,
         timeout=60
     )
-    resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
-    return json.loads(content)
+    return _extract_json_from_llm(content)
 
-# NEW: separate Mistral key used ONLY for lead-intent classification (Hot/Warm/Cold),
-# kept apart from MISTRAL_API_KEY (used for AI autofill) so usage/quota don't mix.
-MISTRAL_API_KEY2 = os.getenv("MISTRAL_API_KEY2")
+# Kept as an alias so downstream code referencing MISTRAL_API_KEY2 keeps working.
+# All quotas now share the single LLM_API_KEY from the new provider.
+MISTRAL_API_KEY2 = LLM_API_KEY
 
 
 def classify_lead_intent(lead_snapshot: dict, call_log: dict):
@@ -651,8 +688,8 @@ def classify_lead_intent(lead_snapshot: dict, call_log: dict):
     based on the lead's stored details plus the call log just submitted.
     Returns {"intent": "Hot"|"Warm"|"Cold", "reason": "..."} or None on failure.
     """
-    if not MISTRAL_API_KEY2:
-        print("[intent] MISTRAL_API_KEY2 not configured — skipping intent classification")
+    if not LLM_API_KEY:
+        print("[intent] LLM_API_KEY not configured — skipping intent classification")
         return None
 
     context = {
@@ -686,29 +723,9 @@ def classify_lead_intent(lead_snapshot: dict, call_log: dict):
         "(reason: max one short sentence). No markdown, no commentary."
     )
 
-    payload = {
-        "model": "mistral-small-latest",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(context)}
-        ],
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"}
-    }
-
     try:
-        resp = requests.post(
-            MISTRAL_API_URL,
-            headers={
-                "Authorization": f"Bearer {MISTRAL_API_KEY2}",
-                "Content-Type": "application/json"
-            },
-            json=payload,
-            timeout=30
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        result = json.loads(content)
+        content = call_llm_chat(system_prompt, json.dumps(context), temperature=0.2, timeout=30)
+        result = _extract_json_from_llm(content)
         intent = str(result.get("intent", "")).strip().capitalize()
         if intent not in ("Hot", "Warm", "Cold"):
             intent = "Warm"
@@ -5342,29 +5359,30 @@ def upload_project_v2():
 # =============================
 # VECTOR SEARCH / RAG - INVENTORY EMBEDDINGS
 # =============================
-MISTRAL_EMBED_URL = "https://api.mistral.ai/v1/embeddings"
+MISTRAL_EMBED_URL = LLM_EMBED_URL  # alias kept so any other reference still works
 VECTOR_INDEX_NAME = "ProjectsSearch"  # must match your Atlas Search index name exactly
 
-
 def get_embedding(text: str):
-    """Returns a 1024-dim embedding vector for the given text using Mistral, or None on failure."""
+    """Returns an embedding vector for the given text using the Sanjivani LLM embeddings endpoint, or None on failure."""
     if not text or not text.strip():
         return None
-    if not MISTRAL_API_KEY:
-        print("[embed] MISTRAL_API_KEY not configured")
+    if not LLM_API_KEY:
+        print("[embed] LLM_API_KEY not configured")
         return None
     try:
         resp = requests.post(
-            MISTRAL_EMBED_URL,
+            LLM_EMBED_URL,
             headers={
-                "Authorization": f"Bearer {MISTRAL_API_KEY}",
+                "Authorization": f"Bearer {LLM_API_KEY}",
                 "Content-Type": "application/json"
             },
-            json={"model": "mistral-embed", "input": [text[:8000]]},
+            json={"model": LLM_EMBED_MODEL, "input": text[:8000]},
             timeout=30
         )
         resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
+        data = resp.json()["data"]
+        # OpenAI-style embeddings response: [{"embedding": [...], ...}, ...]
+        return data[0]["embedding"]
     except Exception as e:
         print(f"[embed] failed: {e}")
         return None
@@ -6124,8 +6142,8 @@ FOLLOWUP_BUSINESS_END_HOUR = 19     # 7:00 PM IST — no sends at/after this
  
 FOLLOWUP_RESCAN_INTERVAL_SEC = 3600     # re-scan for newly-eligible leads every hour (during business hours)
  
-FOLLOWUP_MISTRAL_KEY = MISTRAL_API_KEY  # reuses the existing autofill key; swap to MISTRAL_API_KEY2 if you'd rather keep quotas separate
- 
+FOLLOWUP_MISTRAL_KEY = LLM_API_KEY  # same key now serves all text-generation calls
+
 # Brand sign-off + CTA-word library, from your Nisha Homes message-format
 # doc. Scoped to just the follow-up system so it doesn't touch the
 # existing BRAND_CONTACT_NUMBER/BRAND_WEBSITE constants used by the
@@ -6278,27 +6296,9 @@ def generate_followup_message(lead_ctx, end_data, call_logs, attempt_number, pre
         "Reply with ONLY the WhatsApp message text — no quotes, no preamble, no explanation."
     )
  
-    payload = {
-        "model": "mistral-small-latest",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(context)},
-        ],
-        "temperature": 0.6,
-    }
- 
     try:
-        resp = requests.post(
-            MISTRAL_API_URL,
-            headers={
-                "Authorization": f"Bearer {FOLLOWUP_MISTRAL_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"].strip()
+        text = call_llm_chat(system_prompt, json.dumps(context), temperature=0.6, timeout=30)
+        text = (text or "").strip()
         return text.strip('"').strip() or None
     except Exception as e:
         print(f"[followup] message generation failed: {e}")
@@ -6807,10 +6807,8 @@ BIZAUTOMATION_API_URL = "https://app.bizautomation.io/api/v2/whatsapp-business/m
 BIZAUTOMATION_API_KEY = os.getenv("BIZAUTOMATION_API_KEY")
 DEFAULT_WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
 
-# Separate Mistral key for the WA agent so its usage/quota doesn't mix
-# with autofill (MISTRAL_API_KEY) or call-intent classification
-# (MISTRAL_API_KEY2). Falls back to MISTRAL_API_KEY if not set.
-MISTRAL_API_KEY3 = os.getenv("MISTRAL_API_KEY2") or MISTRAL_API_KEY
+# All three "keys" now point at the same new provider key.
+MISTRAL_API_KEY3 = LLM_API_KEY
 
 WA_LEAD_COLLECTIONS = ("Leads", "RentalLeads", "sellingLeads", "agentLeads")
 
@@ -7368,22 +7366,8 @@ def extract_requirements_via_mistral(known_fields, chat_history, user_text):
     }
 
     try:
-        resp = requests.post(
-            MISTRAL_API_URL,
-            headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
-            json={
-                "model": "mistral-small-latest",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(payload_context)}
-                ],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"}
-            },
-            timeout=30
-        )
-        resp.raise_for_status()
-        result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        content = call_llm_chat(system_prompt, json.dumps(payload_context), temperature=0.1, timeout=30)
+        result = _extract_json_from_llm(content)
         for k, v in fallback.items():
             result.setdefault(k, v)
         return result
@@ -7695,7 +7679,7 @@ def run_property_vector_search(query_text, deal_type=None, location="", budget=N
 
 def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, location_coverage=None):
     if not MISTRAL_API_KEY3:
-        print("[wa-ai] FATAL: MISTRAL_API_KEY3 (and fallback MISTRAL_API_KEY) not set in .env — "
+        print("[wa-ai] FATAL: LLM_API_KEY not set in .env — "
               "the WhatsApp AI agent cannot run at all and every reply will use the generic fallback.")
         return None
 
@@ -7722,38 +7706,22 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, locat
         f"CUSTOMER'S LATEST MESSAGE:\n{user_text}"
     )
 
-    resp = None
     try:
-        resp = requests.post(
-            MISTRAL_API_URL,
-            headers={"Authorization": f"Bearer {MISTRAL_API_KEY3}", "Content-Type": "application/json"},
-            json={
-                "model": "mistral-small-latest",
-                "messages": [
-                    {"role": "system", "content": WA_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.4,
-                "response_format": {"type": "json_object"}
-            },
-            timeout=45
-        )
-        resp.raise_for_status()
-        raw_content = resp.json()["choices"][0]["message"]["content"]
+        raw_content = call_llm_chat(WA_SYSTEM_PROMPT, user_content, temperature=0.4, timeout=45)
         try:
-            result = json.loads(raw_content)
-        except json.JSONDecodeError as je:
-            print(f"[wa-ai] Mistral returned non-JSON content, could not parse: {je}\n"
-                  f"[wa-ai] RAW CONTENT WAS:\n{raw_content[:2000]}")
+            result = _extract_json_from_llm(raw_content)
+        except (json.JSONDecodeError, TypeError) as je:
+            print(f"[wa-ai] LLM returned non-JSON content, could not parse: {je}\n"
+                  f"[wa-ai] RAW CONTENT WAS:\n{(raw_content or '')[:2000]}")
             return None
 
-        if "message" not in result:
-            print(f"[wa-ai] Mistral JSON was valid but missing 'message' key. Full result: {result}")
+        if not result or "message" not in result:
+            print(f"[wa-ai] LLM JSON was valid but missing 'message' key. Full result: {result}")
             return None
         return result
 
     except requests.exceptions.HTTPError as e:
-        body = resp.text[:2000] if resp is not None else "(no response object)"
+        body = e.response.text[:2000] if getattr(e, "response", None) is not None else "(no response object)"
         print(f"[wa-ai] final agent call HTTP error: {e}\n[wa-ai] RESPONSE BODY:\n{body}")
         return None
     except Exception as e:
