@@ -4980,6 +4980,142 @@ def get_project_by_unique(unique_id):
     return jsonify({"success": True, "data": data}), 200
 
 
+# =============================
+# PUBLIC INVENTORY/PROJECTS API (for external servers/websites)
+# Auth: API key from .env (PUBLIC_API_KEY), sent as either:
+#   header:  X-API-Key: <key>
+#   or:      ?api_key=<key>
+# Filter:    ?type=all | inventory | project   (default: all)
+# =============================
+PUBLIC_API_KEY = os.getenv("PUBLIC_API_KEY")
+
+def _require_public_api_key():
+    """Returns None if the request's API key is valid, otherwise a
+    (jsonify_response, status_code) tuple to return immediately."""
+    if not PUBLIC_API_KEY:
+        return jsonify({"success": False, "message": "Public API not configured on server"}), 503
+
+    provided = request.headers.get("X-API-Key") or request.args.get("api_key")
+    if not provided or provided != PUBLIC_API_KEY:
+        return jsonify({"success": False, "message": "Invalid or missing API key"}), 401
+
+    return None
+
+
+_PUBLIC_VIDEO_EXTS = {"mp4", "mov", "avi", "webm", "mkv"}
+
+def _classify_media_urls(urls):
+    """Splits a flat mediaUrls list into images vs videos by extension —
+    mediaUrls mixes both photo and video objects together."""
+    images, videos = [], []
+    for u in urls or []:
+        if not u:
+            continue
+        ext = u.rsplit(".", 1)[-1].lower().split("?")[0] if "." in u else ""
+        (videos if ext in _PUBLIC_VIDEO_EXTS else images).append(u)
+    return images, videos
+
+
+def _serialize_public_listing(doc):
+    """Public-safe view of a projects_collection document — no embedding
+    vector, no owner identity, no internal storage paths. Media is
+    reshaped into images / videos / documents so any consuming app can
+    render it directly."""
+    media_urls = doc.get("mediaUrls") or ([doc.get("mediaUrl")] if doc.get("mediaUrl") else [])
+    images, videos = _classify_media_urls(media_urls)
+
+    banner = doc.get("bannerUrl") or doc.get("img") or (images[0] if images else None)
+    if banner and banner not in images:
+        images = [banner] + [i for i in images if i != banner]
+
+    documents = [doc["pdfUrl"]] if doc.get("pdfUrl") else []
+
+    return {
+        "id": str(doc["_id"]),
+        "uniqueId": doc.get("uniqueId", ""),
+        "kind": doc.get("kind") or "inventory",   # "inventory" | "project"
+        "name": doc.get("name") or doc.get("propertyTitle") or "",
+        "listingBasis": doc.get("listingBasis", ""),
+        "dealType": doc.get("dealType", ""),
+        "propertyType": doc.get("propertyType") or doc.get("category") or "",
+        "location": doc.get("location") or doc.get("locality") or "",
+        "configuration": doc.get("configuration", ""),
+        "furnishing": doc.get("furnishing", ""),
+        "possession": doc.get("possession", ""),
+        "areaUnit": doc.get("areaUnit", "sqft"),
+        "carpetArea": doc.get("carpetArea", ""),
+        "superArea": doc.get("superArea", ""),
+        "floor": doc.get("floor", ""),
+        "bathrooms": doc.get("bathrooms", ""),
+        "facing": doc.get("facing", ""),
+        "parking": doc.get("parking", ""),
+        "budget": doc.get("budget") or doc.get("startingPrice") or "",
+        "quickNotes": doc.get("quickNotes", ""),
+        "description": doc.get("description", ""),
+        "videoLinks": doc.get("videoLinks", []),
+        "bannerUrl": banner,
+        "images": images,
+        "videos": videos,
+        "documents": documents,
+        "viewUrl": (
+            f"{os.getenv('PUBLIC_BASE_URL', 'https://crm.nishahomes.com')}/view/{doc['uniqueId']}"
+            if doc.get("uniqueId") else None
+        ),
+        "createdAt": format_ist(doc.get("createdAt")) if isinstance(doc.get("createdAt"), datetime) else "-",
+    }
+
+
+@app.route("/api/public/inventory", methods=["GET"])
+def public_inventory_feed():
+    """
+    Public, key-protected, read-only feed of APPROVED inventory + project
+    listings — for external sites/servers to pull and display.
+
+    Query params:
+      type   -> "all" (default) | "inventory" | "project"
+
+    Auth (either works):
+      Header: X-API-Key: <PUBLIC_API_KEY from .env>
+      Query:  ?api_key=<PUBLIC_API_KEY>
+    """
+    auth_error = _require_public_api_key()
+    if auth_error:
+        return auth_error
+
+    listing_type = (request.args.get("type") or "all").strip().lower()
+    if listing_type not in ("all", "inventory", "project"):
+        return jsonify({
+            "success": False,
+            "message": "Invalid type filter — must be 'all', 'inventory' or 'project'"
+        }), 400
+
+    query = {"status": "approved"}
+    if listing_type == "project":
+        query["kind"] = "project"
+    elif listing_type == "inventory":
+        query["kind"] = {"$ne": "project"}   # inventory docs never set kind="project"
+
+    try:
+        docs = list(
+            projects_collection.find(query, {"embedding": 0}).sort("createdAt", -1)
+        )
+        data = [_serialize_public_listing(d) for d in docs]
+
+        return jsonify({
+            "success": True,
+            "type": listing_type,
+            "count": len(data),
+            "data": data
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+
+
 
 @app.route("/add-inventory")
 def add_inventory_page():
