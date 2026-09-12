@@ -4459,19 +4459,73 @@ def project_share_text(project_id):
 def build_whatsapp_share_text(p, settings):
     base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
     view_url = f"{base_url}/view/{p.get('uniqueId', '')}"
-    L = [
-        p.get("name") or p.get("propertyTitle") or "",
-        f"📍 {p.get('location') or p.get('locality') or ''}",
-        f"💰 {p.get('budget') or p.get('startingPrice') or ''}",
+
+    title = p.get("name") or p.get("propertyTitle") or ""
+    location = p.get("location") or p.get("locality") or ""
+    configuration = (p.get("configuration") or "").strip()
+
+    area_unit = p.get("areaUnit") or "sqft"
+    size = ""
+    if p.get("superArea"):
+        size = f"{p['superArea']} {area_unit}"
+    elif p.get("carpetArea"):
+        size = f"{p['carpetArea']} {area_unit}"
+
+    config_size_line = " | ".join(filter(None, [configuration, size]))
+
+    price_raw = p.get("budget") or p.get("startingPrice") or ""
+    price_display = _format_price_display(price_raw) if price_raw else ""
+
+    # "Key USP" — prefer the short internal quick-note; fall back to the
+    # first sentence of the marketing description if quickNotes is empty.
+    usp = (p.get("quickNotes") or "").strip()
+    if not usp:
+        desc = (p.get("description") or "").strip()
+        if desc:
+            usp = desc.split(".")[0].strip()
+
+    # Advisor contact — from global Settings, falling back to whoever
+    # actually uploaded this listing if Settings hasn't been filled in.
+    caller_name = (settings.get("advisorName") or p.get("ownerName") or "").strip()
+    caller_number = (settings.get("agent") or p.get("ownerNumber") or "").strip()
+
+    lines = [
+        "Hi Dear customer 👋",
+        "Thank you for showing interest in this property. As discussed, sharing the details with you:",
         "",
-        "🔗 See complete details of this property here:",
-        view_url,
+        f"🏡 {title}",
+    ]
+    if location:
+        lines.append(f"📍 {location}")
+    if config_size_line:
+        lines.append(f"✨ {config_size_line}")
+    if price_display:
+        lines.append(f"💰 {price_display}")
+    if usp:
+        lines.append(f"⭐ {usp}")
+
+    lines += [
+        "",
+        f"🔗 Complete Property Details: {view_url}",
+        "",
+        "🔎 Looking for more options? Explore our latest properties & projects:",
+        "🌐 https://nishahomes.com/inventory",
+        "",
+        "🔎 More Listings on Square Yards: https://www.squareyards.com/agent/nisha/492906",
+        "",
+        "👉 Share your budget, preferred location & requirements, and we'll help you shortlist the most suitable options.",
+        "",
+        "📞 Nisha Homes: 7303515710",
+    ]
+    if caller_name or caller_number:
+        lines.append(f"📲 {caller_name}: {caller_number}")
+
+    lines += [
         "",
         "🏡 Nisha Homes — Your Trusted Real Estate Advisor",
-        f"💬 {BRAND_CONTACT_NUMBER}",
-        f"🌐 https://{BRAND_WEBSITE}",
     ]
-    return "\n".join(L)
+
+    return "\n".join(lines)
 
 # =============================
 # COORDINATOR DASHBOARD STATS
