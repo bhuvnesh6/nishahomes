@@ -4455,6 +4455,52 @@ def project_share_text(project_id):
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route("/api/projects/send-whatsapp/<project_id>", methods=["POST"])
+def send_project_whatsapp(project_id):
+    """
+    Sends the exact share template + banner image directly via the
+    WhatsApp Business API (bizautomation.io) — bypasses the OS Share
+    Sheet entirely, so WhatsApp can't override the caption with its own
+    auto-generated link preview. Body: {"phone": "<customer number>"}
+    """
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    try:
+        data = request.json or {}
+        raw_phone = data.get("phone")
+        if not raw_phone:
+            return jsonify({"success": False, "message": "Customer phone number is required"}), 400
+
+        phone = normalize_number(raw_phone)
+        if not phone:
+            return jsonify({"success": False, "message": "Invalid phone number"}), 400
+        if not phone.startswith("91"):
+            phone = "91" + phone
+
+        p = projects_collection.find_one({"_id": ObjectId(project_id)})
+        if not p:
+            return jsonify({"success": False, "message": "Listing not found"}), 404
+
+        settings = settings_collection.find_one({"_id": "global"}) or {}
+        message_text = build_whatsapp_share_text(p, settings)
+
+        banner_url = p.get("bannerUrl") or p.get("img") or (p.get("mediaUrls") or [None])[0]
+
+        if banner_url:
+            # WhatsApp media captions are capped at 1024 characters
+            result = send_whatsapp_image(phone, banner_url, caption=message_text[:1024])
+        else:
+            result = send_whatsapp_text(phone, message_text)
+
+        return jsonify({"success": True, "result": result}), 200
+
+    except requests.exceptions.HTTPError as e:
+        return jsonify({"success": False, "message": f"Send failed: {e}"}), 502
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 def build_whatsapp_share_text(p, settings):
     base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")

@@ -1016,6 +1016,7 @@ function bindProjectCardActions(){
   document.querySelectorAll('[data-unapprove]').forEach(b=>b.addEventListener('click', ()=>unapproveProject(b.dataset.unapprove)));
   document.querySelectorAll('[data-stage]').forEach(b=>b.addEventListener('click', ()=>openStageModal(b.dataset.stage, b.dataset.stageCurrent)));
   document.querySelectorAll('[data-share-proj]').forEach(b=>b.addEventListener('click', ()=>shareListingWA(b.dataset.shareProj)));
+  document.querySelectorAll('[data-send-wa]').forEach(b=>b.addEventListener('click', ()=>sendListingViaWhatsApp(b.dataset.sendWa)));
 }
 function projectCardHTML(p){
   const media = p.mediaUrl || p.img || (p.mediaUrls && p.mediaUrls[0]) || '';
@@ -1052,6 +1053,7 @@ function projectCardHTML(p){
       ${IS_ADMIN && !isPending ? `<button class="pc-action-btn" data-unapprove="${p._id}">↩️ Unapprove</button>` : ''}
       ${IS_STAFF && !isPending ? `<button class="pc-action-btn stage-btn" data-stage="${p._id}" data-stage-current="${esc(stage)}">📊 Stage</button>` : ''}
       ${!isPending ? `<button class="pc-action-btn" data-share-proj="${p._id}">📤 Share</button>` : ''}
+      ${!isPending ? `<button class="pc-action-btn" data-send-wa="${p._id}">📲 Send WA</button>` : ''}
       ${p.uniqueId ? `<a href="/view/${p.uniqueId}" target="_blank" class="pc-action-btn" style="text-decoration:none;text-align:center">🔗 View</a>` : ''}
       ${canManage && !isProjectKind ? `<button class="pc-action-btn" data-edit='${JSON.stringify(p).replace(/'/g,"&#39;")}'>✏️ Edit</button>` : ''}
       ${canManage ? `<button class="pc-action-btn danger" data-del-proj="${p._id}">🗑 Delete</button>` : ''}
@@ -1116,6 +1118,33 @@ async function shareListingWA(id){
   }
 }
 
+async function sendListingViaWhatsApp(id){
+  const phone = prompt('Enter customer WhatsApp number (with country code, e.g. 917303515710):');
+  if(!phone || !phone.trim()) return;
+
+  const btn = document.querySelector(`[data-send-wa="${id}"]`);
+  const originalLabel = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Sending…'; }
+
+  try{
+    const res = await fetch(`${BASE}/projects/send-whatsapp/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ phone: phone.trim() })
+    });
+    const d = await res.json();
+    if(!d.success){ toast(d.message || 'Failed to send on WhatsApp'); return; }
+    toast('Sent on WhatsApp ✅');
+  }catch(e){
+    console.error(e);
+    toast('Failed to send. Please try again.');
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = originalLabel; }
+  }
+}
+
+/* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */
 
 /* ===== "Add Listing" / "Manage Project" top-bar button routes by role ===== */
 function openAddModal(){
