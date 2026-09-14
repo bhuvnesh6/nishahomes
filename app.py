@@ -7418,54 +7418,85 @@ def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
 
 def build_property_caption(prop):
     """
-    Builds the full WhatsApp image caption in the exact card format
-    requested — property facts, then description, then CTAs and
-    Nisha Homes brand footer.
+    Builds the WhatsApp image caption for a property shared by the AI
+    sales agent. Uses the SAME template/structure as
+    build_whatsapp_share_text() (the "Hi Dear customer..." message sent
+    via the dashboard's Share / Send WA buttons) — filled from the AI
+    agent's trimmed search-result dict (see _trim_property_for_agent)
+    instead of a full project doc, so both paths now send an identical
+    format to the customer.
     """
-    def _fmt_price(p):
-        if not p:
-            return ""
-        s = str(p).strip()
-        cleaned = re.sub(r"[^\d]", "", s)
-        if cleaned and cleaned == s.replace(",", ""):
-            return f"{int(cleaned):,}"
-        return s
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
+    unique_id = prop.get("uniqueId") or ""
+    view_url = f"{base_url}/view/{unique_id}" if unique_id else ""
 
-    lines = []
+    title = prop.get("name") or ""
+    location = prop.get("location") or ""
+    configuration = (prop.get("configuration") or "").strip()
 
-    lines.append(f"🏡 {prop.get('name') or ''}")
-    if prop.get("location"):
-        lines.append(f"📍 {prop['location']}")
-    if prop.get("price"):
-        lines.append(f"💰 {_fmt_price(prop['price'])}")
-    if prop.get("configuration"):
-        lines.append(f"🛏️ {prop['configuration']}")
+    area_unit = prop.get("areaUnit") or "sqft"
+    size = ""
     if prop.get("superArea"):
-        lines.append(f"📐 {prop['superArea']} {prop.get('areaUnit') or 'sqft'}")
-    if prop.get("category"):
-        lines.append(f"🏢 {prop['category']}")
-    if prop.get("furnishing"):
-        lines.append(f"🛋️ {prop['furnishing']}")
-    if prop.get("facing"):
-        lines.append(f"🧭 {prop['facing']}-facing")
-    if prop.get("possession"):
-        lines.append(f"🏗️ {prop['possession']}")
+        size = f"{prop['superArea']} {area_unit}"
+    elif prop.get("carpetArea"):
+        size = f"{prop['carpetArea']} {area_unit}"
 
-    lines.append("────────────────────")
+    config_size_line = " | ".join(filter(None, [configuration, size]))
 
-    desc = prop.get("description") or prop.get("quickNotes") or ""
-    if desc:
-        lines.append(desc)
+    price_raw = prop.get("price") or ""
+    price_display = _format_price_display(price_raw) if price_raw else ""
 
-    lines.append("📅 Schedule Your Private Site Visit")
-    lines.append("🏡 Request Complete Property Details")
-    lines.append("🔗 More listings: https://www.squareyards.com/agent/nisha/492906")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("🏡 Nisha Homes")
-    lines.append("Your Trusted Real Estate Advisor")
-    lines.append("💬 Chat with Nisha Homes")
-    lines.append("https://wa.me/917303515710")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    # "Key USP" — prefer the short internal quick-note; fall back to the
+    # first sentence of the marketing description if quickNotes is empty.
+    usp = (prop.get("quickNotes") or "").strip()
+    if not usp:
+        desc = (prop.get("description") or "").strip()
+        if desc:
+            usp = desc.split(".")[0].strip()
+
+    # Advisor contact — pulled fresh from global Settings, same source
+    # build_whatsapp_share_text() uses.
+    settings = settings_collection.find_one({"_id": "global"}) or {}
+    caller_name = (settings.get("advisorName") or "").strip()
+    caller_number = (settings.get("agent") or "").strip()
+
+    lines = [
+        "Hi Dear customer 👋",
+        "Thank you for showing interest in this property. As discussed, sharing the details with you:",
+        "",
+        f"🏡 {title}",
+    ]
+    if location:
+        lines.append(f"📍 {location}")
+    if config_size_line:
+        lines.append(f"✨ {config_size_line}")
+    if price_display:
+        lines.append(f"💰 {price_display}")
+    if usp:
+        lines.append(f"⭐ {usp}")
+
+    lines.append("")
+    if view_url:
+        lines.append(f"🔗 Complete Property Details: {view_url}")
+        lines.append("")
+
+    lines += [
+        "🔎 Looking for more options? Explore our latest properties & projects:",
+        "🌐 https://nishahomes.com/inventory",
+        "",
+        "🔎 More Listings on Square Yards: https://www.squareyards.com/agent/nisha/492906",
+        "",
+        "👉 Share your budget, preferred location & requirements, and we'll help you shortlist the most suitable options.",
+        "",
+        "📞 Nisha Homes: 7303515710",
+    ]
+    if caller_name or caller_number:
+        lines.append(f"📲 {caller_name}: {caller_number}")
+
+    lines += [
+        "",
+        "🏡 Nisha Homes — Your Trusted Real Estate Advisor",
+    ]
 
     caption = "\n".join(lines)
     # WhatsApp caption hard limit
