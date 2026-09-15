@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Round Robin Assignment · NishaHomes CRM</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:       #2D3142;
+  --primary-deep:  #1e2235;
+  --primary-mid:   #3a3f56;
+  --primary-light: #4a5070;
+  --accent:        #EF8354;
+  --accent-light:  #FFA07A;
+  --accent-glow:   rgba(239,131,84,0.22);
+  --bg:            #FAF9F6;
+  --text:          #2D3142;
+  --text-soft:     #6B7280;
+  --text-faint:    rgba(255,255,255,0.45);
+  --border:        #E5E7EB;
+  --border-dark:   rgba(255,255,255,0.10);
+  --success:       #10B981;
+  --warm:          #F59E0B;
+  --hot:           #EF4444;
+  --info:          #3B82F6;
+  --sh-sm:         0 2px 8px  rgba(45,49,66,0.07);
+  --sh:            0 6px 24px rgba(45,49,66,0.10);
+  --sh-lg:         0 18px 48px rgba(45,49,66,0.18);
+  --sidebar-w:     240px;
+  --topbar-h:      60px;
+  --radius:        14px;
+  --radius-sm:     8px;
+  --radius-pill:   100px;
+  --transition:    all 0.28s cubic-bezier(0.22,1,0.36,1);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{text-decoration:none;color:inherit}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+
+.topbar{
+  height:var(--topbar-h);
+  background:var(--primary-deep);
+  display:flex;align-items:center;gap:14px;
+  padding:0 20px;
+  box-shadow:0 2px 16px rgba(0,0,0,0.2);
+  position:sticky;top:0;z-index:100;
+}
+.topbar-back{
+  width:34px;height:34px;border-radius:9px;
+  background:rgba(255,255,255,0.08);
+  border:1.5px solid rgba(255,255,255,0.12);
+  display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,0.8);transition:var(--transition);
+}
+.topbar-back:hover{background:var(--accent);border-color:var(--accent)}
+.topbar-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.1rem;font-weight:900;color:#fff;
+}
+.topbar-title span{color:var(--accent)}
+
+.content{max-width:820px;margin:0 auto;padding:28px 20px 60px}
+
+.page-head{margin-bottom:24px}
+.page-head h1{
+  font-family:'Playfair Display',serif;
+  font-size:1.6rem;font-weight:900;color:var(--primary);letter-spacing:-0.5px;
+}
+.page-head p{color:var(--text-soft);font-size:0.88rem;margin-top:4px}
+
+.card{
+  background:#fff;border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--sh-sm);
+  padding:22px 20px;margin-bottom:20px;
+}
+.card-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.05rem;font-weight:800;color:var(--primary);
+  display:flex;align-items:center;gap:8px;margin-bottom:4px;
+}
+.card-title::before{content:'';width:4px;height:16px;background:linear-gradient(180deg,var(--accent),var(--accent-light));border-radius:3px}
+.card-sub{color:var(--text-soft);font-size:0.8rem;margin-bottom:16px}
+
+.status-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.status-left{display:flex;align-items:center;gap:12px}
+.switch{position:relative;width:48px;height:26px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{
+  position:absolute;inset:0;background:#D1D5DB;border-radius:var(--radius-pill);
+  transition:var(--transition);cursor:pointer;
+}
+.slider::before{
+  content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;
+  background:#fff;border-radius:50%;transition:var(--transition);
+  box-shadow:0 2px 4px rgba(0,0,0,0.2);
+}
+.switch input:checked + .slider{background:var(--accent)}
+.switch input:checked + .slider::before{transform:translateX(22px)}
+
+.status-label{font-weight:700;font-size:0.92rem;color:var(--primary)}
+.status-hint{font-size:0.78rem;color:var(--text-soft);margin-top:2px}
+
+.next-up-pill{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 14px;border-radius:var(--radius-pill);
+  background:rgba(239,131,84,0.08);border:1.5px solid rgba(239,131,84,0.25);
+  font-size:0.8rem;font-weight:600;color:var(--accent);white-space:nowrap;
+}
+
+.member-search{
+  width:100%;padding:10px 14px;border:2px solid var(--border);
+  border-radius:var(--radius-sm);font-family:'DM Sans',sans-serif;font-size:0.85rem;
+  margin-bottom:14px;transition:var(--transition);
+}
+.member-search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
+
+.member-list{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto}
+.member-row{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  transition:var(--transition);cursor:pointer;
+}
+.member-row:hover{border-color:var(--accent);background:rgba(239,131,84,0.03)}
+.member-row.checked{border-color:var(--accent);background:rgba(239,131,84,0.06)}
+.member-row input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+.member-avatar{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:#fff;font-weight:700;font-size:0.8rem;
+  display:flex;align-items:center;justify-content:center;
+}
+.member-info{flex:1;min-width:0}
+.member-name{font-weight:600;font-size:0.88rem;color:var(--primary)}
+.member-meta{font-size:0.75rem;color:var(--text-soft)}
+.member-role-badge{
+  font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
+  padding:2px 8px;border-radius:var(--radius-pill);flex-shrink:0;
+}
+.role-admin{background:rgba(59,130,246,.1);color:#2563eb}
+.role-emp{background:rgba(16,185,129,.1);color:#059669}
+
+.rotation-list{display:flex;flex-direction:column;gap:8px}
+.rotation-empty{color:var(--text-soft);font-size:0.85rem;padding:20px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-sm)}
+.rotation-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg);
+}
+.rotation-num{
+  width:26px;height:26px;border-radius:50%;background:var(--primary-deep);color:#fff;
+  font-size:0.75rem;font-weight:700;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.rotation-name{flex:1;font-weight:600;font-size:0.86rem;color:var(--primary)}
+.rotation-actions{display:flex;gap:4px}
+.rotation-btn{
+  width:26px;height:26px;border-radius:7px;border:1.5px solid var(--border);
+  display:flex;align-items:center;justify-content:center;color:var(--text-soft);
+  transition:var(--transition);
+}
+.rotation-btn:hover{border-color:var(--accent);color:var(--accent)}
+.rotation-btn.danger:hover{border-color:var(--hot);color:var(--hot)}
+.rotation-btn:disabled{opacity:0.3;cursor:not-allowed}
+
+.save-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  position:sticky;bottom:0;background:var(--bg);padding:14px 0 4px;
+}
+.save-btn{
+  padding:12px 26px;border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--accent),var(--accent-light));
+  color:#fff;font-weight:700;font-size:0.9rem;
+  box-shadow:0 4px 16px var(--accent-glow);transition:var(--transition);
+}
+.save-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,131,84,0.38)}
+.save-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.reset-btn{
+  padding:12px 18px;border-radius:var(--radius-sm);border:1.5px solid var(--border);
+  color:var(--text-soft);font-weight:600;font-size:0.85rem;transition:var(--transition);background:#fff;
+}
+.reset-btn:hover{border-color:var(--hot);color:var(--hot)}
+
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--primary-deep);color:#fff;padding:12px 22px;border-radius:var(--radius-pill);
+  font-size:0.85rem;font-weight:600;box-shadow:var(--sh-lg);opacity:0;
+  transition:var(--transition);pointer-events:none;z-index:999;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.loader{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="/admin" class="topbar-back" title="Back to Dashboard">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+  </a>
+  <div class="topbar-title">Round Robin <span>Assignment</span></div>
+</header>
+
+<div class="content">
+  <div class="page-head">
+    <h1>Auto-Assign Incoming Leads</h1>
+    <p>Pick the team members who should share new leads on rotation. Every new lead is handed to the next person in the list, in order — and they get a WhatsApp ping the moment it happens.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Status</div>
+    <div class="card-sub">Turn round robin on or off without losing your saved list</div>
+    <div class="status-row">
+      <div class="status-left">
+        <label class="switch">
+          <input type="checkbox" id="enabledToggle">
+          <span class="slider"></span>
+        </label>
+        <div>
+          <div class="status-label" id="statusLabel">Loading…</div>
+          <div class="status-hint">When off, new leads are left unassigned as before</div>
+        </div>
+      </div>
+      <div class="next-up-pill" id="nextUpPill" style="display:none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span id="nextUpText">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Select Team Members</div>
+    <div class="card-sub">Choose everyone who should receive leads on rotation</div>
+    <input type="text" class="member-search" id="memberSearch" placeholder="Search team members…">
+    <div class="member-list" id="memberList">
+      <div class="loader"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Rotation Order</div>
+    <div class="card-sub">Leads are assigned top to bottom, then loop back to the top</div>
+    <div class="rotation-list" id="rotationList">
+      <div class="rotation-empty">No members selected yet</div>
+    </div>
+  </div>
+
+  <div class="save-bar">
+    <button class="reset-btn" id="resetPointerBtn">↺ Reset rotation to start</button>
+    <button class="save-btn" id="saveBtn">Save Settings</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = 'https://crm.nishahomes.com/api';
+let members = [];
+let selectedOrder = []; // array of employee numbers, in rotation order
+
+function initials(name){
+  const parts = String(name||'?').trim().split(/\s+/);
+  if(parts.length>=2) return (parts[0][0]+parts[1][0]).toUpperCase();
+  return (parts[0][0]||'?').toUpperCase();
+}
+function escHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+async function loadConfig(){
+  try{
+    const res = await fetch(`${BASE}/round-robin/config`, {credentials:'include'});
+    const d = await res.json();
+    if(!d.success){ showToast(d.message || 'Failed to load'); return; }
+
+    members = d.members || [];
+    selectedOrder = (d.employees || []).filter(num => members.some(m=>m.number===num));
+
+    document.getElementById('enabledToggle').checked = !!d.enabled;
+    updateStatusLabel();
+
+    if(d.enabled && d.nextUp){
+      document.getElementById('nextUpPill').style.display = 'flex';
+      document.getElementById('nextUpText').textContent = `Next lead → ${d.nextUp.name}`;
+    } else {
+      document.getElementById('nextUpPill').style.display = 'none';
+    }
+
+    renderMemberList();
+    renderRotationList();
+  }catch(e){
+    console.error(e);
+    document.getElementById('memberList').innerHTML = '<p style="color:var(--hot);font-size:0.85rem">Failed to load team members</p>';
+  }
+}
+
+function updateStatusLabel(){
+  const on = document.getElementById('enabledToggle').checked;
+  document.getElementById('statusLabel').textContent = on ? 'Round Robin is ON' : 'Round Robin is OFF';
+}
+
+function renderMemberList(){
+  const q = (document.getElementById('memberSearch').value||'').toLowerCase();
+  const list = document.getElementById('memberList');
+  const filtered = members.filter(m => !q || m.name.toLowerCase().includes(q) || String(m.number).includes(q));
+
+  if(!filtered.length){
+    list.innerHTML = '<p style="color:var(--text-soft);font-size:0.85rem;text-align:center;padding:16px">No team members found</p>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(m=>{
+    const checked = selectedOrder.includes(m.number);
+    return `
+    <label class="member-row ${checked?'checked':''}" data-number="${m.number}">
+      <input type="checkbox" ${checked?'checked':''} onchange="toggleMember(${m.number})">
+      <div class="member-avatar">${initials(m.name)}</div>
+      <div class="member-info">
+        <div class="member-name">${escHtml(m.name)}</div>
+        <div class="member-meta">${m.number}${!m.active?' · Inactive':''}</div>
+      </div>
+      <span class="member-role-badge role-${m.role}">${m.role}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleMember(number){
+  const idx = selectedOrder.indexOf(number);
+  if(idx === -1){
+    selectedOrder.push(number);
+  }else{
+    selectedOrder.splice(idx, 1);
+  }
+  renderMemberList();
+  renderRotationList();
+}
+
+function renderRotationList(){
+  const box = document.getElementById('rotationList');
+  if(!selectedOrder.length){
+    box.innerHTML = '<div class="rotation-empty">No members selected yet</div>';
+    return;
+  }
+  box.innerHTML = selectedOrder.map((num, i)=>{
+    const m = members.find(x=>x.number===num);
+    const name = m ? m.name : ('#'+num);
+    return `
+    <div class="rotation-row">
+      <div class="rotation-num">${i+1}</div>
+      <div class="rotation-name">${escHtml(name)}</div>
+      <div class="rotation-actions">
+        <button class="rotation-btn" ${i===0?'disabled':''} onclick="moveMember(${i},-1)" title="Move up">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button class="rotation-btn" ${i===selectedOrder.length-1?'disabled':''} onclick="moveMember(${i},1)" title="Move down">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="rotation-btn danger" onclick="removeMember(${num})" title="Remove">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function moveMember(index, dir){
+  const newIndex = index + dir;
+  if(newIndex < 0 || newIndex >= selectedOrder.length) return;
+  [selectedOrder[index], selectedOrder[newIndex]] = [selectedOrder[newIndex], selectedOrder[index]];
+  renderRotationList();
+}
+
+function removeMember(number){
+  selectedOrder = selectedOrder.filter(n=>n!==number);
+  renderMemberList();
+  renderRotationList();
+}
+
+document.getElementById('memberSearch').addEventListener('input', renderMemberList);
+document.getElementById('enabledToggle').addEventListener('change', updateStatusLabel);
+
+document.getElementById('saveBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${BASE}/round-robin/config`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        enabled: document.getElementById('enabledToggle').checked,
+        employees: selectedOrder
+      })
+    });
+    const d = await res.json();
+    if(d.success){
+      showToast('Settings saved ✓');
+      loadConfig();
+    }else{
+      showToast(d.message || 'Failed to save');
+    }
+  }catch(e){
+    console.error(e);
+    showToast('Failed to save settings');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save Settings';
+  }
+});
+
+document.getElementById('resetPointerBtn').addEventListener('click', async ()=>{
+  if(!confirm('Reset the rotation back to the first person in the list?')) return;
+  try{
+    const res = await fetch(`${BASE}/round-robin/reset-pointer`, {method:'POST', credentials:'include'});
+    const d = await res.json();
+    if(d.success){ showToast('Rotation reset ✓'); loadConfig(); }
+    else showToast(d.message || 'Failed to reset');
+  }catch(e){
+    console.error(e);
+    showToast('Failed to reset rotation');
+  }
+});
+
+loadConfig();
+</script>
+</body>
+</html>

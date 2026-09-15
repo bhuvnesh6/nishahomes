@@ -2088,6 +2088,15 @@ def assign_lead():
         if result.matched_count == 0:
             return jsonify({"success": False, "message": "Lead not found"}), 404
 
+        # NEW: notify the employee via WhatsApp (Wirebase) that a lead landed on them
+        lead_doc_for_notify = db[collection_name].find_one({"_id": obj_id}, {"Lead Name": 1, "Name": 1, "Phone Number": 1})
+        notify_employee_lead_assigned(
+            assign_to_number,
+            (lead_doc_for_notify or {}).get("Lead Name") or (lead_doc_for_notify or {}).get("Name"),
+            (lead_doc_for_notify or {}).get("Phone Number"),
+            assigned_by=assigner_name
+        )
+
         return jsonify({"success": True})
 
     except Exception as e:
@@ -2255,6 +2264,14 @@ def bulk_assign_leads():
                 },
                 "$push": {"AssignmentHistory": history_entry}
             }
+        )
+
+        # NEW: single WhatsApp ping summarizing the bulk assignment
+        notify_employee_lead_assigned(
+            assign_to_number,
+            f"{result.modified_count} lead(s)",
+            "",
+            assigned_by=assigner_name
         )
 
         return jsonify({"success": True, "assignedCount": result.modified_count})
@@ -3836,6 +3853,11 @@ def add_lead():
         name = data.get("Lead Name")
 
         create_contact(name, phone_number)
+
+        # NEW: only on a genuinely NEW lead (never on an update to an
+        # existing phone number) — auto-assign via Round Robin if enabled.
+        if result.upserted_id:
+            auto_assign_round_robin(collection_name, result.upserted_id, phone_number, name)
 
         return jsonify({
             "success": True,
@@ -8752,5 +8774,232 @@ def team_webhooks_messages(token, number):
  
  
         
+# =====================================================================
+# ROUND ROBIN LEAD AUTO-ASSIGNMENT + WIREBASE WHATSAPP NOTIFICATIONS
+# =====================================================================
+WIREBASE_API_KEY = os.getenv("WIREBASE_API_KEY")
+WIREBASE_INSTANCE_NAME = os.getenv("WIREBASE_INSTANCE_NAME")
+WIREBASE_API_URL = "https://wirebase.sanjivanitechno.com/api/public/send"
+
+round_robin_collection = db["roundRobinSettings"]
+
+
+def send_wirebase_message(to_phone, message, instance_name=None):
+    """
+    Sends a plain-text WhatsApp message via the Wirebase API. Returns the
+    parsed JSON response on success, or None on failure (never raises —
+    a notification failure should never break the calling request).
+    """
+    if not WIREBASE_API_KEY:
+        print("[wirebase] WIREBASE_API_KEY not configured in .env — skipping notification")
+        return None
+    if not to_phone:
+        print("[wirebase] no destination phone — skipping notification")
+        return None
+    try:
+        resp = requests.post(
+            WIREBASE_API_URL,
+            headers={"X-API-Key": WIREBASE_API_KEY},
+            json={
+                "instanceName": instance_name or WIREBASE_INSTANCE_NAME,
+                "to": to_phone,
+                "type": "text",
+                "message": message,
+            },
+            timeout=15
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"[wirebase] send failed to {to_phone}: {e}")
+        return None
+
+
+def notify_employee_lead_assigned(employee_number, lead_name, lead_phone, assigned_by="Round Robin (Auto)"):
+    """Best-effort WhatsApp ping to an employee whenever a lead lands on
+    their plate — manual assign, bulk assign, or round-robin auto-assign."""
+    try:
+        emp_phone = normalize_number(str(employee_number))
+        if not emp_phone:
+            return
+        if not emp_phone.startswith("91"):
+            emp_phone = "91" + emp_phone
+
+        clean_lead_phone = normalize_number(str(lead_phone or ""))
+        message = (
+            f"🔔 New Lead Assigned!\n\n"
+            f"Name: {lead_name or 'Unknown'}\n"
+            f"Phone: +{clean_lead_phone}\n\n"
+            f"Assigned to you by {assigned_by}. Please follow up promptly.\n\n"
+            f"— NishaHomes CRM"
+        )
+        send_wirebase_message(emp_phone, message)
+    except Exception as e:
+        print(f"[round-robin] notify_employee_lead_assigned failed: {e}")
+
+
+def get_round_robin_config():
+    return round_robin_collection.find_one({"_id": "config"}) or {
+        "_id": "config", "enabled": False, "employees": [], "pointer": 0
+    }
+
+
+def get_next_round_robin_employee():
+    """
+    Atomically picks the next employee number in the saved rotation and
+    advances the pointer for next time. Returns an employee number, or
+    None if round-robin is disabled or no employees are configured.
+    """
+    config = round_robin_collection.find_one({"_id": "config"})
+    if not config or not config.get("enabled") or not config.get("employees"):
+        return None
+
+    employees = config["employees"]
+    pointer = config.get("pointer", 0) % len(employees)
+    next_employee = employees[pointer]
+    new_pointer = (pointer + 1) % len(employees)
+
+    round_robin_collection.update_one({"_id": "config"}, {"$set": {"pointer": new_pointer}})
+    return next_employee
+
+
+def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
+    """
+    Called right after a BRAND NEW lead is inserted (never on an update to
+    an existing lead). If round-robin is enabled and has employees
+    configured, assigns the lead to the next employee in rotation and
+    sends them a WhatsApp notification via Wirebase.
+    """
+    try:
+        employee_number = get_next_round_robin_employee()
+        if not employee_number:
+            return
+
+        employee = db["teamAssign"].find_one({"Employee number": employee_number})
+        if not employee:
+            print(f"[round-robin] configured employee {employee_number} not found in teamAssign — skipping assignment")
+            return
+
+        now = datetime.utcnow()
+        history_entry = {
+            "by": "Round Robin (Auto)",
+            "byNumber": None,
+            "to": employee.get("Employee name"),
+            "toNumber": employee_number,
+            "at": now
+        }
+
+        db[collection_name].update_one(
+            {"_id": lead_id},
+            {
+                "$set": {
+                    "AssignTo": employee.get("Employee name"),
+                    "AssignToNumber": employee_number,
+                    "AssignedBy": "Round Robin (Auto)",
+                    "AssignedByNumber": None,
+                    "AssignedAt": now
+                },
+                "$push": {"AssignmentHistory": history_entry}
+            }
+        )
+
+        notify_employee_lead_assigned(employee_number, lead_name, phone_number, assigned_by="Round Robin (Auto)")
+        print(f"[round-robin] auto-assigned lead {lead_id} to {employee.get('Employee name')} ({employee_number})")
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+@app.route("/round-robin")
+def round_robin_page():
+    if not session.get("user_id") or session.get("role") != "admin":
+        return redirect("/")
+    return render_template(
+        "round_robin.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
+    )
+
+
+@app.route("/api/round-robin/config", methods=["GET"])
+def get_round_robin_config_api():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    config = get_round_robin_config()
+    employees_list = config.get("employees", [])
+
+    members = list(db["teamAssign"].find(
+        {"roll": {"$in": ["admin", "emp"]}},
+        {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1}
+    ).sort("Employee name", 1))
+
+    next_up = None
+    if config.get("enabled") and employees_list:
+        pointer = config.get("pointer", 0) % len(employees_list)
+        next_number = employees_list[pointer]
+        next_emp = db["teamAssign"].find_one({"Employee number": next_number})
+        next_up = {
+            "number": next_number,
+            "name": next_emp.get("Employee name") if next_emp else "Unknown"
+        }
+
+    return jsonify({
+        "success": True,
+        "enabled": config.get("enabled", False),
+        "employees": employees_list,
+        "nextUp": next_up,
+        "members": [{
+            "name": m.get("Employee name", "Unknown"),
+            "number": m.get("Employee number"),
+            "role": (m.get("roll") or "").strip().lower(),
+            "active": m.get("Active", True)
+        } for m in members if m.get("Employee number") is not None]
+    }), 200
+
+
+@app.route("/api/round-robin/config", methods=["POST"])
+def save_round_robin_config_api():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    data = request.json or {}
+    enabled = bool(data.get("enabled", False))
+    employees_raw = data.get("employees", [])
+
+    employees = []
+    for e in employees_raw:
+        try:
+            num = int(e)
+            if num not in employees:
+                employees.append(num)
+        except (TypeError, ValueError):
+            continue
+
+    existing = round_robin_collection.find_one({"_id": "config"})
+    pointer = existing.get("pointer", 0) if existing else 0
+    if not employees:
+        pointer = 0
+    elif pointer >= len(employees):
+        pointer = 0
+
+    round_robin_collection.update_one(
+        {"_id": "config"},
+        {"$set": {"enabled": enabled, "employees": employees, "pointer": pointer}},
+        upsert=True
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/round-robin/reset-pointer", methods=["POST"])
+def reset_round_robin_pointer():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    round_robin_collection.update_one({"_id": "config"}, {"$set": {"pointer": 0}}, upsert=True)
+    return jsonify({"success": True}), 200
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
