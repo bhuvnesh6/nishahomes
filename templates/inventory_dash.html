@@ -1083,16 +1083,22 @@ async function shareListingWA(id){
       text = `${p.name}\n📍 ${p.location}\n💰 ${p.budget||p.startingPrice||''}\n\n${location.origin}/view/${p.uniqueId||''}`;
     }
 
-    const bannerUrl = p.bannerUrl || p.img || (p.mediaUrls && p.mediaUrls[0]) || '';
+    // CHANGED: fetch the banner through our OWN backend (same-origin) instead
+    // of directly from Supabase Storage. A direct cross-origin fetch could
+    // silently fail (CORS/network), leaving `files` empty and causing a
+    // text-only share — which is why WhatsApp was showing its own link
+    // preview card instead of the real photo. This proxy route always works.
     let files = [];
-    if(bannerUrl){
-      try{
-        const resp = await fetch(bannerUrl);
+    try{
+      const resp = await fetch(`${BASE}/projects/banner-image/${id}`, { credentials: 'include' });
+      if(resp.ok){
         const blob = await resp.blob();
-        const filename = bannerUrl.split('/').pop().split('?')[0] || 'banner.jpg';
-        files = [new File([blob], filename, { type: blob.type || 'image/jpeg' })];
-      }catch(e){ console.warn('[share] could not fetch banner image, sharing text only', e); }
-    }
+        const ext = (blob.type.split('/')[1] || 'jpg').split('+')[0];
+        files = [new File([blob], `property.${ext}`, { type: blob.type || 'image/jpeg' })];
+      } else {
+        console.warn('[share] banner proxy returned', resp.status);
+      }
+    }catch(e){ console.warn('[share] could not fetch banner image, sharing text only', e); }
 
     let shareData = { title: p.name, text };
     if(files.length && navigator.canShare && navigator.canShare({ files })){

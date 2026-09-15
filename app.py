@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, flash, jsonify, send_from_directory, send_file
+from flask import Flask, render_template, request, redirect, flash, jsonify, send_from_directory, send_file, Response
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import pandas as pd
@@ -4451,9 +4451,42 @@ def project_share_text(project_id):
         if not p:
             return jsonify({"success": False, "message": "Not found"}), 404
         s = settings_collection.find_one({"_id": "global"}) or {}
-        return jsonify({"success": True, "text": build_whatsapp_share_text(p, s)})
+        caller_name = session.get("employee_name") or ""
+        caller_number = str(session.get("employee_number") or "")
+        text = build_whatsapp_share_text(p, s, caller_name=caller_name, caller_number=caller_number)
+        return jsonify({"success": True, "text": text})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# NEW: same-origin image proxy for the Share Sheet. Fetching bannerUrl
+# directly from Supabase Storage is cross-origin — any CORS/network
+# hiccup there silently leaves the share's `files` array empty, which
+# makes the OS Share Sheet fall back to text-only, and WhatsApp then
+# auto-unfurls the /view/<id> link into its own preview card instead of
+# showing the real banner photo. Routing through THIS same-origin
+# endpoint instead means it never fails on CORS.
+@app.route("/api/projects/banner-image/<project_id>", methods=["GET"])
+def get_banner_image_proxy(project_id):
+    try:
+        p = projects_collection.find_one({"_id": ObjectId(project_id)})
+        if not p:
+            return jsonify({"error": "Not found"}), 404
+
+        banner_url = p.get("bannerUrl") or p.get("img") or (p.get("mediaUrls") or [None])[0]
+        if not banner_url:
+            return jsonify({"error": "No image available for this listing"}), 404
+
+        resp = requests.get(banner_url, timeout=20)
+        resp.raise_for_status()
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        return Response(resp.content, mimetype=content_type)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/projects/send-whatsapp/<project_id>", methods=["POST"])
 def send_project_whatsapp(project_id):
@@ -4483,7 +4516,9 @@ def send_project_whatsapp(project_id):
             return jsonify({"success": False, "message": "Listing not found"}), 404
 
         settings = settings_collection.find_one({"_id": "global"}) or {}
-        message_text = build_whatsapp_share_text(p, settings)
+        caller_name = session.get("employee_name") or ""
+        caller_number = str(session.get("employee_number") or "")
+        message_text = build_whatsapp_share_text(p, settings, caller_name=caller_name, caller_number=caller_number)
 
         banner_url = p.get("bannerUrl") or p.get("img") or (p.get("mediaUrls") or [None])[0]
 
@@ -4502,7 +4537,7 @@ def send_project_whatsapp(project_id):
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
-def build_whatsapp_share_text(p, settings):
+def build_whatsapp_share_text(p, settings, caller_name="", caller_number=""):
     base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
     view_url = f"{base_url}/view/{p.get('uniqueId', '')}"
 
@@ -4530,10 +4565,11 @@ def build_whatsapp_share_text(p, settings):
         if desc:
             usp = desc.split(".")[0].strip()
 
-    # Advisor contact — from global Settings, falling back to whoever
-    # actually uploaded this listing if Settings hasn't been filled in.
-    caller_name = (settings.get("advisorName") or p.get("ownerName") or "").strip()
-    caller_number = (settings.get("agent") or p.get("ownerNumber") or "").strip()
+    # Caller (advisor) contact — always whoever is logged in and hit
+    # Share right now. Falls back to Settings, then to the listing's own
+    # uploader, only if the caller wasn't passed in for some reason.
+    caller_name = (caller_name or settings.get("advisorName") or p.get("ownerName") or "").strip()
+    caller_number = (caller_number or settings.get("agent") or p.get("ownerNumber") or "").strip()
 
     lines = [
         "Hi Dear customer 👋",
