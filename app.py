@@ -8950,6 +8950,30 @@ def round_robin_page():
     )
 
 
+def get_assigned_lead_counts():
+    """
+    Counts every lead currently assigned to each employee number, across
+    all 4 lead collections — regardless of HOW it was assigned (manual
+    assign, bulk assign, or round-robin auto-assign). Powers the "Lead
+    Workload" view on the Round Robin page.
+    """
+    counts = {}
+    for coll_name in ("Leads", "RentalLeads", "sellingLeads", "agentLeads"):
+        try:
+            pipeline = [
+                {"$match": {"AssignToNumber": {"$exists": True, "$ne": None}}},
+                {"$group": {"_id": "$AssignToNumber", "count": {"$sum": 1}}}
+            ]
+            for row in db[coll_name].aggregate(pipeline):
+                num = row["_id"]
+                if num is None:
+                    continue
+                counts[num] = counts.get(num, 0) + row["count"]
+        except Exception as e:
+            print(f"[round-robin] assigned count aggregation failed for {coll_name}: {e}")
+    return counts
+
+
 @app.route("/api/round-robin/config", methods=["GET"])
 def get_round_robin_config_api():
     if session.get("role") != "admin":
@@ -8973,6 +8997,8 @@ def get_round_robin_config_api():
             "name": next_emp.get("Employee name") if next_emp else "Unknown"
         }
 
+    assigned_counts = get_assigned_lead_counts()
+
     return jsonify({
         "success": True,
         "enabled": config.get("enabled", False),
@@ -8982,7 +9008,8 @@ def get_round_robin_config_api():
             "name": m.get("Employee name", "Unknown"),
             "number": m.get("Employee number"),
             "role": (m.get("roll") or "").strip().lower(),
-            "active": m.get("Active", True)
+            "active": m.get("Active", True),
+            "assignedLeadsCount": assigned_counts.get(m.get("Employee number"), 0)
         } for m in members if m.get("Employee number") is not None]
     }), 200
 
@@ -9026,6 +9053,56 @@ def reset_round_robin_pointer():
         return jsonify({"success": False, "message": "Admin only"}), 403
     round_robin_collection.update_one({"_id": "config"}, {"$set": {"pointer": 0}}, upsert=True)
     return jsonify({"success": True}), 200
+
+
+@app.route("/api/round-robin/assigned-leads/<number>", methods=["GET"])
+def get_assigned_leads_for_employee(number):
+    """Full list of leads currently assigned to one employee, across all
+    4 lead collections — includes leads assigned manually, via bulk
+    assign, or by round robin. Powers the 'View' button on the Round
+    Robin page's Lead Workload card."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    try:
+        employee_number = int(str(number).strip())
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid employee number"}), 400
+
+    collection_type_map = {
+        "Leads": "buying", "RentalLeads": "rental",
+        "sellingLeads": "selling", "agentLeads": "agent"
+    }
+
+    def _clean(v, default="-"):
+        if v is None or v == "":
+            return default
+        if isinstance(v, float) and math.isnan(v):
+            return default
+        return v
+
+    out = []
+    try:
+        for coll_name, lead_type in collection_type_map.items():
+            for d in db[coll_name].find({"AssignToNumber": employee_number}):
+                out.append({
+                    "id": str(d["_id"]),
+                    "collection": coll_name,
+                    "leadType": lead_type,
+                    "name": _clean(d.get("Lead Name") or d.get("Name"), "Unknown"),
+                    "phone": _clean(d.get("Phone Number")),
+                    "location": _clean(d.get("Location Interested In") or d.get("Property Location")),
+                    "budget": _clean(d.get("Budget Range") or d.get("Expected Price")),
+                    "assignedBy": _clean(d.get("AssignedBy")),
+                    "assignedAt": format_ist(d.get("AssignedAt")) if isinstance(d.get("AssignedAt"), datetime) else "-",
+                })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    out.sort(key=lambda x: x.get("assignedAt") or "", reverse=True)
+    return jsonify({"success": True, "count": len(out), "data": out}), 200
 
 
 if __name__ == "__main__":

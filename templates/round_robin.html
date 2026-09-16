@@ -192,6 +192,72 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
 .loader{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:20px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---- lead workload ---- */
+.member-count-pill{
+  font-size:0.68rem;font-weight:700;color:var(--accent);
+  background:rgba(239,131,84,0.08);padding:2px 8px;border-radius:var(--radius-pill);
+  flex-shrink:0;white-space:nowrap;
+}
+.workload-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto}
+.workload-empty{color:var(--text-soft);font-size:0.85rem;padding:20px;text-align:center;border:1.5px dashed var(--border);border-radius:var(--radius-sm)}
+.workload-row{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  transition:var(--transition);
+}
+.workload-row:hover{border-color:var(--accent)}
+.workload-avatar{
+  width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,var(--primary-mid),var(--primary));
+  color:#fff;font-weight:700;font-size:0.75rem;
+  display:flex;align-items:center;justify-content:center;
+}
+.workload-info{flex:1;min-width:0}
+.workload-name{font-weight:600;font-size:0.86rem;color:var(--primary)}
+.workload-meta{font-size:0.73rem;color:var(--text-soft)}
+.workload-count-pill{
+  font-size:0.78rem;font-weight:700;
+  padding:5px 12px;border-radius:var(--radius-pill);
+  background:rgba(239,131,84,0.1);color:var(--accent);flex-shrink:0;white-space:nowrap;
+}
+.workload-count-pill.zero{background:rgba(107,114,128,0.08);color:var(--text-soft)}
+.workload-view-btn{
+  padding:6px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--border);
+  font-size:0.75rem;font-weight:600;color:var(--text-soft);transition:var(--transition);flex-shrink:0;
+  background:#fff;cursor:pointer;
+}
+.workload-view-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---- assigned-leads modal ---- */
+.wl-modal-overlay{
+  position:fixed;inset:0;background:rgba(30,34,53,0.55);
+  display:none;align-items:center;justify-content:center;z-index:999;padding:20px;
+}
+.wl-modal-overlay.open{display:flex}
+.wl-modal-box{
+  background:#fff;border-radius:var(--radius);box-shadow:var(--sh-lg);
+  width:100%;max-width:560px;max-height:82vh;overflow-y:auto;padding:22px 20px 18px;
+}
+.wl-modal-box h3{font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--primary);margin-bottom:4px}
+.wl-modal-box .wl-sub{font-size:0.8rem;color:var(--text-soft);margin-bottom:14px}
+.wl-lead-row{
+  padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  margin-bottom:8px;
+}
+.wl-lead-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.wl-lead-name{font-weight:700;font-size:0.85rem;color:var(--primary)}
+.wl-lead-type{
+  font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  padding:2px 8px;border-radius:var(--radius-pill);background:rgba(59,130,246,.1);color:#2563eb;flex-shrink:0;
+}
+.wl-lead-meta{font-size:0.76rem;color:var(--text-soft);margin-top:4px;display:flex;flex-wrap:wrap;gap:10px}
+.wl-modal-close{
+  display:block;margin:14px auto 0;padding:10px 24px;border-radius:var(--radius-sm);
+  border:1.5px solid var(--border);color:var(--text-soft);font-weight:600;font-size:0.85rem;
+  transition:var(--transition);background:#fff;cursor:pointer;
+}
+.wl-modal-close:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -240,6 +306,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   </div>
 
   <div class="card">
+    <div class="card-title">Lead Workload</div>
+    <div class="card-sub">Total leads currently assigned to each team member — manual assign, bulk assign, or round robin, all counted</div>
+    <div class="workload-list" id="workloadList">
+      <div class="loader"></div>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Rotation Order</div>
     <div class="card-sub">Leads are assigned top to bottom, then loop back to the top</div>
     <div class="rotation-list" id="rotationList">
@@ -250,6 +324,15 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   <div class="save-bar">
     <button class="reset-btn" id="resetPointerBtn">↺ Reset rotation to start</button>
     <button class="save-btn" id="saveBtn">Save Settings</button>
+  </div>
+</div>
+
+<div class="wl-modal-overlay" id="wlModalOverlay">
+  <div class="wl-modal-box">
+    <h3 id="wlModalTitle">Assigned Leads</h3>
+    <div class="wl-sub" id="wlModalSub">—</div>
+    <div id="wlModalList"><div class="loader"></div></div>
+    <button class="wl-modal-close" id="wlModalCloseBtn">Close</button>
   </div>
 </div>
 
@@ -296,6 +379,7 @@ async function loadConfig(){
 
     renderMemberList();
     renderRotationList();
+    renderWorkloadList();
   }catch(e){
     console.error(e);
     document.getElementById('memberList').innerHTML = '<p style="color:var(--hot);font-size:0.85rem">Failed to load team members</p>';
@@ -319,6 +403,7 @@ function renderMemberList(){
 
   list.innerHTML = filtered.map(m=>{
     const checked = selectedOrder.includes(m.number);
+    const count = m.assignedLeadsCount || 0;
     return `
     <label class="member-row ${checked?'checked':''}" data-number="${m.number}">
       <input type="checkbox" ${checked?'checked':''} onchange="toggleMember(${m.number})">
@@ -327,6 +412,7 @@ function renderMemberList(){
         <div class="member-name">${escHtml(m.name)}</div>
         <div class="member-meta">${m.number}${!m.active?' · Inactive':''}</div>
       </div>
+      <span class="member-count-pill" title="Leads currently assigned">${count} lead${count===1?'':'s'}</span>
       <span class="member-role-badge role-${m.role}">${m.role}</span>
     </label>`;
   }).join('');
@@ -426,6 +512,76 @@ document.getElementById('resetPointerBtn').addEventListener('click', async ()=>{
     console.error(e);
     showToast('Failed to reset rotation');
   }
+});
+
+function renderWorkloadList(){
+  const box = document.getElementById('workloadList');
+  if(!members.length){
+    box.innerHTML = '<div class="workload-empty">No team members found</div>';
+    return;
+  }
+  const sorted = [...members].sort((a,b) => (b.assignedLeadsCount||0) - (a.assignedLeadsCount||0));
+  box.innerHTML = sorted.map(m => {
+    const count = m.assignedLeadsCount || 0;
+    return `
+    <div class="workload-row">
+      <div class="workload-avatar">${initials(m.name)}</div>
+      <div class="workload-info">
+        <div class="workload-name">${escHtml(m.name)}</div>
+        <div class="workload-meta">${m.number}${!m.active?' · Inactive':''}</div>
+      </div>
+      <span class="workload-count-pill ${count===0?'zero':''}">${count} lead${count===1?'':'s'}</span>
+      <button class="workload-view-btn" onclick="openWorkloadModal(${m.number})">View</button>
+    </div>`;
+  }).join('');
+}
+
+async function openWorkloadModal(number){
+  const m = members.find(x=>x.number===number);
+  document.getElementById('wlModalTitle').textContent = m ? `${m.name}'s Assigned Leads` : 'Assigned Leads';
+  document.getElementById('wlModalSub').textContent = m ? `${m.number} · ${m.assignedLeadsCount||0} lead(s) currently assigned` : '';
+  document.getElementById('wlModalList').innerHTML = '<div class="loader"></div>';
+  document.getElementById('wlModalOverlay').classList.add('open');
+
+  try{
+    const res = await fetch(`${BASE}/round-robin/assigned-leads/${number}`, {credentials:'include'});
+    const d = await res.json();
+    if(!d.success){ document.getElementById('wlModalList').innerHTML = `<p style="color:var(--hot);font-size:0.85rem">${escHtml(d.message||'Failed to load')}</p>`; return; }
+    renderWorkloadLeadsList(d.data || []);
+  }catch(e){
+    console.error(e);
+    document.getElementById('wlModalList').innerHTML = '<p style="color:var(--hot);font-size:0.85rem">Failed to load leads</p>';
+  }
+}
+
+function renderWorkloadLeadsList(leads){
+  const box = document.getElementById('wlModalList');
+  if(!leads.length){
+    box.innerHTML = '<div class="workload-empty">No leads currently assigned</div>';
+    return;
+  }
+  const typeLabels = {buying:'Buyer', rental:'Rental', selling:'Seller', agent:'Agent'};
+  box.innerHTML = leads.map(l => `
+    <div class="wl-lead-row">
+      <div class="wl-lead-top">
+        <span class="wl-lead-name">${escHtml(l.name)}</span>
+        <span class="wl-lead-type">${escHtml(typeLabels[l.leadType] || l.leadType || 'Lead')}</span>
+      </div>
+      <div class="wl-lead-meta">
+        <span>📞 ${escHtml(l.phone)}</span>
+        <span>📍 ${escHtml(l.location)}</span>
+        <span>💰 ${escHtml(l.budget)}</span>
+        <span>Assigned by ${escHtml(l.assignedBy)} · ${escHtml(l.assignedAt)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('wlModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('wlModalOverlay').classList.remove('open');
+});
+document.getElementById('wlModalOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'wlModalOverlay') document.getElementById('wlModalOverlay').classList.remove('open');
 });
 
 loadConfig();
