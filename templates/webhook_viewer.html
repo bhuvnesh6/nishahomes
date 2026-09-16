@@ -428,6 +428,19 @@ body {
   text-align: left;
 }
 
+.bubble .msg-more-btn {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+  opacity: 0.9;
+  user-select: none;
+}
+.msg-row.in .bubble .msg-more-btn { color: var(--accent); }
+.msg-row.out .bubble .msg-more-btn { color: rgba(255,255,255,0.92); }
+
 .chat-empty {
   margin: auto;
   text-align: center;
@@ -610,6 +623,7 @@ body {
 const LEADS_POLL_MS = 6000;
 const MSGS_POLL_MS = 3500;
 const PAGE_SIZE = 25; // messages shown per "page", newest-first reveal
+const MSG_CHAR_LIMIT = 300; // truncate long bubbles; "Show more" reveals full text
 
 let leadsCache = [];
 let activeLead = null;   // { id, collection, name, phone, aiDisabled }
@@ -870,10 +884,17 @@ const lastMsg = g.messages[g.messages.length - 1];
 html += `<div class="msg-group ${groupClass}">`;
 
 g.messages.forEach((m, i) => {
+  const fullText = m.text || '';
+  const isLong = fullText.length > MSG_CHAR_LIMIT;
+  const shortText = isLong ? fullText.slice(0, MSG_CHAR_LIMIT).trim() + '…' : fullText;
+  const bubbleId = 'msg_' + Math.random().toString(36).slice(2, 10);
+
   html += `
     <div class="msg-row ${groupClass} ${i === 0 ? 'group-first' : ''}">
-      <div class="bubble">
-        ${escapeHtml(m.text)}
+      <div class="bubble" id="${bubbleId}" data-expanded="false">
+        <span class="msg-text-short">${escapeHtml(shortText)}</span>
+        <span class="msg-text-full" style="display:none;">${escapeHtml(fullText)}</span>
+        ${isLong ? `<span class="msg-more-btn" data-target="${bubbleId}">Show more</span>` : ''}
       </div>
     </div>`;
 });
@@ -960,6 +981,29 @@ function autoGrow() {
   els.msgInput.style.height = Math.min(els.msgInput.scrollHeight, 110) + 'px';
 }
 els.msgInput.addEventListener('input', autoGrow);
+
+// ---------------- Show more / show less toggle for long messages ----------------
+els.chatBody.addEventListener('click', (e) => {
+  const btn = e.target.closest('.msg-more-btn');
+  if (!btn) return;
+  const bubble = document.getElementById(btn.dataset.target);
+  if (!bubble) return;
+  const shortEl = bubble.querySelector('.msg-text-short');
+  const fullEl = bubble.querySelector('.msg-text-full');
+  const expanded = bubble.dataset.expanded === 'true';
+
+  if (expanded) {
+    shortEl.style.display = '';
+    fullEl.style.display = 'none';
+    btn.textContent = 'Show more';
+    bubble.dataset.expanded = 'false';
+  } else {
+    shortEl.style.display = 'none';
+    fullEl.style.display = '';
+    btn.textContent = 'Show less';
+    bubble.dataset.expanded = 'true';
+  }
+});
 
 // ---------------- Init ----------------
 fetchLeads();
