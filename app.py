@@ -7608,6 +7608,15 @@ def create_wa_lead(phone, name_hint):
     except Exception as contact_err:
         print(f"[wa-ai] create_contact failed (non-fatal): {contact_err}")
 
+    # NEW: this is a genuinely brand-new lead — someone messaged in on
+    # WhatsApp who wasn't already a lead in any of the 4 collections
+    # (find_wa_lead_by_phone found nothing, which is why we're here).
+    # Round Robin should treat this exactly like a new /add-lead insert.
+    try:
+        auto_assign_round_robin("Leads", result.inserted_id, phone, name_hint)
+    except Exception as rr_err:
+        print(f"[wa-ai] round-robin auto-assign failed (non-fatal): {rr_err}")
+
     return "Leads", doc
 
 
