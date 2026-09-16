@@ -322,14 +322,36 @@ body {
   letter-spacing: 0.2px;
 }
 
-.msg-group { display: flex; flex-direction: column; margin-bottom: 14px; }
-.msg-group.user { align-items: flex-start; }
-.msg-group.assistant, .msg-group.agent { align-items: flex-end; }
+.msg-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
 
-.msg-row { display: flex; width: 100%; }
-.msg-row.user { justify-content: flex-start; }
-.msg-row.assistant, .msg-row.agent { justify-content: flex-end; }
-.msg-row + .msg-row { margin-top: 3px; }
+.msg-group.in {
+  align-items: flex-start;
+}
+
+.msg-group.out {
+  align-items: flex-end;
+}
+
+.msg-row {
+  display: flex;
+  width: 100%;
+}
+
+.msg-row.in {
+  justify-content: flex-start;
+}
+
+.msg-row.out {
+  justify-content: flex-end;
+}
+
+.msg-row + .msg-row {
+  margin-top: 3px;
+}
 
 .bubble {
   max-width: 62%;
@@ -341,32 +363,37 @@ body {
   position: relative;
   letter-spacing: -0.05px;
 }
-.msg-row.user .bubble {
+
+.msg-row.in .bubble {
   background: #fff;
   color: var(--text);
   border-radius: 4px 16px 16px 16px;
   box-shadow: 0 1px 2px rgba(45,49,66,0.06), 0 4px 10px rgba(45,49,66,0.05);
 }
-.msg-row.assistant .bubble {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
-  color: #fff;
-  border-radius: 16px 4px 16px 16px;
-  box-shadow: 0 3px 12px rgba(30,34,53,0.22);
-}
-.msg-row.agent .bubble {
+
+.msg-row.out .bubble {
   background: linear-gradient(135deg, var(--accent) 0%, #E06B3A 100%);
   color: #fff;
   border-radius: 16px 4px 16px 16px;
   box-shadow: 0 3px 12px var(--accent-glow);
 }
 
-/* only round the "tail" corner sharply on the first bubble of a group */
-.msg-row:not(.group-first).user .bubble { border-radius: 16px; border-top-left-radius: 16px; }
-.msg-row.group-first.user .bubble { border-top-left-radius: 4px; }
-.msg-row:not(.group-first).assistant .bubble,
-.msg-row:not(.group-first).agent .bubble { border-radius: 16px; border-top-right-radius: 16px; }
-.msg-row.group-first.assistant .bubble,
-.msg-row.group-first.agent .bubble { border-top-right-radius: 4px; }
+/* keep the WhatsApp-style tail corner only on the first bubble */
+.msg-row:not(.group-first).in .bubble {
+  border-radius: 16px;
+}
+
+.msg-row.group-first.in .bubble {
+  border-top-left-radius: 4px;
+}
+
+.msg-row:not(.group-first).out .bubble {
+  border-radius: 16px;
+}
+
+.msg-row.group-first.out .bubble {
+  border-top-right-radius: 4px;
+}
 
 .msg-tag {
   font-size: 9.5px;
@@ -393,8 +420,13 @@ body {
   font-weight: 500;
   padding: 0 4px;
 }
-.msg-group.assistant .msg-time, .msg-group.agent .msg-time { text-align: right; }
-.msg-group.user .msg-time { text-align: left; }
+.msg-group.out .msg-time {
+  text-align: right;
+}
+
+.msg-group.in .msg-time {
+  text-align: left;
+}
 
 .chat-empty {
   margin: auto;
@@ -793,46 +825,61 @@ function renderMessages(scrollToBottom) {
       </div>`;
   }
 
-  // group consecutive same-role messages, insert date dividers on date change
-  let lastDate = null;
-  let groups = [];
-  let currentGroup = null;
+// group consecutive messages by direction, insert date dividers on date change
+let lastDate = null;
+let groups = [];
+let currentGroup = null;
 
-  visible.forEach((m) => {
-    const { time, date } = splitTimestamp(m.at);
-    if (date && date !== lastDate) {
-      groups.push({ type: 'divider', date });
-      lastDate = date;
-      currentGroup = null;
-    }
-    if (!currentGroup || currentGroup.role !== m.role) {
-      currentGroup = { type: 'group', role: m.role, messages: [] };
-      groups.push(currentGroup);
-    }
-    currentGroup.messages.push({ text: m.text, time });
+visible.forEach((m) => {
+  const { time, date } = splitTimestamp(m.at);
+
+  if (date && date !== lastDate) {
+    groups.push({ type: 'divider', date });
+    lastDate = date;
+    currentGroup = null;
+  }
+
+  const isOutgoing = m.direction === 'out';
+  const direction = isOutgoing ? 'out' : 'in';
+
+  if (!currentGroup || currentGroup.direction !== direction) {
+    currentGroup = {
+      type: 'group',
+      direction,
+      messages: []
+    };
+    groups.push(currentGroup);
+  }
+
+  currentGroup.messages.push({
+    text: m.text,
+    time,
+    direction
   });
+});
 
   groups.forEach(g => {
     if (g.type === 'divider') {
       html += `<div class="date-divider"><span>${escapeHtml(g.date)}</span></div>`;
       return;
     }
-    const tag = g.role === 'assistant' ? '<span class="msg-tag">AI Advisor</span>'
-              : g.role === 'agent' ? '<span class="msg-tag">Team</span>' : '';
-    const lastMsg = g.messages[g.messages.length - 1];
+const isOutgoing = g.direction === 'out';
+const groupClass = isOutgoing ? 'out' : 'in';
+const lastMsg = g.messages[g.messages.length - 1];
 
-    html += `<div class="msg-group ${g.role}">`;
-    g.messages.forEach((m, i) => {
-      html += `
-        <div class="msg-row ${g.role} ${i === 0 ? 'group-first' : ''}">
-          <div class="bubble">
-            ${i === 0 ? tag : ''}
-            ${escapeHtml(m.text)}
-          </div>
-        </div>`;
-    });
-    html += `<div class="msg-time">${escapeHtml(lastMsg.time)}</div>`;
-    html += `</div>`;
+html += `<div class="msg-group ${groupClass}">`;
+
+g.messages.forEach((m, i) => {
+  html += `
+    <div class="msg-row ${groupClass} ${i === 0 ? 'group-first' : ''}">
+      <div class="bubble">
+        ${escapeHtml(m.text)}
+      </div>
+    </div>`;
+});
+
+html += `<div class="msg-time">${escapeHtml(lastMsg.time)}</div>`;
+html += `</div>`;
   });
 
   els.chatBody.innerHTML = html;

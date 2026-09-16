@@ -8649,6 +8649,12 @@ def team_webhook_receiver(token):
         raw_number = body.get("number") if isinstance(body, dict) else None
         message_text = body.get("message") if isinstance(body, dict) else None
         is_group = bool(body.get("isGroup")) if isinstance(body, dict) else False
+        # NEW: "in" = customer messaged the team member, "out" = team member
+        # (or their WhatsApp Business app) replied. Defaults to "in" for any
+        # older payload shape that doesn't send this field.
+        direction = (body.get("direction") or "in").strip().lower()
+        if direction not in ("in", "out"):
+            direction = "in"
  
         if raw_number and message_text and not is_group:
             number = normalize_number(raw_number)
@@ -8658,7 +8664,15 @@ def team_webhook_receiver(token):
             message_id = body.get("messageId") or secrets.token_hex(12)
             msg_dt = _parse_wa_timestamp(body.get("timestamp"), now)
             lead_match = find_lead_by_phone_number(number)
- 
+
+            # NEW: pushName is always null on outgoing messages (per the
+            # provider's payload shape) since it's the customer's WhatsApp
+            # display name, not the employee's — so outgoing messages fall
+            # back to the employee's own CRM name instead of the raw number.
+            display_name = body.get("pushName") or (
+                wh.get("employeeName") if direction == "out" else None
+            ) or number
+
             try:
                 team_webhook_messages_collection.update_one(
                     {"token": token, "messageId": message_id},
@@ -8667,8 +8681,9 @@ def team_webhook_receiver(token):
                         "employeeNumber": wh.get("employeeNumber"),
                         "messageId": message_id,
                         "number": number,
-                        "pushName": body.get("pushName") or number,
+                        "pushName": display_name,
                         "message": message_text,
+                        "direction": direction,
                         "isGroup": is_group,
                         "groupId": body.get("groupId"),
                         "instanceId": body.get("instanceId"),
@@ -8711,6 +8726,7 @@ def team_webhooks_conversations(token):
                 "_id": "$number",
                 "pushName": {"$last": "$pushName"},
                 "lastMessage": {"$last": "$message"},
+                "lastDirection": {"$last": "$direction"},  # NEW
                 "lastTimestamp": {"$last": "$timestamp"},
                 "messageCount": {"$sum": 1},
                 "isLead": {"$last": "$isLead"},
@@ -8724,6 +8740,7 @@ def team_webhooks_conversations(token):
             "number": r["_id"],
             "pushName": r.get("pushName") or r["_id"],
             "lastMessage": r.get("lastMessage", ""),
+            "lastDirection": r.get("lastDirection") or "in",  # NEW: "in" | "out"
             "lastTimestamp": format_ist(r.get("lastTimestamp")) if isinstance(r.get("lastTimestamp"), datetime) else "-",
             "lastTimestampRaw": r["lastTimestamp"].isoformat() if isinstance(r.get("lastTimestamp"), datetime) else None,
             "messageCount": r.get("messageCount", 0),
@@ -8762,6 +8779,7 @@ def team_webhooks_messages(token, number):
         data = [{
             "messageId": d.get("messageId"),
             "message": d.get("message", ""),
+            "direction": d.get("direction") or "in",  # NEW: "in" | "out"
             "timestamp": format_ist(d.get("timestamp")) if isinstance(d.get("timestamp"), datetime) else "-",
             "timestampRaw": d["timestamp"].isoformat() if isinstance(d.get("timestamp"), datetime) else None,
         } for d in docs]
