@@ -58,7 +58,7 @@ cloudinary.config(
 # NEW: Supabase Storage config - reads from .env
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-SUPABASE_PDF_BUCKET = "documents"  # must exist + be set Public in the Supabase dashboard
+SUPABASE_PDF_BUCKET = "NishaHomes1"  # must exist + be set Public in the Supabase dashboard
 
 supabase = None
 if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
@@ -72,7 +72,7 @@ else:
 # project/quota from the PDF bucket above). Reads from .env.
 SUPABASE_URL2 = os.getenv("SUPABASE_URL2")
 SUPABASE_SERVICE_ROLE_KEY2 = os.getenv("SUPABASE_SERVICE_ROLE_KEY2")
-SUPABASE_MEDIA_BUCKET = "media"  # must exist + be set Public in the Supabase dashboard
+SUPABASE_MEDIA_BUCKET = "NishaHomes1"  # must exist + be set Public in the Supabase dashboard
 MAX_MEDIA_UPLOAD_BYTES = 50 * 1024 * 1024  # Supabase Storage free-tier hard cap
 
 
@@ -534,7 +534,7 @@ def parse_created_at_str(s):
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_CHAT_URL = "https://llm.sanjivanitechno.com/v1/chat/completions"
 LLM_EMBED_URL = "https://llm.sanjivanitechno.com/v1/embeddings"
-LLM_CHAT_MODEL = "gemma-4-31b"
+LLM_CHAT_MODEL = "gpt-oss:120b"
 LLM_EMBED_MODEL = "bge-small-en-v1.5"
 
 # Kept for backward compatibility with code below that still references
