@@ -6382,6 +6382,11 @@ def team_status_overview():
             return None
  
         hot_list, warm_list, cold_list, followup_list = [], [], [], []
+        # NEW: every logged call (one entry per lead, latest log) regardless
+        # of Interest Level or follow-up — this is what powers the "Recent
+        # Calls" panel so a call's raw status is always visible somewhere,
+        # even when it wasn't tagged Hot/Warm/Cold or given a follow-up date.
+        all_calls_list = []
  
         for num, log in latest_by_number.items():
             entry = {
@@ -6396,7 +6401,9 @@ def team_status_overview():
                 "nextCallDate": _clean(log.get("NextCallDate")),
                 "lastCallAt": _clean(log.get("CallDateTimeFormatted")),
             }
- 
+
+            all_calls_list.append(entry)
+
             bucket = bucket_for(log.get("InterestLevel"))
             if bucket == "Hot":
                 hot_list.append(entry)
@@ -6409,7 +6416,7 @@ def team_status_overview():
                 followup_list.append(entry)
  
         # sort newest-first for the popup lists
-        for lst in (hot_list, warm_list, cold_list, followup_list):
+        for lst in (hot_list, warm_list, cold_list, followup_list, all_calls_list):
             lst.sort(key=lambda e: e.get("lastCallAt") or "", reverse=True)
  
         # ---------------- INVENTORY / PROJECTS ADDED ----------------
@@ -6478,6 +6485,10 @@ def team_status_overview():
                 "hotList": hot_list,
                 "warmList": warm_list,
                 "coldList": cold_list
+            },
+            "recentCalls": {
+                "count": len(all_calls_list),
+                "list": all_calls_list
             },
             "inventory": {
                 "totalAdded": len(inventory_items) + len(project_items),
