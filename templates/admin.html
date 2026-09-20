@@ -1243,6 +1243,13 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     Followup Campaigns
   </a>
 
+    <a href="/whatsapp-inventory" class="sidebar-link">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+     WhatsApp Inventory
+    </a>
+
+  
+
   <div class="sidebar-footer">
     <div class="sidebar-user">
       <div class="sidebar-avatar">NH</div>
@@ -2179,21 +2186,84 @@ function buildLeadCallLogPayload(l){
   }));
 }
 
+/* ═══════════════════════════════════
+   OFFLINE-SAFE CALL-ATTEMPT LOGGING
+   Every Call click writes to the server first, before the tel: link
+   navigates away. If that write fails — offline, flaky signal, a 5xx —
+   the attempt is queued in localStorage instead of being dropped, and
+   gets retried automatically the moment connectivity returns, so no
+   call ever goes unrecorded.
+═══════════════════════════════════ */
+const CALL_QUEUE_KEY = 'nh_pending_call_attempts';
+
+function readCallQueue(){
+  try{ return JSON.parse(localStorage.getItem(CALL_QUEUE_KEY) || '[]'); }
+  catch(e){ return []; }
+}
+function writeCallQueue(queue){
+  try{ localStorage.setItem(CALL_QUEUE_KEY, JSON.stringify(queue)); }catch(e){}
+}
+function queueCallAttempt(payload){
+  const queue = readCallQueue();
+  queue.push({ ...payload, _queuedAt: new Date().toISOString() });
+  writeCallQueue(queue);
+}
+
+async function sendCallAttempt(payload){
+  const res = await fetch(`${BASE}/call-attempt`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error('call-attempt HTTP ' + res.status);
+  return res.json();
+}
+
+async function flushCallQueue(){
+  if(!navigator.onLine) return;
+  const queue = readCallQueue();
+  if(!queue.length) return;
+  const remaining = [];
+  for(const item of queue){
+    try{
+      const { _queuedAt, ...payload } = item;
+      await sendCallAttempt(payload);
+    }catch(e){
+      remaining.push(item); // still couldn't reach the server — keep it queued
+    }
+  }
+  writeCallQueue(remaining);
+  if(remaining.length < queue.length){
+    console.info(`[call-queue] synced ${queue.length - remaining.length} pending call attempt(s)`);
+  }
+}
+
 // Fires on every Call click, from every page/list (All Leads, Assigned,
 // Followups, Hot/Warm/Cold popups — they all reuse these same card/table
-// renderers or link straight to tel:). Fire-and-forget so it never delays
-// the actual tel: navigation.
+// renderers or link straight to tel:). Always tries the server FIRST;
+// falls back to the local queue on failure so nothing is ever lost.
 function logCallClick(phone, name, leadType){
   try{
     const cleanNum = String(phone).replace(/[^0-9]/g,'');
     if(!cleanNum) return;
-    fetch(`${BASE}/call-attempt`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ number: cleanNum, name: name||'', leadType: leadType||'' })
-    }).catch(()=>{});
-  }catch(e){ console.warn('call log failed', e); }
+    const payload = { number: cleanNum, name: name||'', leadType: leadType||'' };
+
+    if(!navigator.onLine){
+      queueCallAttempt(payload);
+      return;
+    }
+    sendCallAttempt(payload).catch(()=>{
+      queueCallAttempt(payload);
+    });
+  }catch(e){
+    console.warn('call log failed', e);
+  }
 }
+
+window.addEventListener('online', flushCallQueue);
+// Belt-and-braces: some mobile webviews don't reliably fire 'online',
+// so also retry on a timer.
+setInterval(flushCallQueue, 30000);
 
 /* ═══════════════════════════════════
    LOAD END-DATA
@@ -4121,6 +4191,7 @@ window.addEventListener('load',()=>{
     loadAssignedLeads();
     loadDashboardOverview('lifetime');
     loadDashboardFollowups('today');
+    flushCallQueue();
   },600);
 });
 </script>

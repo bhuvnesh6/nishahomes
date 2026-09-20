@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Nisha Homes — WhatsApp Inventory Intelligence</title>
+<style>
+:root{
+  --bg:#0e1320; --panel:#151c2e; --panel2:#1b2439; --line:#26304a;
+  --txt:#e8edf7; --muted:#9aa7c2; --accent:#c9a24b; --accent2:#e3bf6a;
+  --blue:#4f8cff; --green:#3ec98a; --amber:#f0b53f; --red:#f2603c;
+  --chip:#222d47; --radius:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;padding-bottom:86px}
+h1,h2,h3{margin:0 0 8px;font-weight:700}
+h1{font-size:20px}h2{font-size:18px}h3{font-size:15px}
+p{margin:0 0 10px}
+a{color:var(--blue)}
+.small{font-size:13px;color:var(--muted)}
+.tiny{font-size:12px;color:var(--muted)}
+.wrap{max-width:920px;margin:0 auto;padding:16px}
+header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#0e1320 70%,rgba(14,19,32,.0));padding:14px 16px 8px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#1a1405;font-weight:800;font-size:15px}
+.brand .t{font-weight:800;font-size:16px;letter-spacing:.2px}
+.brand .s{font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+.net{margin-left:auto;font-size:11px;padding:4px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+.net.on{color:var(--green);border-color:#1f5c42}
+.net.off{color:var(--amber);border-color:#5c4a1f}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:0 0 14px}
+.card h2{display:flex;align-items:center;gap:8px}
+.step{font-size:11px;color:var(--accent);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px 16px;border-radius:12px;border:none;font-size:16px;font-weight:700;cursor:pointer;background:var(--panel2);color:var(--txt);border:1px solid var(--line);transition:.15s}
+.btn:active{transform:scale(.99)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1405;border:none}
+.btn.blue{background:var(--blue);color:#fff;border:none}
+.btn.ghost{background:transparent}
+.btn.sm{width:auto;padding:9px 13px;font-size:13px;border-radius:9px}
+.btn.danger{color:#ffb3a3;border-color:#5c2a1f}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.done{border-color:#1f5c42;color:var(--green)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>.btn{flex:1;min-width:120px}
+label.fld{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px;font-weight:600}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:13px;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--txt);font-size:15px;font-family:inherit}
+textarea{min-height:70px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+.hint{font-size:12px;color:var(--muted);margin-top:5px}
+
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:560px){.stat-grid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat .n{font-size:22px;font-weight:800}
+.stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.stat.blue .n{color:var(--blue)}.stat.green .n{color:var(--green)}.stat.amber .n{color:var(--amber)}.stat.red .n{color:var(--red)}
+
+.bar{height:12px;background:var(--bg);border-radius:20px;overflow:hidden;border:1px solid var(--line);margin:10px 0 6px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0;transition:width .3s}
+
+.chip{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--chip);color:var(--muted);margin:2px 4px 2px 0;border:1px solid var(--line)}
+.chip.new{color:var(--blue);border-color:#25406e}
+.chip.verified{color:var(--green);border-color:#1f5c42}
+.chip.review{color:var(--amber);border-color:#5c4a1f}
+.chip.dup{color:#e08fb8;border-color:#5c1f45}
+.chip.archived,.chip.outdated{color:var(--muted)}
+.src{font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;letter-spacing:.4px}
+.src.stated{background:#12351f;color:#7fe3aa}
+.src.detected{background:#12283f;color:#8fc0ff}
+.src.inferred{background:#3a2f12;color:#f0cf7f}
+.src.unknown{background:#2a2a2a;color:#999}
+
+.list-item{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px;margin-bottom:10px;cursor:pointer}
+.list-item:active{border-color:var(--accent)}
+.li-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.li-title{font-weight:700;font-size:15px}
+.li-price{color:var(--accent2);font-weight:800;white-space:nowrap}
+.li-meta{font-size:13px;color:var(--muted);margin-top:3px}
+.li-foot{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.mini{font-size:11px;color:var(--muted)}
+
+.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;padding:9px 2px 8px;text-align:center;color:var(--muted);font-size:10px;cursor:pointer;border:none;background:none}
+.tab .ic{font-size:19px;display:block;margin-bottom:2px;line-height:1}
+.tab.active{color:var(--accent2)}
+.tab .badge{position:absolute;transform:translate(6px,-4px);background:var(--red);color:#fff;font-size:9px;font-weight:800;border-radius:10px;padding:1px 5px}
+
+.view{display:none}
+.view.active{display:block}
+
+.field{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.field:last-child{border-bottom:none}
+.field .k{color:var(--muted)}
+.field .v{text-align:right;font-weight:600}
+.field .v small{display:block;font-weight:400;margin-top:2px}
+
+.gal{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gal .m{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.gal .m img,.gal .m video{width:100%;height:100%;object-fit:cover}
+.gal .m .doc{font-size:12px;color:var(--muted);text-align:center;padding:6px}
+.gal .m .type{position:absolute;top:4px;left:4px;font-size:9px;background:rgba(0,0,0,.6);padding:2px 5px;border-radius:5px;color:#fff}
+
+.msg{background:var(--bg);border-radius:10px;border:1px solid var(--line);padding:9px 11px;margin-bottom:7px;font-size:14px}
+.msg .who{font-size:12px;color:var(--accent2);font-weight:700}
+.msg .when{font-size:11px;color:var(--muted);float:right}
+
+.modal{position:fixed;inset:0;background:rgba(4,7,13,.85);z-index:60;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:18px}
+.modal .box.media{background:#000;padding:0;max-width:96vw}
+.modal .box.media img,.modal .box.media video{width:100%;display:block;max-height:88vh;object-fit:contain}
+.x{position:sticky;top:0;float:right;font-size:24px;color:var(--muted);cursor:pointer;line-height:1}
+
+.toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--txt);padding:11px 18px;border-radius:12px;z-index:80;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:.25s;pointer-events:none;max-width:92vw;text-align:center}
+.toast.show{opacity:1}
+
+.callout{background:var(--panel2);border-left:3px solid var(--amber);border-radius:8px;padding:11px 13px;font-size:13px;color:var(--muted);margin:0 0 12px}
+.callout b{color:var(--txt)}
+.callout.ok{border-color:var(--green)}
+.callout.info{border-color:var(--blue)}
+
+.empty{text-align:center;color:var(--muted);padding:40px 16px}
+.empty .big{font-size:40px;margin-bottom:8px}
+.search{position:relative;margin-bottom:12px}
+.search input{padding-left:40px}
+.search .mag{position:absolute;left:13px;top:12px;color:var(--muted)}
+.filters{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;-webkit-overflow-scrolling:touch}
+.filters .f{white-space:nowrap;font-size:12px;padding:7px 12px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer}
+.filters .f.on{background:var(--accent);color:#1a1405;border-color:var(--accent);font-weight:700}
+.spin{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--accent2);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.divider{height:1px;background:var(--line);margin:14px 0}
+code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
+.kb{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">NH</div>
+    <div>
+      <div class="t">Nisha Homes</div>
+      <div class="s">WhatsApp Inventory Intelligence</div>
+    </div>
+    <div id="netBadge" class="net on">● ONLINE</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============ IMPORT / HOME ============ -->
+<div class="view active" id="v-home">
+  <div class="callout info">
+    <b>How this works.</b> Export a WhatsApp dealer group <b>without media</b> (Chat → Export → <i>Without Media</i>), then separately pick the group's photos/videos/PDFs from your phone. The tool matches them by time, groups messages into properties, and uses AI to build your inventory. Everything stays on your device except the text/images sent to your AI for extraction.
+  </div>
+
+  <div class="card">
+    <div class="step">Step 1 · Chat Export</div>
+    <h2>📄 Select chat file</h2>
+    <p class="small">The <code>.txt</code> file from “Export chat → Without media”.</p>
+    <input type="file" id="chatInput" accept=".txt,text/plain" hidden>
+    <button class="btn" id="chatBtn" onclick="document.getElementById('chatInput').click()">＋ Select chat (.txt)</button>
+    <div id="chatStatus" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <div class="step">Step 2 · WhatsApp Media</div>
+    <h2>🖼️ Select media files</h2>
+    <p class="small">Pick the photos, videos, PDFs, voice notes for this group. On Android use the file picker — multi-select many at once. You can add more later.</p>
+    <input type="file" id="mediaInput" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
+    <input type="file" id="folderInput" webkitdirectory hidden>
+    <div class="row">
+      <button class="btn" onclick="document.getElementById('mediaInput').click()">＋ Select files</button>
+      <button class="btn ghost" onclick="document.getElementById('folderInput').click()">📁 Select folder</button>
+    </div>
+    <div id="mediaStatus" class="hint"></div>
+    <div class="callout" style="margin-top:12px">Android blocks any browser from opening WhatsApp's folders automatically — you must pick the files yourself here. Folder-select works on desktop Chrome and some Android builds; if it fails, use <b>Select files</b>.</div>
+  </div>
+
+  <div class="card">
+    <div class="step">Step 3 · AI</div>
+    <h2>🤖 AI connection</h2>
+    <p class="small" id="aiHomeStatus">✓ AI ready — powered by the Nisha Homes server.</p>
+    <button class="btn ghost sm" onclick="go('setup')">Choose model →</button>
+  </div>
+
+  <div class="card">
+    <div class="step">Step 4 · Go</div>
+    <h2>▶️ Process</h2>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn primary" id="startBtn" onclick="startProcessing()" disabled>▶ Start processing</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="pauseBtn" onclick="pauseProcessing()" disabled>⏸ Pause</button>
+      <button class="btn" id="resumeBtn" onclick="resumeProcessing()" disabled>⏵ Resume</button>
+    </div>
+    <div id="procMini" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h3>⚠️ What this browser tool honestly can't do</h3>
+    <p class="small" style="margin:6px 0 0">Auto-reading WhatsApp's private folders (Android forbids it), processing a whole 50 GB library in one pass on a phone (memory limits — work per group, in batches), and full server-grade video analysis (scene detection / transcription). Video keeps a thumbnail + reference and can be sent to a vision model, but not frame-by-frame processed. These need the native app — ask Bhuvnesh for the build spec.</p>
+  </div>
+</div>
+
+<!-- ============ DASHBOARD ============ -->
+<div class="view" id="v-dash">
+  <div class="card">
+    <h2>📊 Processing dashboard</h2>
+    <div id="dashPhase" class="small" style="margin-bottom:8px">Idle.</div>
+    <div class="bar"><i id="dashBar"></i></div>
+    <div class="small" id="dashPct">0%</div>
+  </div>
+  <div class="card">
+    <div class="stat-grid" id="dashStats"></div>
+  </div>
+  <div class="card">
+    <h3>Log</h3>
+    <div id="dashLog" class="tiny" style="max-height:240px;overflow:auto;font-family:ui-monospace,monospace"></div>
+  </div>
+  <button class="btn danger ghost" onclick="resetAll()">🗑 Clear all data & start over</button>
+</div>
+
+<!-- ============ INVENTORY ============ -->
+<div class="view" id="v-inv">
+  <div class="search">
+    <span class="mag">🔍</span>
+    <input type="text" id="invSearch" placeholder="Search location, BHK, dealer, price, phone…" oninput="renderInventory()">
+  </div>
+  <div class="filters" id="invFilters"></div>
+  <div id="invList"></div>
+</div>
+
+<!-- ============ NEEDS REVIEW ============ -->
+<div class="view" id="v-review">
+  <div class="card"><h2>🔎 Needs review</h2><p class="small">Uncertain media matches and low-confidence extractions. Confirm or reject — nothing is auto-attached below your threshold.</p></div>
+  <div id="reviewList"></div>
+</div>
+
+<!-- ============ DEALERS ============ -->
+<div class="view" id="v-dealers">
+  <div class="search">
+    <span class="mag">🔍</span>
+    <input type="text" id="dealerSearch" placeholder="Search dealer name or phone…" oninput="renderDealers()">
+  </div>
+  <div id="dealerList"></div>
+</div>
+
+<!-- ============ EXPORT ============ -->
+<div class="view" id="v-export">
+  <div class="card">
+    <h2>⬇️ Export inventory</h2>
+    <p class="small">Structured export of every property record with full source counts.</p>
+    <div class="row" style="margin-top:8px">
+      <button class="btn primary" onclick="exportCSV()">CSV</button>
+      <button class="btn blue" onclick="exportXLSX()">Excel (.xlsx)</button>
+      <button class="btn" onclick="exportJSON()">JSON</button>
+    </div>
+    <p class="hint">Media itself isn't exported (files stay on your phone). Each property lists photo/video/doc counts so you can find them.</p>
+  </div>
+  <div class="card">
+    <h3>Give the full app to Bhuvnesh</h3>
+    <p class="small">The native-app features (folder access, 50 GB, full video) are in the separate build spec I prepared for him.</p>
+  </div>
+</div>
+
+<!-- ============ SETUP ============ -->
+<div class="view" id="v-setup">
+  <div class="card">
+    <h2>⚙️ AI (server-powered)</h2>
+    <p class="small">AI runs through the Nisha Homes server using the account's own OpenRouter key — nothing to paste here.</p>
+    <label class="fld">Vision / text model</label>
+    <input type="text" id="orModel" placeholder="e.g. openai/gpt-4o-mini or google/gemini-2.0-flash">
+    <p class="hint">Any multimodal model on OpenRouter works. Cheaper models cost less per property; vision-capable models can read photos & brochures.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" onclick="saveKey()">💾 Save model</button>
+      <button class="btn ghost" onclick="testKey()">🔌 Test connection</button>
+    </div>
+    <div id="keyStatus" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h3>Correlation thresholds</h3>
+    <p class="small">How close in time a media file must be to a message to auto-attach.</p>
+    <label class="fld">Auto-attach window (minutes): <span id="winLbl"></span></label>
+    <input type="number" id="cfgWindow" min="1" max="240" value="15">
+    <label class="fld">Auto-attach confidence ≥ (%)</label>
+    <input type="number" id="cfgConf" min="40" max="99" value="75">
+    <label class="fld">Group gap — new property after silence (minutes)</label>
+    <input type="number" id="cfgGap" min="1" max="120" value="12">
+    <label class="fld">Date order in your chat export</label>
+    <select id="cfgDateOrder">
+      <option value="dmy">Day / Month / Year (India default)</option>
+      <option value="mdy">Month / Day / Year (US)</option>
+    </select>
+    <button class="btn primary" style="margin-top:12px" onclick="saveCfg()">💾 Save settings</button>
+  </div>
+
+  <div class="card">
+    <h3>Privacy</h3>
+    <p class="small"><b>Local:</b> chat, media files, the whole database, all thumbnails — stay in this browser. <b>Sent to AI:</b> only grouped message text and (optionally) matched images, when you press Process. Nothing uploads on its own.</p>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<!-- ============ NAV ============ -->
+<nav class="tabs">
+  <button class="tab active" data-v="home" onclick="go('home')"><span class="ic">🏠</span>Import</button>
+  <button class="tab" data-v="dash" onclick="go('dash')"><span class="ic">📊</span>Progress</button>
+  <button class="tab" data-v="inv" onclick="go('inv')"><span class="ic">🏢</span>Inventory</button>
+  <button class="tab" data-v="review" onclick="go('review')"><span class="ic">🔎</span><span id="revBadgeWrap"></span>Review</button>
+  <button class="tab" data-v="dealers" onclick="go('dealers')"><span class="ic">👤</span>Dealers</button>
+  <button class="tab" data-v="setup" onclick="go('setup')"><span class="ic">⚙️</span>Setup</button>
+</nav>
+
+<div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+<div class="modal" id="mediaModal"><div class="box media" id="mediaBox"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   Nisha Homes — WhatsApp Inventory Intelligence
+   Single-file, offline-first. No build step. IndexedDB storage.
+   ============================================================ */
+
+/* ---------- tiny helpers ---------- */
+const $=(s)=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function fmtSize(b){if(!b)return'0 B';const u=['B','KB','MB','GB'];let i=0;while(b>=1024&&i<3){b/=1024;i++;}return b.toFixed(b<10&&i>0?1:0)+' '+u[i];}
+function fmtDate(d){if(!d)return'';const x=new Date(d);return x.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})+' '+x.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});}
+function money(v){if(v==null||v==='')return'';const n=String(v);return n.match(/[₹cr lakh cr\.]/i)||/[a-z]/i.test(n)?n:'₹'+n;}
+
+/* ---------- state ---------- */
+let CFG={window:15,conf:75,gap:12,dateOrder:'dmy'};
+let CHAT={name:'',messages:[]};      // parsed messages
+let MEDIA=[];                         // indexed media (in-memory refs + meta)
+let PROPS=[];                         // extracted property records
+let DEALERS={};                       // dealerKey -> dealer
+let PROC={running:false,paused:false,phase:'idle',done:0,total:0,queue:[]};
+let currentFilter='ALL';
+
+/* ---------- IndexedDB ---------- */
+let db;
+function openDB(){return new Promise((res,rej)=>{
+  const r=indexedDB.open('nisha_inv',1);
+  r.onupgradeneeded=e=>{const d=e.target.result;
+    if(!d.objectStoreNames.contains('kv'))d.createObjectStore('kv');
+    if(!d.objectStoreNames.contains('media'))d.createObjectStore('media',{keyPath:'id'});
+    if(!d.objectStoreNames.contains('props'))d.createObjectStore('props',{keyPath:'id'});
+  };
+  r.onsuccess=e=>{db=e.target.result;res();};
+  r.onerror=e=>rej(e);
+});}
+function idbSet(store,val,key){return new Promise((res,rej)=>{const t=db.transaction(store,'readwrite');t.objectStore(store).put(val,key);t.oncomplete=res;t.onerror=e=>rej(e);});}
+function idbGet(store,key){return new Promise((res,rej)=>{const t=db.transaction(store,'readonly');const rq=t.objectStore(store).get(key);rq.onsuccess=()=>res(rq.result);rq.onerror=e=>rej(e);});}
+function idbAll(store){return new Promise((res,rej)=>{const t=db.transaction(store,'readonly');const rq=t.objectStore(store).getAll();rq.onsuccess=()=>res(rq.result||[]);rq.onerror=e=>rej(e);});}
+function idbClear(store){return new Promise((res,rej)=>{const t=db.transaction(store,'readwrite');t.objectStore(store).clear();t.oncomplete=res;t.onerror=e=>rej(e);});}
+
+/* ---------- boot ---------- */
+window.addEventListener('load',async()=>{
+  try{await openDB();}catch(e){toast('Storage unavailable — running in memory only');}
+  // config
+  const c=localStorage.getItem('nisha_cfg');if(c){try{CFG=Object.assign(CFG,JSON.parse(c));}catch(e){}}
+  $('#cfgWindow').value=CFG.window;$('#cfgConf').value=CFG.conf;$('#cfgGap').value=CFG.gap;$('#cfgDateOrder').value=CFG.dateOrder;
+  // key
+  const m=localStorage.getItem('nisha_or_model')||'';
+  if(m)$('#orModel').value=m;
+  updateAIStatus();
+  // restore data
+  try{
+    const savedProps=await idbAll('props');
+    const savedMedia=await idbAll('media');
+    const savedChat=await idbGet('kv','chat');
+    if(savedChat){CHAT=savedChat;$('#chatStatus').innerHTML='Restored: '+esc(CHAT.name)+' · '+CHAT.messages.length+' messages';markDone('#chatBtn');}
+    if(savedMedia&&savedMedia.length){MEDIA=savedMedia;$('#mediaStatus').innerHTML='Restored '+MEDIA.length+' media records (re-select files to view/analyse images).';}
+    if(savedProps&&savedProps.length){PROPS=savedProps;rebuildDealers();toast('Restored '+PROPS.length+' properties');}
+  }catch(e){}
+  refreshStartBtn();renderAll();updateNet();
+  setInterval(updateNet,8000);
+});
+function updateNet(){const b=$('#netBadge');if(navigator.onLine){b.className='net on';b.textContent='● ONLINE';}else{b.className='net off';b.textContent='● OFFLINE';}}
+window.addEventListener('online',updateNet);window.addEventListener('offline',updateNet);
+
+/* ---------- navigation ---------- */
+function go(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  $('#v-'+v).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
+  window.scrollTo(0,0);
+  if(v==='inv')renderInventory();
+  if(v==='review')renderReview();
+  if(v==='dealers')renderDealers();
+  if(v==='dash')renderDash();
+}
+function markDone(sel){const b=$(sel);if(b){b.classList.add('done');}}
+
+/* ============================================================
+   1. CHAT PARSER
+   ============================================================ */
+$('#chatInput').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $('#chatStatus').innerHTML='<span class="spin"></span> Reading…';
+  const text=await f.text();
+  const msgs=parseChat(text);
+  CHAT={name:f.name,messages:msgs};
+  try{await idbSet('kv',CHAT,'chat');}catch(e){}
+  const senders=new Set(msgs.filter(m=>m.sender).map(m=>m.sender)).size;
+  const withMedia=msgs.filter(m=>m.mediaOmitted).length;
+  $('#chatStatus').innerHTML=`✓ <b>${msgs.length}</b> messages · <b>${senders}</b> senders · <b>${withMedia}</b> media references`;
+  markDone('#chatBtn');refreshStartBtn();
+});
+
+function parseChat(text){
+  const lines=text.split(/\r?\n/);
+  // strip WhatsApp bidi/format marks
+  const clean=s=>s.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,'');
+  // Android:  18/09/2026, 21:34 - Sender: msg   |  9/18/26, 9:34 pm - Sender: msg
+  const reAndroid=/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([apAP]\.?[mM]\.?)?\s*[-\u2013]\s*(.*)$/;
+  // iOS: [18/09/2026, 21:34:12] Sender: msg
+  const reIOS=/^\[(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([apAP]\.?[mM]\.?)?\]\s*(.*)$/;
+  const out=[];let cur=null;let idx=0;
+  const media=/(<Media omitted>|image omitted|video omitted|audio omitted|document omitted|sticker omitted|GIF omitted|Contact card omitted|\u2039attached|\(file attached\))/i;
+
+  function buildTime(d,mo,y,h,mi,se,ap){
+    y=parseInt(y);if(y<100)y+=2000;
+    let day=parseInt(d),mon=parseInt(mo);
+    if(CFG.dateOrder==='mdy'){const t=day;day=mon;mon=t;}
+    // auto-correct impossible day/month
+    if(mon>12&&day<=12){const t=day;day=mon;mon=t;}
+    h=parseInt(h);mi=parseInt(mi);se=se?parseInt(se):0;
+    if(ap){const a=ap.toLowerCase().replace(/\./g,'');if(a==='pm'&&h<12)h+=12;if(a==='am'&&h===12)h=0;}
+    return new Date(y,mon-1,day,h,mi,se).getTime();
+  }
+  for(let raw of lines){
+    const line=clean(raw);
+    let m=reAndroid.exec(line)||reIOS.exec(line);
+    if(m){
+      if(cur)out.push(cur);
+      const [,d,mo,y,h,mi,se,ap,rest]=m;
+      const ts=buildTime(d,mo,y,h,mi,se,ap);
+      // "Sender: message"  vs system message (no sender)
+      let sender=null,body=rest;
+      const sm=rest.match(/^([^:]{1,60}?):\s([\s\S]*)$/);
+      if(sm && !/^https?$/i.test(sm[1])){sender=sm[1].trim();body=sm[2];}
+      cur={id:'m'+(idx++),ts,sender,text:body,raw:line,system:!sender,mediaOmitted:media.test(body)};
+    }else{
+      if(cur){cur.text+='\n'+line;cur.raw+='\n'+line;if(media.test(line))cur.mediaOmitted=true;}
+      // else: preamble junk, ignore
+    }
+  }
+  if(cur)out.push(cur);
+  return out.filter(m=>!isNaN(m.ts));
+}
+
+/* ============================================================
+   2. MEDIA INDEXING + HASHING + DEDUPE
+   ============================================================ */
+$('#mediaInput').addEventListener('change',e=>indexMedia(e.target.files));
+$('#folderInput').addEventListener('change',e=>indexMedia(e.target.files));
+
+async function sha256(buf){const h=await crypto.subtle.digest('SHA-256',buf);return[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+
+function mediaType(name,mime){
+  const ext=(name.split('.').pop()||'').toLowerCase();
+  if(/^(jpg|jpeg|png|webp|heic|heif|gif|bmp)$/.test(ext)||(mime||'').startsWith('image/'))return'image';
+  if(/^(mp4|mov|mkv|3gp|avi|webm)$/.test(ext)||(mime||'').startsWith('video/'))return'video';
+  if(/^(mp3|m4a|ogg|opus|aac|wav|amr)$/.test(ext)||(mime||'').startsWith('audio/'))return'audio';
+  if(ext==='pdf')return'pdf';
+  if(/^(doc|docx|xls|xlsx|ppt|pptx|txt|csv)$/.test(ext))return'document';
+  return'other';
+}
+// WhatsApp filename date: IMG-20260918-WA0032.jpg / VID_20260918_213412.mp4 / camera IMG_20260918_...
+function fileDate(name){
+  let m=name.match(/(20\d{2})(\d{2})(\d{2})[-_](?:WA(\d+)|(\d{2})(\d{2})(\d{2}))/);
+  if(m){const y=+m[1],mo=+m[2]-1,d=+m[3];
+    if(m[5]!=null)return{ts:new Date(y,mo,d,+m[5],+m[6],+m[7]).getTime(),seq:null,dateOnly:false};
+    return{ts:new Date(y,mo,d,0,0,0).getTime(),seq:m[4]?+m[4]:null,dateOnly:true};}
+  m=name.match(/(20\d{2})(\d{2})(\d{2})/);
+  if(m)return{ts:new Date(+m[1],+m[2]-1,+m[3]).getTime(),seq:null,dateOnly:true};
+  return null;
+}
+
+async function indexMedia(fileList){
+  const files=[...fileList];if(!files.length)return;
+  $('#mediaStatus').innerHTML='<span class="spin"></span> Indexing '+files.length+' files…';
+  const existing=new Set(MEDIA.map(m=>m.hash));
+  let added=0,dupes=0,skipped=0,i=0;
+  for(const f of files){
+    i++;
+    if(i%20===0)$('#mediaStatus').innerHTML=`<span class="spin"></span> Indexing ${i}/${files.length}…`;
+    const type=mediaType(f.name,f.type);
+    if(type==='other'){skipped++;continue;}
+    let hash;
+    try{
+      // hash only up to first 8MB for speed on large videos (enough to dedupe reliably alongside size)
+      const slice=f.size>8*1024*1024?f.slice(0,8*1024*1024):f;
+      hash=await sha256(await slice.arrayBuffer())+'_'+f.size;
+    }catch(err){skipped++;continue;}
+    const fd=fileDate(f.name);
+    const rec={
+      id:'md'+MEDIA.length+'_'+Math.random().toString(36).slice(2,7),
+      name:f.name,type,size:f.size,mime:f.type,
+      modified:f.lastModified,
+      nameTs:fd?fd.ts:null,seq:fd?fd.seq:null,
+      ts:(fd&&!fd.dateOnly)?fd.ts:f.lastModified,   // best timestamp
+      tsSource:(fd&&!fd.dateOnly)?'filename':'modified',
+      hash,file:f,dup:false,propId:null,conf:null
+    };
+    if(existing.has(hash)){rec.dup=true;dupes++;}
+    else{existing.add(hash);added++;}
+    // dimensions / duration (non-blocking best effort)
+    if(type==='image'){try{const d=await imgDims(f);rec.w=d.w;rec.h=d.h;}catch(e){}}
+    MEDIA.push(rec);
+  }
+  // persist meta (without file blob — blobs can't survive reload reliably at scale)
+  try{for(const r of MEDIA){const {file,...meta}=r;await idbSet('media',meta);}}catch(e){}
+  const uniq=MEDIA.filter(m=>!m.dup).length;
+  $('#mediaStatus').innerHTML=`✓ <b>${MEDIA.length}</b> indexed · <b>${uniq}</b> unique · <b>${dupes}</b> duplicates skipped${skipped?' · '+skipped+' unsupported':''}`;
+  markDone(document.querySelector('#v-home .row .btn'));
+  refreshStartBtn();
+}
+function imgDims(f){return new Promise((res,rej)=>{const u=URL.createObjectURL(f);const img=new Image();img.onload=()=>{res({w:img.naturalWidth,h:img.naturalHeight});URL.revokeObjectURL(u);};img.onerror=()=>{URL.revokeObjectURL(u);rej();};img.src=u;});}
+
+/* ============================================================
+   3. CORRELATION  (media <-> message, by timestamp)
+   ============================================================ */
+function correlate(){
+  const msgs=CHAT.messages;
+  const mediaMsgs=msgs.filter(m=>m.mediaOmitted);
+  const winMs=CFG.window*60000;
+  for(const md of MEDIA){
+    if(md.dup){md.propId=null;continue;}
+    // find nearest media-placeholder message in time; fall back to any message
+    let best=null,bestGap=Infinity;
+    const pool=mediaMsgs.length?mediaMsgs:msgs;
+    for(const m of pool){
+      const gap=Math.abs(m.ts-md.ts);
+      if(gap<bestGap){bestGap=gap;best=m;}
+    }
+    md.matchMsg=best?best.id:null;
+    md.matchGap=bestGap;
+    // confidence from proximity + timestamp source quality
+    let conf=0;
+    if(best){
+      const prox=Math.max(0,1-bestGap/winMs); // 1 at 0 gap, 0 at window edge
+      conf=Math.round((prox*100));
+      if(md.tsSource==='modified')conf=Math.round(conf*0.85); // mtime less trustworthy
+      if(bestGap>winMs)conf=Math.min(conf,55);
+    }
+    md.conf=conf;
+  }
+}
+
+/* ============================================================
+   4. PROPERTY GROUPING
+   ============================================================ */
+const PROP_HINT=/(bhk|\bsq\.?\s?(ft|feet|yard|yds|meter|mtr)\b|\bsqft\b|\bsqyd\b|\bcr\b|\blakh\b|\blac\b|\bcrore\b|demand|price|rent|resale|sector|floor|kothi|villa|plot|apartment|builder floor|furnished|for sale|available|carpet|super area|maintenance)/i;
+function groupProperties(){
+  const msgs=CHAT.messages.filter(m=>m.sender);
+  const gapMs=CFG.gap*60000;
+  const groups=[];let g=null;
+  for(const m of msgs){
+    if(g && g.sender===m.sender && (m.ts-g.lastTs)<=gapMs){
+      g.msgs.push(m);g.lastTs=m.ts;
+    }else{
+      if(g)groups.push(g);
+      g={sender:m.sender,startTs:m.ts,lastTs:m.ts,msgs:[m]};
+    }
+  }
+  if(g)groups.push(g);
+  // keep only groups that look like a property
+  return groups.filter(gr=>{
+    const t=gr.msgs.map(x=>x.text).join(' ');
+    return PROP_HINT.test(t) && t.replace(/\s/g,'').length>12;
+  });
+}
+
+/* ============================================================
+   5. OPENROUTER EXTRACTION
+   ============================================================ */
+function getModel(){return localStorage.getItem('nisha_or_model')||'openai/gpt-4o-mini';}
+
+async function callAI(messages,useVision,images){
+  const model=getModel();
+  const r=await fetch('/api/ai/wa-extract',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      system:EXTRACT_SYS,
+      text:messages,
+      images:(useVision&&images&&images.length)?images:[],
+      model
+    })
+  });
+  const j=await r.json();
+  if(!j.success)throw new Error(j.message||('AI request failed ('+r.status+')'));
+  const txt=j.text||'';
+  const jm=txt.match(/\{[\s\S]*\}/);
+  if(!jm)throw new Error('AI returned no JSON');
+  return JSON.parse(jm[0]);
+}
+
+const EXTRACT_SYS=`You are a real-estate data extractor for an Indian property consultancy.
+Read WhatsApp dealer messages (and images if given) about ONE property listing and return STRICT JSON only.
+Distinguish sources: "stated"=explicitly written by dealer; "detected"=read from an image/OCR; "inferred"=your reasonable interpretation; leave empty if unknown. NEVER invent phone numbers, RERA numbers, prices or areas.
+Return exactly this shape:
+{"is_property":true,"title":"short 4-6 word label","dealer_name":"","dealer_phone":"","property_type":"Apartment|Builder Floor|Villa|Kothi|Plot|Commercial|Farmhouse|Other","bhk":"","location":"","sector":"","project":"","city":"","area":"","area_unit":"sqft|sqyd|","price":"","price_type":"sale|rent|","furnishing":"","floor":"","facing":"","parking":"","amenities":[],"transaction":"sale|rent|lease|","summary":"1-2 sentence neutral summary","usp":"","field_sources":{"price":"stated|detected|inferred|unknown","area":"...","bhk":"...","location":"..."},"confidence":0-100,"tags":[]}
+If the messages are chit-chat / not a property, return {"is_property":false}.`;
+
+/* ============================================================
+   6. PROCESSING PIPELINE (resumable)
+   ============================================================ */
+function log(s){const d=$('#dashLog');if(d){d.innerHTML+=`<div>${new Date().toLocaleTimeString('en-IN')} · ${esc(s)}</div>`;d.scrollTop=d.scrollHeight;}}
+function refreshStartBtn(){
+  const ready=CHAT.messages.length>0 && MEDIA.length>0;
+  $('#startBtn').disabled=!ready||PROC.running;
+  $('#procMini').innerHTML=ready?'Ready to process.':'Need: '+[!CHAT.messages.length?'chat':'',!MEDIA.length?'media':''].filter(Boolean).join(' + ');
+}
+async function startProcessing(){
+  PROC.running=true;PROC.paused=false;PROC.done=0;
+  $('#startBtn').disabled=true;$('#pauseBtn').disabled=false;$('#resumeBtn').disabled=true;
+  go('dash');
+  $('#dashLog').innerHTML='';
+  log('Correlating '+MEDIA.length+' media to '+CHAT.messages.length+' messages…');
+  setPhase('Correlating media & messages',5);
+  correlate();
+  log('Grouping messages into properties…');
+  setPhase('Grouping properties',12);
+  const groups=groupProperties();
+  log('Found '+groups.length+' property candidates.');
+  // attach media to groups by time window
+  for(const gr of groups){
+    gr.media=MEDIA.filter(md=>!md.dup && md.ts>=gr.startTs-CFG.window*60000 && md.ts<=gr.lastTs+CFG.window*60000);
+  }
+  PROC.queue=groups;PROC.total=groups.length;
+  await runQueue();
+}
+async function runQueue(){
+  const groups=PROC.queue;
+  for(let i=PROC.done;i<groups.length;i++){
+    if(PROC.paused){log('Paused at '+i+'/'+groups.length);return;}
+    const gr=groups[i];
+    setPhase('AI extracting property '+(i+1)+' / '+groups.length,12+Math.round((i/groups.length)*80));
+    const text='WhatsApp messages from dealer "'+gr.sender+'":\n'+gr.msgs.map(m=>m.text).join('\n');
+    // pick up to 2 high-confidence images for vision
+    const imgs=gr.media.filter(m=>m.type==='image'&&m.conf>=CFG.conf).slice(0,2);
+    let imgUrls=[];
+    for(const im of imgs){try{imgUrls.push(await fileToDataURL(im.file,900));}catch(e){}}
+    let data;
+    try{
+      data=await callAI(text,imgUrls.length>0,imgUrls);
+    }catch(err){
+      log('⚠️ '+err.message);
+      // fallback: retry text-only once
+      try{data=await callAI(text,false,[]);}catch(e2){log('   skipped this candidate');PROC.done=i+1;continue;}
+    }
+    if(data&&data.is_property!==false){
+      const rec=buildRecord(data,gr);
+      PROPS.push(rec);
+      try{await idbSet('props',rec);}catch(e){}
+      log('✓ '+(rec.title||rec.location||'Property')+'  ['+rec.status+']');
+    }else{
+      log('· not a property, skipped');
+    }
+    PROC.done=i+1;
+    updateStats();
+    await new Promise(r=>setTimeout(r,120)); // gentle pacing
+  }
+  finishProcessing();
+}
+function buildRecord(data,gr){
+  const id='NH-WA-'+String(PROPS.length+1).padStart(5,'0');
+  const media=gr.media||[];
+  const hi=media.filter(m=>m.conf>=CFG.conf);
+  const lo=media.filter(m=>m.conf<CFG.conf&&m.conf>=40);
+  // attach
+  hi.forEach(m=>{m.propId=id;});
+  const conf=data.confidence||70;
+  let status='NEW';
+  if(conf<60||lo.length>0)status='NEEDS REVIEW';
+  const dphone=(data.dealer_phone||'').replace(/[^\d+]/g,'');
+  return {
+    id,createdTs:Date.now(),
+    title:data.title||data.location||'Property',
+    dealer_name:data.dealer_name||gr.sender,
+    dealer_phone:dphone,
+    property_type:data.property_type||'',
+    bhk:data.bhk||'',location:data.location||'',sector:data.sector||'',project:data.project||'',city:data.city||'',
+    area:data.area||'',area_unit:data.area_unit||'',price:data.price||'',price_type:data.price_type||'',
+    furnishing:data.furnishing||'',floor:data.floor||'',facing:data.facing||'',parking:data.parking||'',
+    amenities:data.amenities||[],transaction:data.transaction||'',summary:data.summary||'',usp:data.usp||'',
+    field_sources:data.field_sources||{},confidence:conf,tags:data.tags||[],
+    status,sourceGroup:CHAT.name,sourceSender:gr.sender,startTs:gr.startTs,
+    msgIds:gr.msgs.map(m=>m.id),
+    mediaIds:hi.map(m=>m.id),reviewMediaIds:lo.map(m=>m.id),
+    counts:{photos:hi.filter(m=>m.type==='image').length,videos:hi.filter(m=>m.type==='video').length,docs:hi.filter(m=>m.type==='pdf'||m.type==='document').length,audio:hi.filter(m=>m.type==='audio').length}
+  };
+}
+function fileToDataURL(f,maxW){return new Promise((res,rej)=>{
+  if(!f)return rej('no file');
+  if(f.type&&!f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);return;}
+  const u=URL.createObjectURL(f);const img=new Image();
+  img.onload=()=>{const sc=Math.min(1,maxW/img.naturalWidth);const c=document.createElement('canvas');c.width=img.naturalWidth*sc;c.height=img.naturalHeight*sc;c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.8));};
+  img.onerror=()=>{URL.revokeObjectURL(u);rej('img fail');};img.src=u;
+});}
+function setPhase(t,pct){PROC.phase=t;$('#dashPhase').textContent=t;$('#dashBar').style.width=pct+'%';$('#dashPct').textContent=pct+'%';}
+function updateStats(){renderDash();renderReviewBadge();}
+function finishProcessing(){
+  setPhase('Detecting duplicate properties',95);
+  detectDupes();
+  rebuildDealers();
+  setPhase('Done ✓ '+PROPS.length+' properties',100);
+  PROC.running=false;$('#pauseBtn').disabled=true;$('#resumeBtn').disabled=true;refreshStartBtn();
+  log('Finished. '+PROPS.length+' properties in inventory.');
+  toast('Done — '+PROPS.length+' properties');
+  renderAll();
+}
+function pauseProcessing(){PROC.paused=true;PROC.running=false;$('#pauseBtn').disabled=true;$('#resumeBtn').disabled=false;$('#startBtn').disabled=true;log('Pausing…');}
+function resumeProcessing(){if(!PROC.queue.length){toast('Nothing to resume');return;}PROC.paused=false;PROC.running=true;$('#pauseBtn').disabled=false;$('#resumeBtn').disabled=true;log('Resuming…');runQueue();}
+
+/* ---------- duplicate property detection ---------- */
+function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function priceNum(p){const m=String(p).replace(/,/g,'').match(/([\d.]+)\s*(cr|crore|lakh|lac|l|k)?/i);if(!m)return null;let n=parseFloat(m[1]);const u=(m[2]||'').toLowerCase();if(u.startsWith('cr'))n*=1e7;else if(u.startsWith('la')||u==='l')n*=1e5;else if(u==='k')n*=1e3;return n;}
+function similar(a,b){
+  let s=0,w=0;
+  const pair=(x,y,wt)=>{if(x&&y){w+=wt;if(norm(x)===norm(y))s+=wt;else if(norm(x)&&norm(y)&&(norm(x).includes(norm(y))||norm(y).includes(norm(x))))s+=wt*0.6;}};
+  pair(a.location,b.location,3);pair(a.sector,b.sector,2);pair(a.project,b.project,2);pair(a.bhk,b.bhk,2);pair(a.property_type,b.property_type,1);
+  const pa=priceNum(a.price),pb=priceNum(b.price);if(pa&&pb){w+=2;const diff=Math.abs(pa-pb)/Math.max(pa,pb);if(diff<0.05)s+=2;else if(diff<0.12)s+=1.2;}
+  const aa=parseFloat(a.area),ab=parseFloat(b.area);if(aa&&ab){w+=1;if(Math.abs(aa-ab)/Math.max(aa,ab)<0.05)s+=1;}
+  return w?Math.round(s/w*100):0;
+}
+function detectDupes(){
+  for(const p of PROPS){p.dupes=[];}
+  for(let i=0;i<PROPS.length;i++)for(let j=i+1;j<PROPS.length;j++){
+    const sim=similar(PROPS[i],PROPS[j]);
+    if(sim>=80){PROPS[i].dupes.push({id:PROPS[j].id,sim});PROPS[j].dupes.push({id:PROPS[i].id,sim});}
+  }
+  for(const p of PROPS){if(p.dupes.length&&p.status==='NEW')p.status='NEEDS REVIEW';}
+  PROPS.forEach(p=>{try{idbSet('props',p);}catch(e){}});
+}
+
+/* ---------- dealers ---------- */
+function rebuildDealers(){
+  DEALERS={};
+  for(const p of PROPS){
+    const key=norm(p.dealer_phone)||norm(p.dealer_name)||'unknown';
+    if(!DEALERS[key])DEALERS[key]={name:p.dealer_name||'Unknown',phone:p.dealer_phone||'',count:0,ids:[],lastTs:0,groups:new Set()};
+    const d=DEALERS[key];d.count++;d.ids.push(p.id);if(p.dealer_name&&!d.name)d.name=p.dealer_name;if(p.dealer_phone&&!d.phone)d.phone=p.dealer_phone;d.lastTs=Math.max(d.lastTs,p.startTs||0);d.groups.add(p.sourceGroup);
+  }
+}
+
+/* ============================================================
+   7. RENDERING
+   ============================================================ */
+function renderAll(){renderInventory();renderReview();renderDealers();renderDash();renderReviewBadge();updateAIStatus();}
+
+function renderDash(){
+  const st=$('#dashStats');if(!st)return;
+  const rev=PROPS.filter(p=>p.status==='NEEDS REVIEW').length;
+  const dup=PROPS.filter(p=>p.dupes&&p.dupes.length).length;
+  const uniqMedia=MEDIA.filter(m=>!m.dup).length;
+  const matched=MEDIA.filter(m=>m.propId).length;
+  const cards=[
+    ['Messages',CHAT.messages.length,''],['Media',MEDIA.length,'blue'],['Unique media',uniqMedia,''],['Matched',matched,'green'],
+    ['Properties',PROPS.length,'green'],['Needs review',rev,'amber'],['Possible dupes',dup,'red'],['Dealers',Object.keys(DEALERS).length,'']
+  ];
+  st.innerHTML=cards.map(([l,n,c])=>`<div class="stat ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+  if(!PROC.running&&PROC.phase==='idle')setPhase('Idle — import & press Start',0);
+}
+
+function renderReviewBadge(){
+  const rev=PROPS.filter(p=>p.status==='NEEDS REVIEW').length + MEDIA.filter(m=>!m.dup&&!m.propId&&m.conf>=40&&m.conf<CFG.conf).length;
+  const w=$('#revBadgeWrap');w.innerHTML=rev?`<span class="badge">${rev}</span>`:'';
+}
+
+function statusClass(s){return {'NEW':'new','VERIFIED':'verified','NEEDS REVIEW':'review','DUPLICATE':'dup','OUTDATED':'outdated','ARCHIVED':'archived'}[s]||'new';}
+
+function renderInventory(){
+  const box=$('#invList');if(!box)return;
+  const q=(($('#invSearch')||{}).value||'').toLowerCase().trim();
+  // filters
+  const fbox=$('#invFilters');
+  const cats=['ALL','NEW','NEEDS REVIEW','VERIFIED','DUPLICATE','ARCHIVED','With media','With video'];
+  fbox.innerHTML=cats.map(c=>`<div class="f ${currentFilter===c?'on':''}" onclick="setFilter('${c}')">${c}</div>`).join('');
+  let list=PROPS.slice().sort((a,b)=>b.createdTs-a.createdTs);
+  if(currentFilter==='With media')list=list.filter(p=>p.mediaIds.length);
+  else if(currentFilter==='With video')list=list.filter(p=>p.counts&&p.counts.videos);
+  else if(currentFilter!=='ALL')list=list.filter(p=>p.status===currentFilter);
+  if(q)list=list.filter(p=>JSON.stringify(p).toLowerCase().includes(q));
+  if(!list.length){box.innerHTML=`<div class="empty"><div class="big">🏢</div>${PROPS.length?'No properties match.':'No properties yet. Import a chat + media and press Start.'}</div>`;return;}
+  box.innerHTML=list.map(p=>{
+    const meta=[p.bhk,p.property_type,p.location||p.sector,p.area?p.area+' '+(p.area_unit||''):''].filter(Boolean).join(' · ');
+    const mc=p.counts||{};
+    const badges=[mc.photos?'📷'+mc.photos:'',mc.videos?'🎬'+mc.videos:'',mc.docs?'📄'+mc.docs:'',mc.audio?'🎙'+mc.audio:''].filter(Boolean).join('  ');
+    return `<div class="list-item" onclick="openProp('${p.id}')">
+      <div class="li-top"><div class="li-title">${esc(p.title)}</div><div class="li-price">${esc(money(p.price))}</div></div>
+      <div class="li-meta">${esc(meta)}</div>
+      <div class="li-foot">
+        <span class="chip ${statusClass(p.status)}">${p.status}</span>
+        <span class="mini">👤 ${esc(p.dealer_name||'—')}</span>
+        ${badges?`<span class="mini">${badges}</span>`:''}
+        ${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} dup?</span>`:''}
+        <span class="mini" style="margin-left:auto">${p.confidence}%</span>
+      </div></div>`;
+  }).join('');
+}
+function setFilter(c){currentFilter=c;renderInventory();}
+
+function openProp(id){
+  const p=PROPS.find(x=>x.id===id);if(!p)return;
+  const src=(f)=>{const s=p.field_sources&&p.field_sources[f];return s?`<span class="src ${s}">${s}</span>`:'';};
+  const fields=[
+    ['Type',p.property_type],['BHK',p.bhk],['Location',[p.location,p.sector,p.project,p.city].filter(Boolean).join(', ')],
+    ['Area',p.area?p.area+' '+(p.area_unit||''):''],['Price',money(p.price),src('price')],['Deal',p.transaction||p.price_type],
+    ['Furnishing',p.furnishing],['Floor',p.floor],['Facing',p.facing],['Parking',p.parking]
+  ];
+  const msgs=CHAT.messages.filter(m=>p.msgIds.includes(m.id));
+  const media=MEDIA.filter(m=>p.mediaIds.includes(m.id));
+  const revMedia=MEDIA.filter(m=>p.reviewMediaIds&&p.reviewMediaIds.includes(m.id));
+  const dupes=(p.dupes||[]).map(d=>{const dp=PROPS.find(x=>x.id===d.id);return dp?`<div class="list-item" onclick="openProp('${dp.id}')"><div class="li-top"><div class="li-title">${esc(dp.title)}</div><div class="li-price">${esc(money(dp.price))}</div></div><div class="li-meta">${esc([dp.bhk,dp.location].filter(Boolean).join(' · '))} · <b>${d.sim}% similar</b></div></div>`:'';}).join('');
+  const box=$('#modalBox');
+  box.innerHTML=`<span class="x" onclick="closeModal()">✕</span>
+    <div class="tiny">${p.id}</div>
+    <h2>${esc(p.title)}</h2>
+    <div style="margin:4px 0 10px">
+      <span class="chip ${statusClass(p.status)}">${p.status}</span>
+      <span class="chip">AI ${p.confidence}%</span>
+      ${(p.tags||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join('')}
+    </div>
+    ${p.summary?`<p class="small">${esc(p.summary)}</p>`:''}
+    ${p.usp?`<div class="callout ok"><b>USP:</b> ${esc(p.usp)}</div>`:''}
+
+    <h3 style="margin-top:14px">Dealer</h3>
+    <div class="field"><span class="k">Name</span><span class="v">${esc(p.dealer_name||'—')}</span></div>
+    <div class="field"><span class="k">Phone</span><span class="v">${p.dealer_phone?`<a href="tel:${esc(p.dealer_phone)}">${esc(p.dealer_phone)}</a>`:'—'}</span></div>
+    <div class="field"><span class="k">Source group</span><span class="v">${esc(p.sourceGroup||'—')}</span></div>
+
+    <h3 style="margin-top:14px">Property data</h3>
+    ${fields.filter(f=>f[1]).map(f=>`<div class="field"><span class="k">${f[0]}</span><span class="v">${esc(f[1])} ${f[2]||''}</span></div>`).join('')}
+    ${(p.amenities&&p.amenities.length)?`<div style="margin-top:8px">${p.amenities.map(a=>`<span class="chip">${esc(a)}</span>`).join('')}</div>`:''}
+
+    ${media.length?`<h3 style="margin-top:14px">Media (${media.length})</h3><div class="gal">${media.map(m=>mediaCell(m)).join('')}</div>`:''}
+    ${revMedia.length?`<h3 style="margin-top:14px">Possible media — needs review</h3><div class="gal">${revMedia.map(m=>mediaCell(m,p.id)).join('')}</div>`:''}
+    ${(media.length===0&&MEDIA.length>0)?`<p class="tiny" style="margin-top:10px">No media auto-matched. Re-open with files selected to view images, or lower the confidence threshold in Setup.</p>`:''}
+
+    ${dupes?`<h3 style="margin-top:14px">Possible duplicates</h3>${dupes}`:''}
+
+    <h3 style="margin-top:14px">Original WhatsApp messages (${msgs.length})</h3>
+    ${msgs.map(m=>`<div class="msg"><span class="when">${fmtDate(m.ts)}</span><div class="who">${esc(m.sender||'—')}</div>${esc(m.text)}</div>`).join('')}
+
+    <div class="divider"></div>
+    <h3>Actions</h3>
+    <div class="row">
+      <button class="btn sm done" onclick="setStatus('${p.id}','VERIFIED')">✓ Verify</button>
+      <button class="btn sm" onclick="setStatus('${p.id}','ARCHIVED')">🗄 Archive</button>
+      <button class="btn sm danger" onclick="setStatus('${p.id}','DUPLICATE')">Mark duplicate</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn sm ghost" onclick="editProp('${p.id}')">✎ Edit fields</button>
+      <button class="btn sm danger ghost" onclick="deleteProp('${p.id}')">Delete</button>
+    </div>`;
+  $('#modal').classList.add('open');
+}
+function mediaCell(m,reviewForProp){
+  const t=m.type;
+  let inner='';
+  if(m.file&&t==='image'){const u=URL.createObjectURL(m.file);inner=`<img src="${u}" loading="lazy">`;}
+  else if(m.file&&t==='video'){const u=URL.createObjectURL(m.file);inner=`<video src="${u}" muted></video>`;}
+  else{inner=`<div class="doc">${t==='pdf'?'📄 PDF':t==='audio'?'🎙 Audio':t==='video'?'🎬 Video':t==='document'?'📄 Doc':'📎'}<br><span class="tiny">${esc(m.name.slice(0,22))}</span></div>`;}
+  const rev=reviewForProp?`<div style="position:absolute;bottom:0;left:0;right:0;display:flex"><button class="btn sm" style="border-radius:0;flex:1;padding:5px;font-size:11px" onclick="event.stopPropagation();confirmMedia('${m.id}','${reviewForProp}')">✓</button><button class="btn sm danger" style="border-radius:0;flex:1;padding:5px;font-size:11px" onclick="event.stopPropagation();rejectMedia('${m.id}','${reviewForProp}')">✕</button></div>`:'';
+  return `<div class="m" onclick="viewMedia('${m.id}')"><span class="type">${m.conf!=null?m.conf+'%':t}</span>${inner}${rev}</div>`;
+}
+function viewMedia(id){
+  const m=MEDIA.find(x=>x.id===id);if(!m||!m.file){toast('Re-select files to view this media');return;}
+  const b=$('#mediaBox');const u=URL.createObjectURL(m.file);
+  if(m.type==='image')b.innerHTML=`<span class="x" style="color:#fff;padding:8px" onclick="closeMedia()">✕</span><img src="${u}">`;
+  else if(m.type==='video')b.innerHTML=`<span class="x" style="color:#fff;padding:8px" onclick="closeMedia()">✕</span><video src="${u}" controls autoplay></video>`;
+  else if(m.type==='audio')b.innerHTML=`<div style="padding:24px;background:var(--panel)"><span class="x" onclick="closeMedia()">✕</span><h3>${esc(m.name)}</h3><audio src="${u}" controls autoplay style="width:100%"></audio></div>`;
+  else{const a=document.createElement('a');a.href=u;a.download=m.name;a.click();return;}
+  $('#mediaModal').classList.add('open');
+}
+function closeMedia(){$('#mediaModal').classList.remove('open');}
+function closeModal(){$('#modal').classList.remove('open');}
+
+function confirmMedia(mid,pid){const m=MEDIA.find(x=>x.id===mid),p=PROPS.find(x=>x.id===pid);if(!m||!p)return;m.propId=pid;m.conf=100;p.mediaIds.push(mid);p.reviewMediaIds=p.reviewMediaIds.filter(x=>x!==mid);recountMedia(p);idbSet('props',p);openProp(pid);renderReviewBadge();toast('Attached');}
+function rejectMedia(mid,pid){const p=PROPS.find(x=>x.id===pid);if(!p)return;p.reviewMediaIds=p.reviewMediaIds.filter(x=>x!==mid);idbSet('props',p);openProp(pid);renderReviewBadge();}
+function recountMedia(p){const media=MEDIA.filter(m=>p.mediaIds.includes(m.id));p.counts={photos:media.filter(m=>m.type==='image').length,videos:media.filter(m=>m.type==='video').length,docs:media.filter(m=>m.type==='pdf'||m.type==='document').length,audio:media.filter(m=>m.type==='audio').length};}
+
+function setStatus(id,s){const p=PROPS.find(x=>x.id===id);if(!p)return;p.status=s;idbSet('props',p);toast('Status: '+s);openProp(id);renderInventory();renderReviewBadge();}
+function deleteProp(id){if(!confirm('Delete this property record? (Media files on your phone are untouched.)'))return;PROPS=PROPS.filter(p=>p.id!==id);try{const t=db.transaction('props','readwrite');t.objectStore('props').delete(id);}catch(e){}closeModal();rebuildDealers();renderAll();toast('Deleted');}
+function editProp(id){
+  const p=PROPS.find(x=>x.id===id);if(!p)return;
+  const flds=['title','dealer_name','dealer_phone','property_type','bhk','location','sector','project','city','area','area_unit','price','furnishing','floor','facing','parking'];
+  $('#modalBox').innerHTML=`<span class="x" onclick="openProp('${id}')">✕</span><h2>Edit ${p.id}</h2>`+
+    flds.map(f=>`<label class="fld">${f.replace(/_/g,' ')}</label><input type="text" id="ed_${f}" value="${esc(p[f]||'')}">`).join('')+
+    `<label class="fld">Summary</label><textarea id="ed_summary">${esc(p.summary||'')}</textarea>
+     <button class="btn primary" style="margin-top:12px" onclick="saveEdit('${id}')">💾 Save</button>`;
+}
+function saveEdit(id){
+  const p=PROPS.find(x=>x.id===id);if(!p)return;
+  ['title','dealer_name','dealer_phone','property_type','bhk','location','sector','project','city','area','area_unit','price','furnishing','floor','facing','parking','summary'].forEach(f=>{const e=$('#ed_'+f);if(e)p[f]=e.value;});
+  idbSet('props',p);rebuildDealers();openProp(id);renderInventory();toast('Saved');
+}
+
+/* ---------- review view ---------- */
+function renderReview(){
+  const box=$('#reviewList');if(!box)return;
+  const props=PROPS.filter(p=>p.status==='NEEDS REVIEW');
+  const orphanMedia=MEDIA.filter(m=>!m.dup&&!m.propId&&m.conf>=40&&m.conf<CFG.conf);
+  let html='';
+  if(props.length){html+='<div class="card"><h3>Properties needing review ('+props.length+')</h3></div>';
+    html+=props.map(p=>`<div class="list-item" onclick="openProp('${p.id}')">
+      <div class="li-top"><div class="li-title">${esc(p.title)}</div><div class="li-price">${esc(money(p.price))}</div></div>
+      <div class="li-meta">${esc([p.bhk,p.location].filter(Boolean).join(' · '))}</div>
+      <div class="li-foot"><span class="chip review">${p.confidence}% confidence</span>${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} possible dup</span>`:''}${p.reviewMediaIds&&p.reviewMediaIds.length?`<span class="chip">${p.reviewMediaIds.length} media?</span>`:''}</div></div>`).join('');
+  }
+  if(orphanMedia.length){
+    html+='<div class="card" style="margin-top:14px"><h3>Unmatched media ('+orphanMedia.length+')</h3><p class="small">Below your auto-attach threshold. Open a property and use its review section to attach, or lower the threshold in Setup.</p></div>';
+  }
+  box.innerHTML=html||`<div class="empty"><div class="big">✅</div>Nothing needs review.</div>`;
+}
+
+/* ---------- dealers ---------- */
+function renderDealers(){
+  const box=$('#dealerList');if(!box)return;
+  const q=(($('#dealerSearch')||{}).value||'').toLowerCase().trim();
+  let list=Object.values(DEALERS).sort((a,b)=>b.count-a.count);
+  if(q)list=list.filter(d=>(d.name+' '+d.phone).toLowerCase().includes(q));
+  if(!list.length){box.innerHTML=`<div class="empty"><div class="big">👤</div>No dealers yet.</div>`;return;}
+  box.innerHTML=list.map(d=>`<div class="list-item" onclick="openDealer('${esc(d.phone||d.name).replace(/'/g,'')}')">
+    <div class="li-top"><div class="li-title">${esc(d.name)}</div><span class="chip">${d.count} props</span></div>
+    <div class="li-meta">${d.phone?`📞 ${esc(d.phone)}`:'no number'} · last ${d.lastTs?fmtDate(d.lastTs):'—'}</div>
+  </div>`).join('');
+}
+function openDealer(key){
+  const d=Object.values(DEALERS).find(x=>(x.phone||x.name)===key);if(!d)return;
+  const props=PROPS.filter(p=>d.ids.includes(p.id));
+  $('#modalBox').innerHTML=`<span class="x" onclick="closeModal()">✕</span>
+    <h2>${esc(d.name)}</h2>
+    <div class="field"><span class="k">Phone</span><span class="v">${d.phone?`<a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>`:'—'}</span></div>
+    <div class="field"><span class="k">Properties</span><span class="v">${d.count}</span></div>
+    <div class="field"><span class="k">Last shared</span><span class="v">${d.lastTs?fmtDate(d.lastTs):'—'}</span></div>
+    <h3 style="margin-top:14px">Their properties</h3>
+    ${props.map(p=>`<div class="list-item" onclick="openProp('${p.id}')"><div class="li-top"><div class="li-title">${esc(p.title)}</div><div class="li-price">${esc(money(p.price))}</div></div><div class="li-meta">${esc([p.bhk,p.location].filter(Boolean).join(' · '))}</div></div>`).join('')}`;
+  $('#modal').classList.add('open');
+}
+
+/* ============================================================
+   8. SETUP / CONFIG
+   ============================================================ */
+function saveKey(){
+  const m=$('#orModel').value.trim();
+  if(m)localStorage.setItem('nisha_or_model',m);
+  $('#keyStatus').innerHTML='✓ Model saved.';
+  updateAIStatus();refreshStartBtn();toast('AI settings saved');
+}
+async function testKey(){
+  $('#keyStatus').innerHTML='<span class="spin"></span> Testing…';
+  try{
+    const r=await fetch('/api/ai/wa-extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system:'Reply with the single word OK, nothing else.',text:'ping',images:[],model:getModel()})});
+    const j=await r.json();
+    if(j.success){$('#keyStatus').innerHTML='✓ Connection OK — model '+esc(getModel())+' responded.';}
+    else{$('#keyStatus').innerHTML='✗ '+esc(j.message||('HTTP '+r.status));}
+  }catch(e){$('#keyStatus').innerHTML='✗ '+esc(e.message);}
+}
+function updateAIStatus(){
+  $('#aiHomeStatus').innerHTML=`✓ Connected · model <b>${esc(getModel())}</b> (server key)`;
+}
+function saveCfg(){
+  CFG.window=+$('#cfgWindow').value||15;CFG.conf=+$('#cfgConf').value||75;CFG.gap=+$('#cfgGap').value||12;CFG.dateOrder=$('#cfgDateOrder').value;
+  localStorage.setItem('nisha_cfg',JSON.stringify(CFG));toast('Settings saved');refreshStartBtn();
+}
+
+/* ============================================================
+   9. EXPORT
+   ============================================================ */
+function exportRows(){
+  return PROPS.map(p=>({
+    'Property ID':p.id,'Title':p.title,'Dealer':p.dealer_name,'Phone':p.dealer_phone,
+    'Type':p.property_type,'BHK':p.bhk,'Location':p.location,'Sector':p.sector,'Project':p.project,'City':p.city,
+    'Area':p.area,'Unit':p.area_unit,'Price':p.price,'Deal':p.transaction||p.price_type,
+    'Furnishing':p.furnishing,'Floor':p.floor,'Facing':p.facing,'Parking':p.parking,
+    'Amenities':(p.amenities||[]).join('; '),'Tags':(p.tags||[]).join('; '),
+    'Status':p.status,'Confidence':p.confidence,'Source Group':p.sourceGroup,
+    'Source Date':p.startTs?new Date(p.startTs).toLocaleString('en-IN'):'',
+    'Photos':p.counts?p.counts.photos:0,'Videos':p.counts?p.counts.videos:0,'Docs':p.counts?p.counts.docs:0,'Audio':p.counts?p.counts.audio:0,
+    'Possible Dupes':p.dupes?p.dupes.length:0,'Summary':p.summary
+  }));
+}
+function download(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+function exportCSV(){
+  const rows=exportRows();if(!rows.length){toast('Nothing to export');return;}
+  const cols=Object.keys(rows[0]);
+  const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>{let v=r[c]==null?'':String(r[c]);if(/[",\n]/.test(v))v='"'+v.replace(/"/g,'""')+'"';return v;}).join(','))).join('\n');
+  download('nisha-inventory.csv',new Blob(['\ufeff'+csv],{type:'text/csv'}));toast('CSV exported');
+}
+function exportJSON(){download('nisha-inventory.json',new Blob([JSON.stringify(PROPS,null,2)],{type:'application/json'}));toast('JSON exported');}
+function exportXLSX(){
+  if(typeof XLSX==='undefined'){
+    const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=()=>doXLSX();s.onerror=()=>{toast('Excel library blocked — using CSV instead');exportCSV();};
+    document.head.appendChild(s);
+  }else doXLSX();
+}
+function doXLSX(){
+  const rows=exportRows();if(!rows.length){toast('Nothing to export');return;}
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Inventory');
+  const dealerRows=Object.values(DEALERS).map(d=>({Name:d.name,Phone:d.phone,Properties:d.count,'Last Seen':d.lastTs?new Date(d.lastTs).toLocaleString('en-IN'):''}));
+  if(dealerRows.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(dealerRows),'Dealers');
+  XLSX.writeFile(wb,'nisha-inventory.xlsx');toast('Excel exported');
+}
+
+/* ============================================================
+   10. RESET
+   ============================================================ */
+async function resetAll(){
+  if(!confirm('Clear the chat, media index and all extracted properties from this browser? Your original files on the phone are NOT touched.'))return;
+  try{await idbClear('props');await idbClear('media');await idbClear('kv');}catch(e){}
+  CHAT={name:'',messages:[]};MEDIA=[];PROPS=[];DEALERS={};PROC={running:false,paused:false,phase:'idle',done:0,total:0,queue:[]};
+  $('#chatStatus').innerHTML='';$('#mediaStatus').innerHTML='';$('#chatBtn').classList.remove('done');
+  renderAll();refreshStartBtn();toast('Cleared');go('home');
+}
+</script>
+</body>
+</html>
