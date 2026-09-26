@@ -116,6 +116,11 @@ db = client[DB_NAME]
 dai_collection = db["DAI"]
 # CHANGED: was db["project"] - now uses "projects" per the Inventory feature
 projects_collection = db["projects"]
+# NEW: Central Daily Activity Record (Caller Activity Tracking Module).
+# Every tracked activity (Calling, WhatsApp, Square Yards Listing/Claim,
+# Nisha Homes Portal Listing, Manual CRM Lead Addition) funnels into this
+# one collection via log_activity() below.
+activity_collection = db["activityLog"]
 
 # -----------------------------------------------------------------
 # DIAGNOSTIC: prints, on startup, which Mongo DB this process is
@@ -180,6 +185,10 @@ def ensure_indexes():
 
         db["DAI"].create_index("leadId")
 
+        activity_collection.create_index([("caller_number", 1), ("start_time", 1)])
+        activity_collection.create_index("activity_type")
+        activity_collection.create_index("date_only")
+
         print("[startup] Indexes ensured.")
     except Exception as idx_err:
         print(f"[startup] Index creation warning (non-fatal): {idx_err}")
@@ -227,6 +236,46 @@ def format_ist(dt):
         return "-"
     ist = dt + timedelta(hours=5, minutes=30)
     return ist.strftime("%I:%M %p . %d/%m/%Y")
+
+
+def log_activity(activity_type, source_platform, caller_number=None, caller_name=None,
+                  customer_id=None, customer_name=None, mobile=None,
+                  property_id=None, property_name=None, lead_id=None,
+                  start_time=None, end_time=None, duration_seconds=None,
+                  status=None, extra=None):
+    """
+    Central Daily Activity Record writer — see the Caller Activity
+    Tracking Module brief. activity_type is one of: CALLING | WHATSAPP |
+    SQUARE_YARDS_LISTING | NISHA_HOMES_LISTING | SQUARE_YARDS_LEAD_CLAIM | CRM.
+    Never raises — a tracking failure should never break the calling request.
+    """
+    now = datetime.utcnow()
+    st = start_time or now
+    doc = {
+        "activity_id": secrets.token_hex(10),
+        "caller_number": caller_number,
+        "caller_name": caller_name or "Unknown",
+        "activity_type": activity_type,
+        "source_platform": source_platform,
+        "customer_id": customer_id,
+        "customer_name": customer_name,
+        "mobile": mobile,
+        "property_id": property_id,
+        "property_name": property_name,
+        "lead_id": lead_id,
+        "start_time": st,
+        "end_time": end_time,
+        "duration_seconds": duration_seconds,
+        "status": status,
+        "extra": extra or {},
+        "date_only": st.strftime("%Y-%m-%d"),
+        "created_at": now,
+        "updated_at": now
+    }
+    try:
+        activity_collection.insert_one(doc)
+    except Exception as e:
+        print(f"[activity] log_activity failed ({activity_type}): {e}")
 
 def get_collection_data(collection_name, projection=None):
     """PERF: optional projection param — pass only the fields you need to
@@ -2446,6 +2495,18 @@ def call_attempt():
             "DateOnly": today_str
         })
 
+        # NEW: Activity Tracker — bare "Call" button press, no outcome yet
+        log_activity(
+            activity_type="CALLING",
+            source_platform="Calling System",
+            caller_number=session.get("employee_number"),
+            caller_name=employee_name,
+            mobile=number,
+            customer_name=data.get("name", ""),
+            start_time=now,
+            status="attempted"
+        )
+
         updated_doc = end_collection.find_one({"Number": number})
 
         return jsonify({
@@ -2540,6 +2601,22 @@ def add_call_log():
         }
 
         call_logs_collection.insert_one(log_entry)
+
+        # NEW: Activity Tracker — connected/not-connected derived from the
+        # same LOST_CALL_STATUSES set the dashboard's "Lost" KPI already uses.
+        call_status_val = data.get("callStatus", "")
+        connected_status = "not_connected" if call_status_val in LOST_CALL_STATUSES else "connected"
+        log_activity(
+            activity_type="CALLING",
+            source_platform="Calling System",
+            caller_number=session.get("employee_number"),
+            caller_name=employee_name,
+            mobile=number,
+            customer_name=data.get("name", ""),
+            start_time=now,
+            status=connected_status,
+            extra={"callStatus": call_status_val, "interestLevel": data.get("interestLevel", "")}
+        )
 
         lead_type = data.get("leadType")
         collection_name = COLLECTION_MAP.get(lead_type)
@@ -3835,6 +3912,12 @@ def add_lead():
         # indexed range query instead of falling back to Python parsing.
         data.pop("DateObj", None)  # never let incoming payload override it
 
+        # NEW: check BEFORE the upsert whether this phone number already
+        # exists — this is the "mobile number is the primary duplicate
+        # check" rule from the Activity Tracker brief. A duplicate is
+        # logged as a duplicate attempt/update, never counted as new.
+        existing_lead_doc = collection.find_one({"Phone Number": phone_number})
+
         # 4. Upsert (update if exists, insert if not)
         result = collection.update_one(
             {"Phone Number": phone_number},
@@ -3860,6 +3943,19 @@ def add_lead():
         # existing phone number) — auto-assign via Round Robin if enabled.
         if result.upserted_id:
             auto_assign_round_robin(collection_name, result.upserted_id, phone_number, name)
+
+        # NEW: Activity Tracker — Manual CRM Lead Addition
+        log_activity(
+            activity_type="CRM",
+            source_platform="Nisha Homes CRM",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name") or "System/API",
+            customer_name=name,
+            mobile=phone_number,
+            lead_id=str(result.upserted_id) if result.upserted_id else (str(existing_lead_doc["_id"]) if existing_lead_doc else None),
+            status="new" if not existing_lead_doc else "duplicate",
+            extra={"leadType": data.get("LeadType", ""), "collection": collection_name}
+        )
 
         return jsonify({
             "success": True,
@@ -4961,6 +5057,18 @@ def upload_inventory():
         embed_and_attach(inventory_data)
         result = projects_collection.insert_one(inventory_data)
         invalidate_cache("inventory_dashboard_stats")
+
+        # NEW: Activity Tracker — Nisha Homes Portal Listing
+        log_activity(
+            activity_type="NISHA_HOMES_LISTING",
+            source_platform="Nisha Homes Portal",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name"),
+            property_id=str(result.inserted_id),
+            property_name=inventory_data.get("name", ""),
+            status="new"
+        )
+
         return jsonify({
             "status": "success",
             "id": str(result.inserted_id),
@@ -5638,6 +5746,18 @@ def upload_project_v2():
         embed_and_attach(project_data)
         result = projects_collection.insert_one(project_data)
         invalidate_cache("inventory_dashboard_stats")
+
+        # NEW: Activity Tracker — Nisha Homes Portal Listing
+        log_activity(
+            activity_type="NISHA_HOMES_LISTING",
+            source_platform="Nisha Homes Portal",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name"),
+            property_id=str(result.inserted_id),
+            property_name=project_data.get("name", ""),
+            status="new"
+        )
+
         return jsonify({
             "status": "success",
             "id": str(result.inserted_id),
@@ -8492,6 +8612,17 @@ def inbox_send():
         send_whatsapp_text(phone, message)
         save_chat_message(lead_id, phone, "agent", message)
 
+        # NEW: Activity Tracker — WhatsApp Engagement (Inbox reply)
+        log_activity(
+            activity_type="WHATSAPP",
+            source_platform="WhatsApp API / Export",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name"),
+            mobile=phone,
+            lead_id=lead_id,
+            status="sent"
+        )
+
         return jsonify({"success": True}), 200
 
     except requests.exceptions.HTTPError as e:
@@ -8798,6 +8929,22 @@ def team_webhook_receiver(token):
                 )
             except Exception as msg_err:
                 print(f"[team-webhook] failed to store message for token={token}: {msg_err}")
+
+            # NEW: Activity Tracker — only the employee's OWN outgoing
+            # messages count as their WhatsApp Engagement activity;
+            # inbound customer messages aren't a "caller" action.
+            if direction == "out":
+                emp_doc = db["teamAssign"].find_one({"Employee number": wh.get("employeeNumber")})
+                log_activity(
+                    activity_type="WHATSAPP",
+                    source_platform="WhatsApp API / Export",
+                    caller_number=wh.get("employeeNumber"),
+                    caller_name=emp_doc.get("Employee name") if emp_doc else wh.get("employeeName"),
+                    mobile=number,
+                    customer_name=display_name,
+                    start_time=msg_dt,
+                    status="sent"
+                )
  
     except Exception as e:
         import traceback
@@ -9202,6 +9349,276 @@ def get_assigned_leads_for_employee(number):
 
     out.sort(key=lambda x: x.get("assignedAt") or "", reverse=True)
     return jsonify({"success": True, "count": len(out), "data": out}), 200
+
+
+# =====================================================================
+# ACTIVITY TRACKER — page, summary/list APIs, manual Square Yards entry,
+# and the "publish extracted property into real inventory" endpoint used
+# by the WhatsApp Inventory Intelligence tool.
+# =====================================================================
+ACTIVITY_TYPES = [
+    "CALLING", "WHATSAPP", "SQUARE_YARDS_LISTING",
+    "NISHA_HOMES_LISTING", "SQUARE_YARDS_LEAD_CLAIM", "CRM"
+]
+
+
+def get_activity_period_range(period):
+    now = datetime.utcnow()
+    if period == "today":
+        return datetime(now.year, now.month, now.day), now
+    if period == "this_week":
+        start = now - timedelta(days=now.weekday())
+        return datetime(start.year, start.month, start.day), now
+    if period == "this_month":
+        return datetime(now.year, now.month, 1), now
+    if period == "last_month":
+        first = datetime(now.year, now.month, 1)
+        last_month_end = first - timedelta(seconds=1)
+        return datetime(last_month_end.year, last_month_end.month, 1), last_month_end
+    return None, None  # "lifetime"
+
+
+@app.route("/activity-tracker")
+def activity_tracker_page():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return redirect("/")
+    return render_template(
+        "activity_tracker.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
+    )
+
+
+@app.route("/api/activity/callers", methods=["GET"])
+def activity_callers():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    members = list(db["teamAssign"].find(
+        {"roll": {"$in": ["admin", "emp"]}},
+        {"Employee name": 1, "Employee number": 1}
+    ).sort("Employee name", 1))
+    return jsonify({"success": True, "data": [
+        {"name": m.get("Employee name", "Unknown"), "number": m.get("Employee number")}
+        for m in members if m.get("Employee number") is not None
+    ]}), 200
+
+
+@app.route("/api/activity/summary", methods=["GET"])
+def activity_summary():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    period = request.args.get("period", "today")
+    raw_number = request.args.get("number")
+    start, end = get_activity_period_range(period)
+
+    query = {}
+    if start is not None:
+        query["start_time"] = {"$gte": start, "$lte": end}
+    if raw_number:
+        try:
+            query["caller_number"] = int(raw_number)
+        except ValueError:
+            query["caller_number"] = raw_number
+
+    try:
+        pipeline = [
+            {"$match": query},
+            {"$group": {
+                "_id": "$activity_type",
+                "count": {"$sum": 1},
+                "totalDuration": {"$sum": {"$ifNull": ["$duration_seconds", 0]}},
+                "connected": {"$sum": {"$cond": [{"$eq": ["$status", "connected"]}, 1, 0]}},
+                "notConnected": {"$sum": {"$cond": [{"$eq": ["$status", "not_connected"]}, 1, 0]}},
+                "newCount": {"$sum": {"$cond": [{"$eq": ["$status", "new"]}, 1, 0]}},
+                "duplicateCount": {"$sum": {"$cond": [{"$eq": ["$status", "duplicate"]}, 1, 0]}},
+            }}
+        ]
+        rows = list(activity_collection.aggregate(pipeline))
+        summary = {t: {"count": 0, "totalDuration": 0, "connected": 0, "notConnected": 0,
+                        "newCount": 0, "duplicateCount": 0} for t in ACTIVITY_TYPES}
+        for r in rows:
+            t = r["_id"]
+            if t in summary:
+                summary[t] = {
+                    "count": r["count"],
+                    "totalDuration": r.get("totalDuration", 0),
+                    "connected": r.get("connected", 0),
+                    "notConnected": r.get("notConnected", 0),
+                    "newCount": r.get("newCount", 0),
+                    "duplicateCount": r.get("duplicateCount", 0),
+                }
+        return jsonify({"success": True, "period": period, "data": summary}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/activity/list", methods=["GET"])
+def activity_list():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    period = request.args.get("period", "today")
+    raw_number = request.args.get("number")
+    activity_type = request.args.get("type")
+    start, end = get_activity_period_range(period)
+
+    query = {}
+    if start is not None:
+        query["start_time"] = {"$gte": start, "$lte": end}
+    if raw_number:
+        try:
+            query["caller_number"] = int(raw_number)
+        except ValueError:
+            query["caller_number"] = raw_number
+    if activity_type and activity_type != "ALL":
+        query["activity_type"] = activity_type
+
+    try:
+        docs = list(activity_collection.find(query).sort("start_time", -1).limit(500))
+        data = [{
+            "activityId": d.get("activity_id"),
+            "callerName": d.get("caller_name"),
+            "callerNumber": d.get("caller_number"),
+            "activityType": d.get("activity_type"),
+            "sourcePlatform": d.get("source_platform"),
+            "customerName": d.get("customer_name"),
+            "mobile": d.get("mobile"),
+            "propertyName": d.get("property_name"),
+            "leadId": d.get("lead_id"),
+            "status": d.get("status"),
+            "durationSeconds": d.get("duration_seconds"),
+            "startTime": format_ist(d.get("start_time")) if isinstance(d.get("start_time"), datetime) else "-",
+            "extra": d.get("extra", {})
+        } for d in docs]
+        return jsonify({"success": True, "count": len(data), "data": data}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/activity/square-yards-listing", methods=["POST"])
+def activity_square_yards_listing():
+    """Manual entry — Square Yards has no API integration here, so this
+    is the one activity type staff log by hand, per the tracking brief."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+    data = request.json or {}
+    log_activity(
+        activity_type="SQUARE_YARDS_LISTING",
+        source_platform="Square Yards",
+        caller_number=session.get("employee_number"),
+        caller_name=session.get("employee_name"),
+        property_id=data.get("listingReference"),
+        property_name=data.get("propertyName"),
+        status=data.get("status", "new"),
+        duration_seconds=data.get("durationSeconds"),
+        extra={"notes": data.get("notes", "")}
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/activity/square-yards-lead-claim", methods=["POST"])
+def activity_square_yards_lead_claim():
+    """Manual entry — Square Yards Lead Claim is a SEPARATE activity from
+    Square Yards Listing, per rule #1 of the tracking brief."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+    data = request.json or {}
+    log_activity(
+        activity_type="SQUARE_YARDS_LEAD_CLAIM",
+        source_platform="Square Yards",
+        caller_number=session.get("employee_number"),
+        caller_name=session.get("employee_name"),
+        customer_name=data.get("customerName"),
+        mobile=data.get("mobile"),
+        lead_id=data.get("squareYardsLeadId"),
+        property_name=data.get("propertyName"),
+        status=data.get("status", "claimed"),
+        duration_seconds=data.get("durationSeconds"),
+        extra={"notes": data.get("notes", "")}
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/inventory-intel/publish", methods=["POST"])
+def inventory_intel_publish():
+    """
+    Publishes ONE extracted property record from the WhatsApp Inventory
+    Intelligence tool (templates/whatsapp-inventory.html) into the real
+    CRM inventory (projects_collection) — same shape as
+    /api/projects/upload-inventory but with no file upload (photos stay
+    on the staff member's phone in that browser-only tool). Logs a
+    NISHA_HOMES_LISTING activity for the Activity Tracker.
+    """
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    try:
+        data = request.json or {}
+        name = (data.get("title") or "").strip()
+        if not name:
+            return jsonify({"success": False, "message": "title is required"}), 400
+
+        inventory_data = {
+            "listingBasis": "Individual property",
+            "dealType": "For Sale" if (data.get("transaction") or "sale") == "sale" else "For Rent",
+            "category": data.get("property_type", ""),
+            "name": name,
+            "location": ", ".join(filter(None, [data.get("location"), data.get("sector"), data.get("city")])),
+            "configuration": data.get("bhk", ""),
+            "furnishing": data.get("furnishing", ""),
+            "areaUnit": data.get("area_unit", "sqft"),
+            "carpetArea": data.get("area", ""),
+            "superArea": "",
+            "floor": data.get("floor", ""),
+            "facing": data.get("facing", ""),
+            "parking": data.get("parking", ""),
+            "budget": data.get("price", ""),
+            "quickNotes": data.get("usp", ""),
+            "description": data.get("summary", ""),
+            "img": None,
+            "bannerUrl": None,
+            "mediaUrls": [],
+            "mediaPublicIds": [],
+            "pdfUrl": None,
+            "type": "inventory",
+            "uniqueId": generate_unique_id(),
+            "status": "pending" if session.get("role") == "partner" else "approved",
+            "ownerNumber": session.get("employee_number"),
+            "ownerName": session.get("employee_name"),
+            "ownerRole": session.get("role"),
+            "createdAt": datetime.utcnow(),
+            "source": "whatsapp-inventory-intelligence",
+            "dealerName": data.get("dealer_name", ""),
+            "dealerPhone": data.get("dealer_phone", "")
+        }
+
+        embed_and_attach(inventory_data)
+        result = projects_collection.insert_one(inventory_data)
+        invalidate_cache("inventory_dashboard_stats")
+
+        log_activity(
+            activity_type="NISHA_HOMES_LISTING",
+            source_platform="WhatsApp Inventory Intelligence",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name"),
+            property_id=str(result.inserted_id),
+            property_name=name,
+            status="new",
+            extra={"dealerName": data.get("dealer_name", ""), "dealerPhone": data.get("dealer_phone", "")}
+        )
+
+        return jsonify({"success": True, "id": str(result.inserted_id)}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 if __name__ == "__main__":

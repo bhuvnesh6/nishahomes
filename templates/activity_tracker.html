@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Activity Tracker — Nisha Homes</title>
+<style>
+:root{
+  --bg:#0e1320; --panel:#151c2e; --panel2:#1b2439; --line:#26304a;
+  --txt:#e8edf7; --muted:#9aa7c2; --accent:#c9a24b; --accent2:#e3bf6a;
+  --blue:#4f8cff; --green:#3ec98a; --amber:#f0b53f; --red:#f2603c;
+  --radius:14px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding-bottom:60px}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+header a{color:var(--muted);text-decoration:none;font-size:14px}
+h1{font-size:20px;margin:0}
+.sub{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+select{padding:9px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:13px;font-family:inherit}
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
+@media(min-width:700px){.stat-grid{grid-template-columns:repeat(3,1fr)}}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;cursor:pointer;transition:.15s}
+.stat-card:active{border-color:var(--accent)}
+.stat-card h3{margin:0 0 4px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.stat-card .n{font-size:28px;font-weight:800}
+.stat-card .sub2{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.stat-card .sub2 b{color:var(--txt)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+.card h2{font-size:16px;margin:0 0 12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+input[type=text],input[type=number],textarea{flex:1;min-width:140px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:13px;font-family:inherit}
+.btn{padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1405;border:none}
+.tabs2{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}
+.tabs2 .t{white-space:nowrap;font-size:12px;padding:7px 12px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer}
+.tabs2 .t.on{background:var(--accent);color:#1a1405;border-color:var(--accent);font-weight:700}
+.list-item{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:13px}
+.list-top{display:flex;justify-content:space-between;gap:8px}
+.mini{font-size:11px;color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:24px;font-size:13px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--txt);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:80}
+.toast.show{opacity:1}
+label.fld{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="/admin">← Admin</a>
+    <div>
+      <h1>Caller Activity Tracker</h1>
+      <div class="sub">Logged in as {{ employee_name }} ({{ role }})</div>
+    </div>
+  </header>
+
+  <div class="filters">
+    <select id="periodSelect" onchange="reload()">
+      <option value="today">Today</option>
+      <option value="this_week">This Week</option>
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="lifetime">Lifetime</option>
+    </select>
+    <select id="callerSelect" onchange="reload()">
+      <option value="">All Team Members</option>
+    </select>
+  </div>
+
+  <div class="stat-grid" id="statGrid"></div>
+
+  <div class="card">
+    <h2>📥 Manual Entry — Square Yards</h2>
+    <div class="sub" style="margin-bottom:10px">Square Yards Listing and Lead Claim have no direct integration yet, so log these by hand.</div>
+    <div class="tabs2">
+      <div class="t on" data-mode="listing" onclick="setMode('listing')">Listing</div>
+      <div class="t" data-mode="claim" onclick="setMode('claim')">Lead Claim</div>
+    </div>
+    <div id="listingForm">
+      <div class="row">
+        <input type="text" id="l_ref" placeholder="Listing reference">
+        <input type="text" id="l_prop" placeholder="Property name">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="l_status"><option value="new">New listing</option><option value="updated">Updated listing</option></select>
+        <input type="number" id="l_dur" placeholder="Time spent (minutes, optional)">
+      </div>
+      <textarea id="l_notes" placeholder="Notes (optional)" style="margin-top:8px;width:100%"></textarea>
+      <button class="btn primary" style="margin-top:10px" onclick="submitListing()">Log Listing Activity</button>
+    </div>
+    <div id="claimForm" style="display:none">
+      <div class="row">
+        <input type="text" id="c_leadid" placeholder="Square Yards Lead ID">
+        <input type="text" id="c_customer" placeholder="Customer name">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="c_mobile" placeholder="Mobile (optional)">
+        <input type="text" id="c_prop" placeholder="Property / requirement">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="c_status"><option value="claimed">Claimed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select>
+        <input type="number" id="c_dur" placeholder="Time spent (minutes, optional)">
+      </div>
+      <textarea id="c_notes" placeholder="Notes (optional)" style="margin-top:8px;width:100%"></textarea>
+      <button class="btn primary" style="margin-top:10px" onclick="submitClaim()">Log Lead Claim</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📋 Activity Log</h2>
+    <div class="tabs2" id="typeTabs"></div>
+    <div id="activityList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+function fmtDur(sec){if(!sec)return '-';const m=Math.round(sec/60);return m+'m';}
+
+const TYPE_LABELS={
+  ALL:'All', CALLING:'Calling', WHATSAPP:'WhatsApp', SQUARE_YARDS_LISTING:'SY Listing',
+  NISHA_HOMES_LISTING:'Portal Listing', SQUARE_YARDS_LEAD_CLAIM:'SY Lead Claim', CRM:'CRM Lead Added'
+};
+let currentType='ALL';
+
+async function loadCallers(){
+  const r=await fetch('/api/activity/callers');const j=await r.json();
+  if(j.success){
+    const sel=$('#callerSelect');
+    j.data.forEach(c=>{const o=document.createElement('option');o.value=c.number;o.textContent=c.name;sel.appendChild(o);});
+  }
+}
+
+function currentParams(){
+  const period=$('#periodSelect').value;
+  const number=$('#callerSelect').value;
+  return {period,number};
+}
+
+async function loadSummary(){
+  const {period,number}=currentParams();
+  const q=new URLSearchParams({period});if(number)q.set('number',number);
+  const r=await fetch('/api/activity/summary?'+q.toString());const j=await r.json();
+  if(!j.success){toast(j.message||'Failed to load');return;}
+  const d=j.data;
+  const cards=[
+    ['CALLING','☎️ Calling',`${d.CALLING.connected} connected · ${d.CALLING.notConnected} not connected`],
+    ['WHATSAPP','💬 WhatsApp',`messages sent`],
+    ['NISHA_HOMES_LISTING','🏠 Portal Listing',`${d.NISHA_HOMES_LISTING.newCount} new`],
+    ['SQUARE_YARDS_LISTING','🏢 Square Yards Listing',`${d.SQUARE_YARDS_LISTING.newCount} new`],
+    ['SQUARE_YARDS_LEAD_CLAIM','🎯 SY Lead Claim',`claimed`],
+    ['CRM','📝 CRM Leads Added',`${d.CRM.newCount} new · ${d.CRM.duplicateCount} duplicate`],
+  ];
+  $('#statGrid').innerHTML=cards.map(([key,label,sub])=>`
+    <div class="stat-card" onclick="filterByType('${key}')">
+      <h3>${label}</h3>
+      <div class="n">${d[key].count}</div>
+      <div class="sub2"><span>${sub}</span>${d[key].totalDuration?`<span><b>${fmtDur(d[key].totalDuration)}</b> tracked</span>`:''}</div>
+    </div>
+  `).join('');
+}
+
+function filterByType(t){currentType=t;renderTypeTabs();loadList();}
+
+function renderTypeTabs(){
+  const types=['ALL',...Object.keys(TYPE_LABELS).filter(t=>t!=='ALL')];
+  $('#typeTabs').innerHTML=types.map(t=>`<div class="t ${t===currentType?'on':''}" onclick="filterByType('${t}')">${TYPE_LABELS[t]}</div>`).join('');
+}
+
+async function loadList(){
+  const {period,number}=currentParams();
+  const q=new URLSearchParams({period,type:currentType});if(number)q.set('number',number);
+  const r=await fetch('/api/activity/list?'+q.toString());const j=await r.json();
+  const box=$('#activityList');
+  if(!j.success||!j.data.length){box.innerHTML='<div class="empty">No activity for this filter.</div>';return;}
+  box.innerHTML=j.data.map(a=>`
+    <div class="list-item">
+      <div class="list-top"><b>${esc(TYPE_LABELS[a.activityType]||a.activityType)}</b><span class="mini">${esc(a.startTime)}</span></div>
+      <div class="mini">${esc(a.callerName||'-')} · ${esc(a.customerName||a.propertyName||a.mobile||'-')} ${a.status?'· '+esc(a.status):''}</div>
+    </div>
+  `).join('');
+}
+
+function reload(){loadSummary();loadList();}
+
+function setMode(m){
+  document.querySelectorAll('#listingForm ~ .t, .tabs2 .t').forEach(()=>{});
+  document.querySelectorAll('.card .tabs2 .t').forEach(t=>t.classList.toggle('on',t.dataset.mode===m));
+  $('#listingForm').style.display = m==='listing' ? '' : 'none';
+  $('#claimForm').style.display = m==='claim' ? '' : 'none';
+}
+
+async function submitListing(){
+  const body={
+    listingReference:$('#l_ref').value, propertyName:$('#l_prop').value,
+    status:$('#l_status').value, durationSeconds:(parseFloat($('#l_dur').value)||0)*60,
+    notes:$('#l_notes').value
+  };
+  const r=await fetch('/api/activity/square-yards-listing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.success){toast('Listing logged ✓');['l_ref','l_prop','l_dur','l_notes'].forEach(id=>$('#'+id).value='');reload();}
+  else toast(j.message||'Failed');
+}
+
+async function submitClaim(){
+  const body={
+    squareYardsLeadId:$('#c_leadid').value, customerName:$('#c_customer').value,
+    mobile:$('#c_mobile').value, propertyName:$('#c_prop').value,
+    status:$('#c_status').value, durationSeconds:(parseFloat($('#c_dur').value)||0)*60,
+    notes:$('#c_notes').value
+  };
+  const r=await fetch('/api/activity/square-yards-lead-claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.success){toast('Lead claim logged ✓');['c_leadid','c_customer','c_mobile','c_prop','c_dur','c_notes'].forEach(id=>$('#'+id).value='');reload();}
+  else toast(j.message||'Failed');
+}
+
+renderTypeTabs();
+loadCallers();
+reload();
+</script>
+</body>
+</html>

@@ -696,6 +696,7 @@ function buildRecord(data,gr){
     furnishing:data.furnishing||'',floor:data.floor||'',facing:data.facing||'',parking:data.parking||'',
     amenities:data.amenities||[],transaction:data.transaction||'',summary:data.summary||'',usp:data.usp||'',
     field_sources:data.field_sources||{},confidence:conf,tags:data.tags||[],
+    published:false,publishedId:null,
     status,sourceGroup:CHAT.name,sourceSender:gr.sender,startTs:gr.startTs,
     msgIds:gr.msgs.map(m=>m.id),
     mediaIds:hi.map(m=>m.id),reviewMediaIds:lo.map(m=>m.id),
@@ -806,6 +807,7 @@ function renderInventory(){
         <span class="mini">👤 ${esc(p.dealer_name||'—')}</span>
         ${badges?`<span class="mini">${badges}</span>`:''}
         ${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} dup?</span>`:''}
+        ${p.published?`<span class="chip verified">✓ Published</span>`:''}
         <span class="mini" style="margin-left:auto">${p.confidence}%</span>
       </div></div>`;
   }).join('');
@@ -862,10 +864,34 @@ function openProp(id){
       <button class="btn sm danger" onclick="setStatus('${p.id}','DUPLICATE')">Mark duplicate</button>
     </div>
     <div class="row" style="margin-top:8px">
+      <button class="btn sm primary" ${p.published?'disabled':''} onclick="publishToCRM('${p.id}')">${p.published?'✓ Published to CRM':'📤 Publish to CRM'}</button>
+    </div>
+    <div class="row" style="margin-top:8px">
       <button class="btn sm ghost" onclick="editProp('${p.id}')">✎ Edit fields</button>
       <button class="btn sm danger ghost" onclick="deleteProp('${p.id}')">Delete</button>
     </div>`;
   $('#modal').classList.add('open');
+}
+
+async function publishToCRM(id){
+  const p=PROPS.find(x=>x.id===id);if(!p)return;
+  if(p.published){toast('Already published');return;}
+  try{
+    const r=await fetch('/api/inventory-intel/publish',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(p)
+    });
+    const j=await r.json();
+    if(j.success){
+      p.published=true;p.publishedId=j.id;
+      try{await idbSet('props',p);}catch(e){}
+      toast('Published to CRM inventory ✓');
+      openProp(id);renderInventory();
+    }else{
+      toast(j.message||'Publish failed');
+    }
+  }catch(e){toast('Network error publishing');}
 }
 function mediaCell(m,reviewForProp){
   const t=m.type;
