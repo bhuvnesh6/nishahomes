@@ -860,36 +860,50 @@ def _to_bytes(data):
         return data.read()
     return data
 
-def upload_media_to_supabase(file_data, folder, resource_type="image", ext="jpg", max_retries=2):
-    if not supabase2:
-        raise RuntimeError("Supabase media storage not configured — check SUPABASE_URL2 / SUPABASE_SERVICE_ROLE_KEY2 in .env")
+def upload_media_to_cloudinary(file_data, folder, resource_type="image", ext="jpg", max_retries=2):
+    """
+    Uploads a photo/video to Cloudinary. Returns (secure_url, public_id).
+    `ext` is accepted only so old call sites keep working — Cloudinary
+    detects the format itself and puts it in the returned URL.
+    PDFs do NOT go through here — they still use upload_pdf_to_supabase().
+    """
+    if not (os.getenv("CLOUDINARY_CLOUD_NAME") and os.getenv("CLOUDINARY_API_KEY") and os.getenv("CLOUDINARY_API_SECRET")):
+        raise RuntimeError("Cloudinary not configured — check CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET in .env")
 
-    ext = (ext or "jpg").lstrip(".").lower()
     file_bytes = _to_bytes(file_data)
 
     if len(file_bytes) > MAX_MEDIA_UPLOAD_BYTES:
-        raise ValueError(f"File too large for Supabase Storage ({len(file_bytes)/1024/1024:.1f}MB, limit is 50MB)")
+        raise ValueError(f"File too large ({len(file_bytes)/1024/1024:.1f}MB, limit is 50MB)")
 
-    content_type = (
-        _VIDEO_CONTENT_TYPES.get(ext, "video/mp4") if resource_type == "video"
-        else _IMAGE_CONTENT_TYPES.get(ext, "image/jpeg")
-    )
-
-    object_path = f"{folder}/{secrets.token_hex(8)}.{ext}"
+    cld_type = "video" if resource_type == "video" else "image"
+    cld_folder = f"nishahomes/{folder}"
 
     last_err = None
     for attempt in range(1, max_retries + 2):
         try:
-            supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).upload(
-                object_path, file_bytes, {"content-type": content_type}
-            )
-            return supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).get_public_url(object_path), object_path
+            buf = io.BytesIO(file_bytes)
+            if cld_type == "video" and len(file_bytes) > 20 * 1024 * 1024:
+                # chunked upload for bigger videos
+                result = cloudinary.uploader.upload_large(
+                    buf, resource_type="video", folder=cld_folder, chunk_size=6_000_000
+                )
+            else:
+                result = cloudinary.uploader.upload(
+                    buf, resource_type=cld_type, folder=cld_folder
+                )
+            return result["secure_url"], result["public_id"]
         except Exception as e:
             last_err = e
-            print(f"[media] upload attempt {attempt} failed for {object_path}: {e}")
+            print(f"[media] cloudinary upload attempt {attempt} failed ({cld_folder}): {e}")
             time.sleep(1.5 * attempt)
 
     raise last_err
+
+
+# Backward-compatible alias: every existing call to upload_media_to_supabase()
+# (upload_inventory, upload_project_v2, upload_raw_then_brand, resize-banners...)
+# now goes to Cloudinary without touching those functions.
+upload_media_to_supabase = upload_media_to_cloudinary
 
 
 
@@ -925,16 +939,44 @@ def upload_raw_then_brand(raw_bytes, folder, resource_type, ext, brand_fn=None):
     return branded_url, branded_path, True
 
 
-def delete_media_from_supabase(object_path):
-    """Best-effort delete — never raises, matching how the old Cloudinary
-    destroy() calls were wrapped in try/except so a failed cleanup never
-    breaks the main request."""
-    if not supabase2 or not object_path:
+# Old Supabase object paths look like "inventory/ab12cd.jpg" (they end in a
+# file extension). Cloudinary public_ids never end in an extension. That's how
+# we tell which storage an already-saved listing's media lives in.
+_LEGACY_SUPABASE_PATH_RE = re.compile(r"\.[A-Za-z0-9]{2,5}$")
+
+
+def delete_media_file(object_path):
+    """Best-effort delete — never raises, so a failed cleanup never breaks
+    the main request. Handles BOTH storages:
+      - old listings (Supabase path, has an extension) -> deleted from Supabase
+      - new listings (Cloudinary public_id)            -> deleted from Cloudinary
+    """
+    if not object_path:
         return
-    try:
-        supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).remove([object_path])
-    except Exception as e:
-        print("[media] Supabase delete failed:", e)
+
+    # ---- legacy Supabase file ----
+    if _LEGACY_SUPABASE_PATH_RE.search(object_path):
+        if not supabase2:
+            return
+        try:
+            supabase2.storage.from_(SUPABASE_MEDIA_BUCKET).remove([object_path])
+        except Exception as e:
+            print("[media] Supabase delete failed:", e)
+        return
+
+    # ---- Cloudinary file (type isn't stored, so try image then video) ----
+    for rtype in ("image", "video"):
+        try:
+            res = cloudinary.uploader.destroy(object_path, resource_type=rtype, invalidate=True)
+            if (res or {}).get("result") == "ok":
+                return
+        except Exception as e:
+            print(f"[media] Cloudinary delete ({rtype}) failed for {object_path}: {e}")
+
+
+# Backward-compatible alias for existing calls (delete_project, update_project,
+# upload_raw_then_brand).
+delete_media_from_supabase = delete_media_file
 
 def _font(weight, size):
     """Robust font loader. Tries your bundled fonts, then common Linux
