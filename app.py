@@ -9404,6 +9404,48 @@ def activity_callers():
     ]}), 200
 
 
+def _resolve_activity_employee(raw_number):
+    """Returns (employee_number, employee_name) for the selected caller.
+    (None, None) means 'all team members'. Name is looked up so we can
+    match logs by number OR name — the same way Team Status does."""
+    if not raw_number:
+        return None, None
+    try:
+        num = int(str(raw_number).strip())
+    except ValueError:
+        return raw_number, None
+    member = db["teamAssign"].find_one({"Employee number": num}, {"Employee name": 1})
+    return num, (member.get("Employee name") if member else None)
+
+
+def _employee_or_clause(num_field, name_field, number, name):
+    clauses = [{num_field: number}]
+    if name:
+        clauses.append({name_field: name})
+    return clauses
+
+
+def _calling_query(start, end, emp_number, emp_name):
+    """Calling activity is read straight from callLogs (the source of truth,
+    same as Team Status) so it can never disagree with that page."""
+    q = {}
+    if start is not None:
+        q["CreatedAt"] = {"$gte": start, "$lte": end}
+    if emp_number is not None:
+        q["$or"] = _employee_or_clause("CalledByNumber", "CalledBy", emp_number, emp_name)
+    return q
+
+
+def _other_activity_query(start, end, emp_number, emp_name):
+    """Everything except CALLING comes from activityLog."""
+    q = {"activity_type": {"$ne": "CALLING"}}
+    if start is not None:
+        q["start_time"] = {"$gte": start, "$lte": end}
+    if emp_number is not None:
+        q["$or"] = _employee_or_clause("caller_number", "caller_name", emp_number, emp_name)
+    return q
+
+
 @app.route("/api/activity/summary", methods=["GET"])
 def activity_summary():
     if session.get("role") not in ("admin", "emp"):
@@ -9412,19 +9454,15 @@ def activity_summary():
     period = request.args.get("period", "today")
     raw_number = request.args.get("number")
     start, end = get_activity_period_range(period)
-
-    query = {}
-    if start is not None:
-        query["start_time"] = {"$gte": start, "$lte": end}
-    if raw_number:
-        try:
-            query["caller_number"] = int(raw_number)
-        except ValueError:
-            query["caller_number"] = raw_number
+    emp_number, emp_name = _resolve_activity_employee(raw_number)
 
     try:
+        summary = {t: {"count": 0, "totalDuration": 0, "connected": 0, "notConnected": 0,
+                        "newCount": 0, "duplicateCount": 0} for t in ACTIVITY_TYPES}
+
+        # ---- non-calling activities: from activityLog ----
         pipeline = [
-            {"$match": query},
+            {"$match": _other_activity_query(start, end, emp_number, emp_name)},
             {"$group": {
                 "_id": "$activity_type",
                 "count": {"$sum": 1},
@@ -9435,10 +9473,7 @@ def activity_summary():
                 "duplicateCount": {"$sum": {"$cond": [{"$eq": ["$status", "duplicate"]}, 1, 0]}},
             }}
         ]
-        rows = list(activity_collection.aggregate(pipeline))
-        summary = {t: {"count": 0, "totalDuration": 0, "connected": 0, "notConnected": 0,
-                        "newCount": 0, "duplicateCount": 0} for t in ACTIVITY_TYPES}
-        for r in rows:
+        for r in activity_collection.aggregate(pipeline):
             t = r["_id"]
             if t in summary:
                 summary[t] = {
@@ -9449,6 +9484,31 @@ def activity_summary():
                     "newCount": r.get("newCount", 0),
                     "duplicateCount": r.get("duplicateCount", 0),
                 }
+
+        # ---- CALLING: from callLogs (same source/matching as Team Status) ----
+        call_pipeline = [
+            {"$match": _calling_query(start, end, emp_number, emp_name)},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "attemptOnly": {"$sum": {"$cond": [{"$eq": ["$CallAttemptOnly", True]}, 1, 0]}},
+                "lost": {"$sum": {"$cond": [
+                    {"$in": [{"$ifNull": ["$CallStatus", ""]}, list(LOST_CALL_STATUSES)]}, 1, 0
+                ]}},
+            }}
+        ]
+        call_rows = list(call_logs_collection.aggregate(call_pipeline))
+        if call_rows:
+            c = call_rows[0]
+            summary["CALLING"] = {
+                "count": c["total"],
+                "totalDuration": 0,
+                "connected": max(0, c["total"] - c["attemptOnly"] - c["lost"]),
+                "notConnected": c["lost"],
+                "newCount": 0,
+                "duplicateCount": 0,
+            }
+
         return jsonify({"success": True, "period": period, "data": summary}), 200
     except Exception as e:
         import traceback
@@ -9463,43 +9523,74 @@ def activity_list():
 
     period = request.args.get("period", "today")
     raw_number = request.args.get("number")
-    activity_type = request.args.get("type")
+    activity_type = request.args.get("type") or "ALL"
     start, end = get_activity_period_range(period)
-
-    query = {}
-    if start is not None:
-        query["start_time"] = {"$gte": start, "$lte": end}
-    if raw_number:
-        try:
-            query["caller_number"] = int(raw_number)
-        except ValueError:
-            query["caller_number"] = raw_number
-    if activity_type and activity_type != "ALL":
-        query["activity_type"] = activity_type
+    emp_number, emp_name = _resolve_activity_employee(raw_number)
 
     try:
-        docs = list(activity_collection.find(query).sort("start_time", -1).limit(500))
-        data = [{
-            "activityId": d.get("activity_id"),
-            "callerName": d.get("caller_name"),
-            "callerNumber": d.get("caller_number"),
-            "activityType": d.get("activity_type"),
-            "sourcePlatform": d.get("source_platform"),
-            "customerName": d.get("customer_name"),
-            "mobile": d.get("mobile"),
-            "propertyName": d.get("property_name"),
-            "leadId": d.get("lead_id"),
-            "status": d.get("status"),
-            "durationSeconds": d.get("duration_seconds"),
-            "startTime": format_ist(d.get("start_time")) if isinstance(d.get("start_time"), datetime) else "-",
-            "extra": d.get("extra", {})
-        } for d in docs]
+        rows = []  # (sort_datetime, dict)
+
+        # ---- non-calling rows from activityLog ----
+        if activity_type != "CALLING":
+            q = _other_activity_query(start, end, emp_number, emp_name)
+            if activity_type != "ALL":
+                q["activity_type"] = activity_type
+            for d in activity_collection.find(q).sort("start_time", -1).limit(500):
+                st = d.get("start_time")
+                rows.append((st if isinstance(st, datetime) else datetime.min, {
+                    "activityId": d.get("activity_id"),
+                    "callerName": d.get("caller_name"),
+                    "callerNumber": d.get("caller_number"),
+                    "activityType": d.get("activity_type"),
+                    "sourcePlatform": d.get("source_platform"),
+                    "customerName": d.get("customer_name"),
+                    "mobile": d.get("mobile"),
+                    "propertyName": d.get("property_name"),
+                    "leadId": d.get("lead_id"),
+                    "status": d.get("status"),
+                    "durationSeconds": d.get("duration_seconds"),
+                    "startTime": format_ist(st) if isinstance(st, datetime) else "-",
+                    "extra": d.get("extra", {})
+                }))
+
+        # ---- CALLING rows from callLogs ----
+        if activity_type in ("ALL", "CALLING"):
+            for c in call_logs_collection.find(
+                _calling_query(start, end, emp_number, emp_name)
+            ).sort("CreatedAt", -1).limit(500):
+                created = c.get("CreatedAt")
+                if c.get("CallAttemptOnly"):
+                    status = "attempted"
+                elif (c.get("CallStatus") or "") in LOST_CALL_STATUSES:
+                    status = "not_connected"
+                else:
+                    status = "connected"
+                rows.append((created if isinstance(created, datetime) else datetime.min, {
+                    "activityId": str(c["_id"]),
+                    "callerName": c.get("CalledBy"),
+                    "callerNumber": c.get("CalledByNumber"),
+                    "activityType": "CALLING",
+                    "sourcePlatform": "Calling System",
+                    "customerName": c.get("Name"),
+                    "mobile": c.get("Number"),
+                    "propertyName": None,
+                    "leadId": None,
+                    "status": status,
+                    "durationSeconds": None,
+                    "startTime": format_ist(created) if isinstance(created, datetime) else "-",
+                    "extra": {
+                        "callStatus": c.get("CallStatus", ""),
+                        "interestLevel": c.get("InterestLevel", "")
+                    }
+                }))
+
+        rows.sort(key=lambda r: r[0], reverse=True)
+        data = [r[1] for r in rows[:500]]
         return jsonify({"success": True, "count": len(data), "data": data}), 200
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
-
 
 @app.route("/api/activity/square-yards-listing", methods=["POST"])
 def activity_square_yards_listing():
