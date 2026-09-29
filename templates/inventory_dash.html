@@ -332,6 +332,12 @@ img,video{max-width:100%}
   color:#ff9a8b;font-size:0.85rem;font-weight:600;background:transparent;margin-top:9px;transition:var(--transition);
 }
 .danger-btn:hover{background:rgba(192,57,43,.14)}
+/* ============ UPLOAD PROGRESS BAR ============ */
+.upload-progress{display:none;margin:14px 0 4px}
+.upload-progress.active{display:block}
+.upload-progress-top{display:flex;justify-content:space-between;font-size:0.76rem;font-weight:700;color:rgba(255,255,255,.75);margin-bottom:7px}
+.upload-progress-track{width:100%;height:10px;background:rgba(255,255,255,.12);border-radius:var(--radius-pill);overflow:hidden}
+.upload-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-light));border-radius:var(--radius-pill);transition:width .2s ease}
 .section-heading-sm{
   font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
   color:var(--accent-light);margin:18px 0 9px;display:flex;align-items:center;gap:8px;
@@ -675,6 +681,10 @@ img,video{max-width:100%}
   </label>
 </div>
 
+      <div class="upload-progress" id="invProgress">
+        <div class="upload-progress-top"><span id="invProgressLabel">Uploading…</span><span id="invProgressPct">0%</span></div>
+        <div class="upload-progress-track"><div class="upload-progress-fill" id="invProgressFill"></div></div>
+      </div>
       <button type="submit" class="submit-btn" id="inv_submitBtn">Send to the desk</button>
     </form>
   </div>
@@ -1023,7 +1033,9 @@ function projectCardHTML(p){
   const isVideo = p.type === 'video';
   const mediaTag = media
     ? (isVideo ? `<video src="${esc(media)}" muted></video>` : `<img src="${esc(media)}" alt="${esc(p.name)}" loading="lazy">`)
-    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:2rem">🏠</div>`;
+    : (p.mediaStatus === 'processing'
+        ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:.8rem;font-weight:600">⏳ Media processing…</div>`
+        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:2rem">🏠</div>`);
   const canManage = IS_STAFF || (p.ownerNumber && String(p.ownerNumber) === EMP_NUMBER);
   const status = p.status || 'approved';
   const isPending = status === 'pending';
@@ -1418,18 +1430,57 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e)=>{
   const pdf = document.getElementById('inv_pdf').files[0];
   if(pdf) fd.append('pdf', pdf);
 
+  const progWrap = document.getElementById('invProgress');
+  const progFill = document.getElementById('invProgressFill');
+  const progPct  = document.getElementById('invProgressPct');
+  const progLbl  = document.getElementById('invProgressLabel');
+  const setProgress = (p, label)=>{
+    progFill.style.width = p + '%';
+    progPct.textContent = p + '%';
+    if(label) progLbl.textContent = label;
+  };
+  setProgress(1, 'Uploading…');
+  progWrap.classList.add('active');
+
   try{
-    const res = await fetch(`${BASE}/projects/upload-inventory`, { method:'POST', body: fd, credentials:'include' });
-    const d = await res.json();
+    const d = await uploadWithProgress(`${BASE}/projects/upload-inventory`, fd, p => setProgress(p, 'Uploading…'));
     if(d.status !== 'success'){ toast(d.message || 'Upload failed'); return; }
+    setProgress(100, 'Done ✅');
+    await new Promise(r => setTimeout(r, 500));
     toast(d.failedFiles?.length
       ? `Sent to the desk ✅ — but ${d.failedFiles.length} file(s) failed: ${d.failedFiles.join(', ')}`
-      : 'Sent to the desk ✅');
+      : 'Sent to the desk ✅ (media is finishing in the background — refresh in a minute if it is not visible yet)');
     inventoryModal.classList.remove('active');
     loadProjects();
   }catch(e){ console.error(e); toast('Upload failed'); }
-  finally{ btn.disabled = false; btn.textContent = 'Send to the desk'; }
+  finally{
+    btn.disabled = false; btn.textContent = 'Send to the desk';
+    progWrap.classList.remove('active');
+    setProgress(0);
+  }
 });
+
+/* NEW: XHR helper — fetch() can't report upload progress, XHR can */
+function uploadWithProgress(url, formData, onProgress){
+  return new Promise((resolve, reject)=>{
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e)=>{
+      if(e.lengthComputable){
+        // keep 1..99 while sending; 100 is set only after the server answers
+        onProgress(Math.max(1, Math.min(99, Math.round((e.loaded / e.total) * 100))));
+      }
+    };
+    xhr.onload = ()=>{
+      try{ resolve(JSON.parse(xhr.responseText)); }
+      catch(err){ reject(new Error('Bad server response')); }
+    };
+    xhr.onerror = ()=> reject(new Error('Network error'));
+    xhr.onabort = ()=> reject(new Error('Upload cancelled'));
+    xhr.send(formData);
+  });
+}
 
 /* ============ MANAGE PROJECT MODAL (admin) ============ */
 const projectV2Modal = document.getElementById('projectV2Modal');

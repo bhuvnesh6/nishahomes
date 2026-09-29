@@ -95,6 +95,11 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+# NEW: temp folder where inventory photos/videos are parked on the server
+# first, then pushed to Cloudinary in the background and deleted.
+PENDING_MEDIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pending_media")
+os.makedirs(PENDING_MEDIA_DIR, exist_ok=True)
+
 # Mongo Config
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME")
@@ -4975,6 +4980,74 @@ def upload_project():
             "message": str(e)
         }), 500
 
+# =====================================================================
+# NEW: BACKGROUND MEDIA WORKER
+# Reads the locally-saved files, brands them, uploads to Cloudinary,
+# updates the listing doc's media fields, then deletes the local folder.
+# =====================================================================
+def process_inventory_media_job(doc_id, job_dir, files_meta, branding, brand_fields, folder):
+    media_urls, media_public_ids = [], []
+    banner_url = None
+    failed = []
+
+    try:
+        for meta in files_meta:
+            try:
+                with open(meta["path"], "rb") as fh:
+                    raw = fh.read()
+
+                if meta["kind"] == "image":
+                    if meta["is_banner"]:
+                        if branding:
+                            brand_fn = lambda b, _f=brand_fields: fit_to_whatsapp_square(
+                                build_banner_image(b, _f).getvalue()
+                            )
+                        else:
+                            brand_fn = lambda b: fit_to_whatsapp_square(b)
+                    else:
+                        brand_fn = (lambda b: build_simple_branded_image(b)) if branding else None
+
+                    url, object_path, _ = upload_raw_then_brand(
+                        raw, folder=folder, resource_type="image", ext="jpg", brand_fn=brand_fn
+                    )
+                    if meta["is_banner"]:
+                        banner_url = url
+                else:
+                    brand_fn = build_simple_branded_video if branding else None
+                    url, object_path, _ = upload_raw_then_brand(
+                        raw, folder=folder, resource_type="video", ext=meta.get("ext", "mp4"), brand_fn=brand_fn
+                    )
+
+                media_urls.append(url)
+                media_public_ids.append(object_path)
+
+            except Exception as file_err:
+                print(f"[media-job] '{meta.get('name')}' failed: {file_err}")
+                failed.append(meta.get("name"))
+
+        update_fields = {
+            "img": media_urls[0] if media_urls else None,
+            "bannerUrl": banner_url or (media_urls[0] if media_urls else None),
+            "mediaUrls": media_urls,
+            "mediaPublicIds": media_public_ids,
+            "mediaStatus": "done" if media_urls or not files_meta else "failed",
+            "mediaFailedFiles": failed,
+            "lastUpdatedAt": datetime.utcnow()
+        }
+        projects_collection.update_one({"_id": doc_id}, {"$set": update_fields})
+        invalidate_cache("inventory_dashboard_stats")
+        print(f"[media-job] {doc_id}: {len(media_urls)} uploaded, {len(failed)} failed")
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        try:
+            projects_collection.update_one({"_id": doc_id}, {"$set": {"mediaStatus": "failed"}})
+        except Exception:
+            pass
+    finally:
+        # local copies are always removed once Cloudinary is done (or has failed)
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 # -------------------------------
 # PARTNER "Add Inventory" upload
@@ -4998,62 +5071,47 @@ def upload_inventory():
             "configuration": f("configuration", ""), "superArea": f("superArea", "")
         }
 
-        media_urls, media_public_ids = [], []
-        banner_url, banner_public_id = None, None
+        # NEW: save photos/videos into a temp folder on the server first.
+        # Cloudinary upload happens later in a background thread.
         failed_files = []
-        photo_files = [f for f in request.files.getlist("photos") if f and f.filename]
+        files_meta = []
+        job_dir = os.path.join(PENDING_MEDIA_DIR, secrets.token_hex(8))
+        os.makedirs(job_dir, exist_ok=True)
 
+        photo_files = [pf for pf in request.files.getlist("photos") if pf and pf.filename]
         for idx, file in enumerate(photo_files):
             try:
-                raw = file.read()
-                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                safe = secure_filename(file.filename) or f"photo_{idx}.jpg"
+                path = os.path.join(job_dir, f"photo_{idx:03d}_{safe}")
+                file.save(path)
+                if os.path.getsize(path) > MAX_MEDIA_UPLOAD_BYTES:
+                    os.remove(path)
                     print(f"[upload-inventory] photo '{file.filename}' rejected — over 50MB")
                     failed_files.append(file.filename)
                     continue
-
-                if idx == 0:
-                    # BANNER photo — ALWAYS fit into the 1080x1080 WhatsApp
-                    # square, no cropping, regardless of the branding toggle.
-                    if branding:
-                        brand_fn = lambda b, _fields=brand_fields: fit_to_whatsapp_square(
-                            build_banner_image(b, _fields).getvalue()
-                        )
-                    else:
-                        brand_fn = lambda b: fit_to_whatsapp_square(b)
-                else:
-                    brand_fn = (lambda b: build_simple_branded_image(b)) if branding else None
-
-                url, object_path, _ = upload_raw_then_brand(
-                    raw, folder="inventory", resource_type="image", ext="jpg", brand_fn=brand_fn
-                )
-                media_urls.append(url)
-                media_public_ids.append(object_path)
-                if idx == 0:
-                    banner_url, banner_public_id = url, object_path
+                files_meta.append({"path": path, "kind": "image", "is_banner": idx == 0,
+                                   "name": file.filename, "ext": "jpg"})
             except Exception as photo_err:
-                print(f"[upload-inventory] photo '{file.filename}' failed: {photo_err}")
+                print(f"[upload-inventory] photo '{file.filename}' save failed: {photo_err}")
                 failed_files.append(file.filename)
 
-        for file in request.files.getlist("videos"):
+        for vidx, file in enumerate(request.files.getlist("videos")):
             if not file or not file.filename:
                 continue
             try:
                 ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
-                raw = file.read()
-                if len(raw) > MAX_MEDIA_UPLOAD_BYTES:
+                safe = secure_filename(file.filename) or f"video_{vidx}.{ext}"
+                path = os.path.join(job_dir, f"video_{vidx:03d}_{safe}")
+                file.save(path)
+                if os.path.getsize(path) > MAX_MEDIA_UPLOAD_BYTES:
+                    os.remove(path)
                     print(f"[upload-inventory] video '{file.filename}' rejected — over 50MB")
                     failed_files.append(file.filename)
                     continue
-
-                brand_fn = build_simple_branded_video if branding else None
-
-                url, object_path, _ = upload_raw_then_brand(
-                    raw, folder="inventory", resource_type="video", ext=ext, brand_fn=brand_fn
-                )
-                media_urls.append(url)
-                media_public_ids.append(object_path)
+                files_meta.append({"path": path, "kind": "video", "is_banner": False,
+                                   "name": file.filename, "ext": ext})
             except Exception as video_err:
-                print(f"[upload-inventory] video '{file.filename}' failed: {video_err}")
+                print(f"[upload-inventory] video '{file.filename}' save failed: {video_err}")
                 failed_files.append(file.filename)
 
         pdf_url = None
@@ -5082,10 +5140,11 @@ def upload_inventory():
             "mapLink": f("mapLink", ""),
             "quickNotes": f("quickNotes", ""),
             "description": f("description", ""),
-            "img": media_urls[0] if media_urls else None,
-            "bannerUrl": banner_url or (media_urls[0] if media_urls else None),
-            "mediaUrls": media_urls,
-            "mediaPublicIds": media_public_ids,
+            "img": None,
+            "bannerUrl": None,
+            "mediaUrls": [],
+            "mediaPublicIds": [],
+            "mediaStatus": "processing" if files_meta else "done",
             "pdfUrl": pdf_url,
             "type": "inventory",
             "uniqueId": generate_unique_id(),
@@ -5110,6 +5169,18 @@ def upload_inventory():
             property_name=inventory_data.get("name", ""),
             status="new"
         )
+
+        # NEW: hand the saved files to the background worker (Cloudinary upload
+        # -> update DB urls -> delete local folder). Request returns immediately.
+        if files_meta:
+            threading.Thread(
+                target=process_inventory_media_job,
+                args=(result.inserted_id, job_dir, files_meta, branding, brand_fields, "inventory"),
+                daemon=True,
+                name="inventory-media-job"
+            ).start()
+        else:
+            shutil.rmtree(job_dir, ignore_errors=True)
 
         return jsonify({
             "status": "success",
