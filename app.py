@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, flash, jsonify, send_from_directory, send_file, Response
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from dotenv import load_dotenv
 import pandas as pd
 import os
@@ -3905,7 +3906,96 @@ def update_lead():
 def check_assign():
     return "assign route section reached"
 
-#https://www.karmandrones.com/
+# =====================================================================
+# NEW: UNIQUE LEAD PHONE NUMBER HELPERS
+# One mobile number = one lead, no matter the format
+# (9876543210 / 919876543210 / +919876543210 / 09876543210).
+# =====================================================================
+LEAD_COLLECTIONS_ALL = ("Leads", "RentalLeads", "sellingLeads", "agentLeads")
+
+# Short-lived "I'm creating this number right now" marker. Stops two
+# simultaneous requests (or two workers) from both inserting the same
+# number. Auto-expires after 1 hour, so it never blocks anything long-term.
+lead_phone_keys_collection = db["leadPhoneKeys"]
+try:
+    lead_phone_keys_collection.create_index("key", unique=True)
+    lead_phone_keys_collection.create_index("at", expireAfterSeconds=3600)
+except Exception as _pk_err:
+    print(f"[startup] leadPhoneKeys index warning: {_pk_err}")
+
+
+def phone_last10(raw):
+    """Last 10 digits of any phone format. '' if fewer than 10 digits."""
+    digits = re.sub(r"\D", "", str(raw or ""))
+    return digits[-10:] if len(digits) >= 10 else ""
+
+
+def phone_variants(raw):
+    """Every common way this same number might be stored in Mongo."""
+    last10 = phone_last10(raw)
+    if not last10:
+        return []
+    return [
+        last10, "91" + last10, "+91" + last10, "0" + last10,
+        "+91 " + last10, "91 " + last10, "+91-" + last10,
+        int(last10), int("91" + last10),
+    ]
+
+
+def find_lead_by_any_phone(raw_phone, prefer_collection=None):
+    """Looks for this number (any format) across all 4 lead collections.
+    Returns (collection_name, doc) or (None, None)."""
+    variants = phone_variants(raw_phone)
+    if not variants:
+        return None, None
+
+    order = list(LEAD_COLLECTIONS_ALL)
+    if prefer_collection:
+        if prefer_collection in order:
+            order.remove(prefer_collection)
+        order.insert(0, prefer_collection)
+
+    for coll_name in order:
+        try:
+            doc = db[coll_name].find_one({"Phone Number": {"$in": variants}})
+        except Exception as e:
+            print(f"[lead-dedupe] lookup failed in {coll_name}: {e}")
+            continue
+        if doc:
+            return coll_name, doc
+    return None, None
+
+
+def claim_phone_key(raw_phone):
+    """True if we are the first to claim this number for creation."""
+    key = phone_last10(raw_phone)
+    if not key:
+        return True
+    try:
+        lead_phone_keys_collection.insert_one({"key": key, "at": datetime.utcnow()})
+        return True
+    except DuplicateKeyError:
+        return False
+    except Exception as e:
+        print(f"[lead-dedupe] claim failed: {e}")
+        return True
+
+
+def find_or_claim_lead(raw_phone, prefer_collection=None):
+    """
+    Returns (collection, doc) if the number already exists anywhere.
+    Returns (None, None) if it's genuinely new AND you are safe to create it now.
+    """
+    coll, doc = find_lead_by_any_phone(raw_phone, prefer_collection)
+    if doc:
+        return coll, doc
+
+    if claim_phone_key(raw_phone):
+        return None, None
+
+    # Someone else is creating this exact number at this moment — wait, re-check.
+    time.sleep(0.7)
+    return find_lead_by_any_phone(raw_phone, prefer_collection)
 
 # Allowed values for the LeadType field on every Leads-family document
 VALID_LEAD_TYPES = {"buyer_purchase", "buyer_rental", "seller", "agent"}
@@ -3914,104 +4004,105 @@ VALID_LEAD_TYPES = {"buyer_purchase", "buyer_rental", "seller", "agent"}
 @app.route("/add-lead", methods=["POST"])
 def add_lead():
     try:
-        data = request.json
+        data = request.json or {}
 
-        # 1. Get collection name dynamically
+        # 1. Collection
         collection_name = data.get("collection")
         if not collection_name:
             return jsonify({"error": "Collection name is required"}), 400
-
         collection = db[collection_name]
 
-        # 2. Extract phone number (required for upsert)
-        phone_number = data.get("Phone Number")
-        if not phone_number:
+        # 2. Phone (required, must be a real 10-digit mobile in any format)
+        raw_phone = data.get("Phone Number")
+        if not raw_phone:
             return jsonify({"error": "Phone Number is required"}), 400
+        if not phone_last10(raw_phone):
+            return jsonify({"error": "Invalid Phone Number - need a valid 10-digit mobile number"}), 400
 
-        # NEW: normalize/validate LeadType — defaults to "buyer_purchase"
-        # if missing or not one of the accepted values.
-        lead_type = str(data.get("LeadType", "")).strip()
-        if lead_type not in VALID_LEAD_TYPES:
-            lead_type = "buyer_purchase"
-        data["LeadType"] = lead_type
+        clean_phone = normalize_phone_91(raw_phone)   # stored as 91XXXXXXXXXX
 
-        # 3. Remove collection key from document
+        provided_lead_type = str(data.get("LeadType", "")).strip()
+        lead_type_valid = provided_lead_type in VALID_LEAD_TYPES
+
+        # Never let the incoming payload override these
         data.pop("collection", None)
+        data.pop("Phone Number", None)
+        data.pop("Created At", None)
+        data.pop("DateObj", None)
 
-        # NEW: "Created At" timestamp, formatted as "YYYY-MM-DD HH:MM:SS"
-        # (e.g. 2026-07-14 13:58:12). Uses $setOnInsert so it's only written
-        # once — the first time this lead is created — and never gets
-        # overwritten on later upserts/updates to the same phone number.
-        data.pop("Created At", None)  # never let incoming payload override it
         now = datetime.utcnow()
-        created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
-
-        # NEW: also write "Date" (DD-MM-YYYY) on first insert — this is the
-        # field parse_lead_date()/filter_by_july_range() actually filter on
-        # for /api/leads, /api/rental-leads, /api/selling-leads, /api/agent-leads.
-        # Without it, leads created via this endpoint were silently excluded
-        # from every list even though they existed in Mongo.
-        if not str(data.get("Date", "")).strip():
-            data["Date"] = now.strftime("%d-%m-%Y")
-
-        # PERF: also write DateObj — a real, indexed datetime — so the fast
-        # path in get_filtered_leads() can serve this lead with a single
-        # indexed range query instead of falling back to Python parsing.
-        data.pop("DateObj", None)  # never let incoming payload override it
-
-        # NEW: check BEFORE the upsert whether this phone number already
-        # exists — this is the "mobile number is the primary duplicate
-        # check" rule from the Activity Tracker brief. A duplicate is
-        # logged as a duplicate attempt/update, never counted as new.
-        existing_lead_doc = collection.find_one({"Phone Number": phone_number})
-
-        # 4. Upsert (update if exists, insert if not)
-        result = collection.update_one(
-            {"Phone Number": phone_number},
-            {
-                "$set": data,
-                "$setOnInsert": {"Created At": created_at_str},
-                "$currentDate": {},  # placeholder no-op kept for clarity of intent
-            },
-            upsert=True
-        )
-        # Set DateObj explicitly right after (covers both insert + update
-        # cases uniformly without fighting $setOnInsert semantics above).
-        collection.update_one(
-            {"Phone Number": phone_number},
-            {"$set": {"DateObj": now}}
-        )
-
         name = data.get("Lead Name")
 
-        create_contact(name, phone_number)
+        # 3. Does this number already exist (any format, any lead collection)?
+        existing_coll, existing_doc = find_or_claim_lead(raw_phone, prefer_collection=collection_name)
 
-        # NEW: only on a genuinely NEW lead (never on an update to an
-        # existing phone number) — auto-assign via Round Robin if enabled.
-        if result.upserted_id:
-            auto_assign_round_robin(collection_name, result.upserted_id, phone_number, name)
+        if existing_doc:
+            # ---------- DUPLICATE -> UPDATE THE EXISTING LEAD ONLY ----------
+            update_fields = {k: v for k, v in data.items() if v is not None and v != ""}
+            update_fields.pop("LeadType", None)
+            if lead_type_valid:
+                update_fields["LeadType"] = provided_lead_type
 
-        # NEW: Activity Tracker — Manual CRM Lead Addition
+            modified = 0
+            if update_fields:
+                res = db[existing_coll].update_one(
+                    {"_id": existing_doc["_id"]},
+                    {"$set": update_fields}
+                )
+                modified = res.modified_count
+
+            lead_id_str = str(existing_doc["_id"])
+            is_new = False
+
+        else:
+            # ---------- GENUINELY NEW LEAD -> INSERT ----------
+            new_doc = dict(data)
+            new_doc["Phone Number"] = clean_phone
+            new_doc["LeadType"] = provided_lead_type if lead_type_valid else "buyer_purchase"
+            new_doc["Created At"] = now.strftime("%Y-%m-%d %H:%M:%S")
+            if not str(new_doc.get("Date", "")).strip():
+                new_doc["Date"] = now.strftime("%d-%m-%Y")
+            new_doc["DateObj"] = now
+
+            insert_res = collection.insert_one(new_doc)
+            lead_id_str = str(insert_res.inserted_id)
+            modified = 0
+            is_new = True
+
+            try:
+                create_contact(name, clean_phone)
+            except Exception as contact_err:
+                print(f"[add-lead] create_contact failed (non-fatal): {contact_err}")
+
+            # Round robin: only for brand-new leads, one lead -> one user
+            auto_assign_round_robin(collection_name, insert_res.inserted_id, clean_phone, name)
+
+        # 4. Activity Tracker
         log_activity(
             activity_type="CRM",
             source_platform="Nisha Homes CRM",
             caller_number=session.get("employee_number"),
             caller_name=session.get("employee_name") or "System/API",
             customer_name=name,
-            mobile=phone_number,
-            lead_id=str(result.upserted_id) if result.upserted_id else (str(existing_lead_doc["_id"]) if existing_lead_doc else None),
-            status="new" if not existing_lead_doc else "duplicate",
-            extra={"leadType": data.get("LeadType", ""), "collection": collection_name}
+            mobile=clean_phone,
+            lead_id=lead_id_str,
+            status="new" if is_new else "duplicate",
+            extra={"leadType": provided_lead_type, "collection": existing_coll or collection_name}
         )
 
         return jsonify({
             "success": True,
-            "matched_count": result.matched_count,
-            "modified_count": result.modified_count,
-            "upserted_id": str(result.upserted_id) if result.upserted_id else None
+            "isNew": is_new,
+            "matched_count": 0 if is_new else 1,
+            "modified_count": modified,
+            "upserted_id": lead_id_str if is_new else None,
+            "existing_id": None if is_new else lead_id_str,
+            "existing_collection": None if is_new else existing_coll
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -6362,11 +6453,10 @@ def import_leads_commit():
             try:
                 phone_col = mapping.get("Phone Number")
                 raw_phone = str(row.get(phone_col, "")).strip()
-                phone_clean = normalize_number(raw_phone)
-                if not phone_clean:
+                phone_clean = normalize_phone_91(raw_phone)
+                if not phone_last10(raw_phone):
                     skipped += 1
                     continue
-
                 doc = {}
                 for target_field, sheet_col in mapping.items():
                     if not sheet_col:
@@ -6389,13 +6479,19 @@ def import_leads_commit():
                 doc["DateObj"] = now
                 doc["adon_leads"] = 0   # NEW required field on every imported lead
 
-                existing = collection.find_one({"Phone Number": phone_clean})
+                # same number in ANY format / ANY lead collection -> update that one
+                existing_coll, existing = find_lead_by_any_phone(raw_phone, prefer_collection=collection_name)
                 if existing:
-                    # Keep the original Created At — never overwrite it on re-import
-                    collection.update_one({"_id": existing["_id"]}, {"$set": doc})
+                    doc.pop("Phone Number", None)    # keep the format it's already stored in
+                    doc.pop("DateObj", None)         # never reset the original lead date
+                    if existing.get("Date"):
+                        doc.pop("Date", None)
+                    if not mapping.get("LeadType"):
+                        doc.pop("LeadType", None)    # don't overwrite the type unless the sheet maps it
+                    db[existing_coll].update_one({"_id": existing["_id"]}, {"$set": doc})
                     updated += 1
                 else:
-                    doc["Created At"] = created_at_str   # NEW required field, set once
+                    doc["Created At"] = created_at_str   # set once
                     collection.insert_one(doc)
                     inserted += 1
 
@@ -7902,14 +7998,19 @@ def ist_iso_now():
 
 
 def find_wa_lead_by_phone(phone):
-    for coll_name in WA_LEAD_COLLECTIONS:
-        doc = db[coll_name].find_one({"Phone Number": phone})
-        if doc:
-            return coll_name, doc
-    return None, None
+    # matches +91 / 91 / no-prefix formats across all 4 lead collections
+    return find_lead_by_any_phone(phone)
 
 
 def create_wa_lead(phone, name_hint):
+    phone = normalize_phone_91(phone)
+
+    # If this number already exists in any format (or another thread is
+    # creating it this very second) -> reuse it, NEVER create a duplicate.
+    existing_coll, existing_doc = find_or_claim_lead(phone)
+    if existing_doc:
+        return existing_coll, existing_doc
+
     now = datetime.utcnow()
     doc = {
         "Phone Number": phone,
@@ -7940,10 +8041,7 @@ def create_wa_lead(phone, name_hint):
     except Exception as contact_err:
         print(f"[wa-ai] create_contact failed (non-fatal): {contact_err}")
 
-    # NEW: this is a genuinely brand-new lead — someone messaged in on
-    # WhatsApp who wasn't already a lead in any of the 4 collections
-    # (find_wa_lead_by_phone found nothing, which is why we're here).
-    # Round Robin should treat this exactly like a new /add-lead insert.
+    # Brand-new lead -> round robin (one lead -> one user)
     try:
         auto_assign_round_robin("Leads", result.inserted_id, phone, name_hint)
     except Exception as rr_err:
@@ -9164,7 +9262,7 @@ def team_webhooks_messages(token, number):
 # ROUND ROBIN LEAD AUTO-ASSIGNMENT + WIREBASE WHATSAPP NOTIFICATIONS
 # =====================================================================
 WIREBASE_API_KEY = os.getenv("WIREBASE_API_KEY")
-WIREBASE_INSTANCE_NAME = os.getenv("WIREBASE_INSTANCE_NAME")
+WIREBASE_INSTANCE_NAME = os.getenv("WIREBASE_INSTANCE_NAME") or "nishahome"
 WIREBASE_API_URL = "https://wirebase.sanjivanitechno.com/api/public/send"
 
 round_robin_collection = db["roundRobinSettings"]
@@ -9202,24 +9300,28 @@ def send_wirebase_message(to_phone, message, instance_name=None):
 
 
 def notify_employee_lead_assigned(employee_number, lead_name, lead_phone, assigned_by="Round Robin (Auto)"):
-    """Best-effort WhatsApp ping to an employee whenever a lead lands on
-    their plate — manual assign, bulk assign, or round-robin auto-assign."""
+    """Best-effort WhatsApp ping (Wirebase) to the ONE employee the lead
+    landed on. Runs in a background thread so a slow Wirebase call never
+    delays the lead being saved."""
     try:
-        emp_phone = normalize_number(str(employee_number))
+        emp_phone = normalize_phone_91(employee_number)
         if not emp_phone:
             return
-        if not emp_phone.startswith("91"):
-            emp_phone = "91" + emp_phone
 
-        clean_lead_phone = normalize_number(str(lead_phone or ""))
-        message = (
-            f"🔔 New Lead Assigned!\n\n"
-            f"Name: {lead_name or 'Unknown'}\n"
-            f"Phone: +{clean_lead_phone}\n\n"
-            f"Assigned to you by {assigned_by}. Please follow up promptly.\n\n"
-            f"— NishaHomes CRM"
-        )
-        send_wirebase_message(emp_phone, message)
+        lead_phone_clean = normalize_phone_91(lead_phone) if lead_phone else ""
+
+        lines = ["🔔 New Lead Assigned!", "", f"Name: {lead_name or 'Unknown'}"]
+        if lead_phone_clean:
+            lines.append(f"Phone: +{lead_phone_clean}")
+        lines += ["", f"Assigned to you by {assigned_by}. Please follow up promptly.", "", "— NishaHomes CRM"]
+        message = "\n".join(lines)
+
+        threading.Thread(
+            target=send_wirebase_message,
+            args=(emp_phone, message),
+            daemon=True,
+            name="wirebase-notify"
+        ).start()
     except Exception as e:
         print(f"[round-robin] notify_employee_lead_assigned failed: {e}")
 
@@ -9232,38 +9334,58 @@ def get_round_robin_config():
 
 def get_next_round_robin_employee():
     """
-    Atomically picks the next employee number in the saved rotation and
-    advances the pointer for next time. Returns an employee number, or
-    None if round-robin is disabled or no employees are configured.
+    Atomically hands out the next employee in the rotation. The pointer is
+    advanced with a single $inc, so two leads arriving at the same instant
+    can never get the same slot. Inactive members are skipped.
+    Returns an employee number, or None if round robin is off / empty.
     """
     config = round_robin_collection.find_one({"_id": "config"})
     if not config or not config.get("enabled") or not config.get("employees"):
         return None
 
-    employees = config["employees"]
-    pointer = config.get("pointer", 0) % len(employees)
-    next_employee = employees[pointer]
-    new_pointer = (pointer + 1) % len(employees)
+    for _ in range(len(config["employees"])):
+        doc = round_robin_collection.find_one_and_update(
+            {"_id": "config"},
+            {"$inc": {"pointer": 1}},
+            return_document=ReturnDocument.BEFORE
+        )
+        if not doc or not doc.get("enabled"):
+            return None
 
-    round_robin_collection.update_one({"_id": "config"}, {"$set": {"pointer": new_pointer}})
-    return next_employee
+        employees = doc.get("employees") or []
+        if not employees:
+            return None
+
+        candidate = employees[int(doc.get("pointer", 0)) % len(employees)]
+        member = db["teamAssign"].find_one({"Employee number": candidate}, {"Active": 1})
+        if member and member.get("Active", True):
+            return candidate
+        # inactive / removed member -> loop again, take the next slot
+
+    return None
 
 
 def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
     """
-    Called right after a BRAND NEW lead is inserted (never on an update to
-    an existing lead). If round-robin is enabled and has employees
-    configured, assigns the lead to the next employee in rotation and
-    sends them a WhatsApp notification via Wirebase.
+    Called right after a BRAND NEW lead is inserted. Gives the lead to
+    exactly ONE employee (next in rotation), then WhatsApps only that
+    employee via Wirebase. Leads that already have an owner are never touched.
     """
     try:
+        lead = db[collection_name].find_one({"_id": lead_id}, {"AssignToNumber": 1})
+        if not lead:
+            return
+        if lead.get("AssignToNumber") not in (None, ""):
+            print(f"[round-robin] lead {lead_id} already assigned - skipping")
+            return
+
         employee_number = get_next_round_robin_employee()
         if not employee_number:
             return
 
         employee = db["teamAssign"].find_one({"Employee number": employee_number})
         if not employee:
-            print(f"[round-robin] configured employee {employee_number} not found in teamAssign — skipping assignment")
+            print(f"[round-robin] employee {employee_number} not found in teamAssign - skipping")
             return
 
         now = datetime.utcnow()
@@ -9275,8 +9397,16 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
             "at": now
         }
 
-        db[collection_name].update_one(
-            {"_id": lead_id},
+        # Only assign if it is STILL unassigned (protects against a double-assign race)
+        result = db[collection_name].update_one(
+            {
+                "_id": lead_id,
+                "$or": [
+                    {"AssignToNumber": {"$exists": False}},
+                    {"AssignToNumber": None},
+                    {"AssignToNumber": ""}
+                ]
+            },
             {
                 "$set": {
                     "AssignTo": employee.get("Employee name"),
@@ -9289,13 +9419,16 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
             }
         )
 
+        if result.matched_count == 0:
+            print(f"[round-robin] lead {lead_id} got assigned by someone else first - no notification sent")
+            return
+
         notify_employee_lead_assigned(employee_number, lead_name, phone_number, assigned_by="Round Robin (Auto)")
-        print(f"[round-robin] auto-assigned lead {lead_id} to {employee.get('Employee name')} ({employee_number})")
+        print(f"[round-robin] lead {lead_id} -> {employee.get('Employee name')} ({employee_number})")
 
     except Exception:
         import traceback
         traceback.print_exc()
-
 
 @app.route("/round-robin")
 def round_robin_page():
@@ -9382,21 +9515,31 @@ def save_round_robin_config_api():
     enabled = bool(data.get("enabled", False))
     employees_raw = data.get("employees", [])
 
+    # only registered admin/emp members are allowed in the rotation
+    valid_numbers = {
+        m.get("Employee number")
+        for m in db["teamAssign"].find({"roll": {"$in": ["admin", "emp"]}}, {"Employee number": 1})
+    }
+
     employees = []
     for e in employees_raw:
         try:
             num = int(e)
-            if num not in employees:
-                employees.append(num)
         except (TypeError, ValueError):
             continue
+        if num in valid_numbers and num not in employees:
+            employees.append(num)
 
-    existing = round_robin_collection.find_one({"_id": "config"})
-    pointer = existing.get("pointer", 0) if existing else 0
-    if not employees:
-        pointer = 0
-    elif pointer >= len(employees):
-        pointer = 0
+    # keep "who is next" stable when the list is edited
+    existing = round_robin_collection.find_one({"_id": "config"}) or {}
+    old_employees = existing.get("employees") or []
+    old_pointer = int(existing.get("pointer", 0))
+
+    pointer = 0
+    if employees and old_employees:
+        prev_next = old_employees[old_pointer % len(old_employees)]
+        if prev_next in employees:
+            pointer = employees.index(prev_next)
 
     round_robin_collection.update_one(
         {"_id": "config"},
@@ -9404,7 +9547,6 @@ def save_round_robin_config_api():
         upsert=True
     )
     return jsonify({"success": True}), 200
-
 
 @app.route("/api/round-robin/reset-pointer", methods=["POST"])
 def reset_round_robin_pointer():
