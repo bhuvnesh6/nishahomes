@@ -3925,9 +3925,126 @@ except Exception as _pk_err:
 
 
 def phone_last10(raw):
-    """Last 10 digits of any phone format. '' if fewer than 10 digits."""
-    digits = re.sub(r"\D", "", str(raw or ""))
-    return digits[-10:] if len(digits) >= 10 else ""
+    """
+    Returns the 10-digit Indian mobile number from any format
+    (9876543210 / 919876543210 / +919876543210 / 09876543210).
+    Returns '' if it is NOT a valid Indian mobile (must be exactly 10
+    digits, starting 6-9). This stops malformed numbers like
+    +91982440060 (only 9 digits) from slipping through and breaking
+    the duplicate check.
+    """
+    d = re.sub(r"\D", "", str(raw or "")).lstrip("0")
+    if len(d) > 10 and d.startswith("91"):
+        d = d[2:]
+    if len(d) == 10 and d[0] in "6789":
+        return d
+    return ""
+
+
+# =====================================================================
+# NUMBER BLOCKLIST — blocked numbers can never create/update a lead
+# =====================================================================
+blocked_numbers_collection = db["blockedNumbers"]
+try:
+    blocked_numbers_collection.create_index("key", unique=True)
+except Exception as _bn_err:
+    print(f"[startup] blockedNumbers index warning: {_bn_err}")
+
+
+def block_key(raw):
+    """Canonical key for blocklist matching. Works even for malformed
+    numbers: '+91982440060' / '91982440060' / '982440060' -> '982440060'.
+    Exact comparison only, so it never blocks a real number like 9824400600."""
+    d = re.sub(r"\D", "", str(raw or "")).lstrip("0")
+    if len(d) > 10 and d.startswith("91"):
+        d = d[2:]
+    return d
+
+
+def is_number_blocked(raw):
+    key = block_key(raw)
+    if not key:
+        return False
+    try:
+        return blocked_numbers_collection.find_one({"key": key}) is not None
+    except Exception as e:
+        print(f"[block] lookup failed: {e}")
+        return False
+
+
+def _number_match_query(field, key):
+    """Mongo query matching this exact number in any stored format
+    (string / int / +91 / 91 / 0 prefix) — exact match, no substring hits."""
+    variants = [key, "91" + key, "+91" + key, "0" + key,
+                "+91 " + key, "91 " + key, "+91-" + key]
+    for v in (key, "91" + key):
+        if v.isdigit():
+            variants.append(int(v))
+    pattern = r"^[+\s\-]*(?:91)?[\s\-]*0?" + re.escape(key) + r"$"
+    return {"$or": [{field: {"$in": variants}}, {field: {"$regex": pattern}}]}
+
+
+def block_and_purge_number(raw, reason="", by="system"):
+    """Adds the number to the blocklist, then deletes every lead (all 4
+    lead collections) plus its endData, DAI, WhatsApp chat and followup
+    logs. Safe to run repeatedly. callLogs / activityLog are kept so
+    employee call statistics stay intact."""
+    key = block_key(raw)
+    if not key:
+        raise ValueError("Invalid number")
+
+    blocked_numbers_collection.update_one(
+        {"key": key},
+        {"$set": {"key": key, "original": str(raw), "reason": reason,
+                  "blockedBy": by, "blockedAt": datetime.utcnow()}},
+        upsert=True
+    )
+
+    deleted = {}
+    lead_ids = []
+    for coll_name in LEAD_COLLECTIONS_ALL:
+        docs = list(db[coll_name].find(_number_match_query("Phone Number", key), {"_id": 1}))
+        ids = [d["_id"] for d in docs]
+        lead_ids += [str(i) for i in ids]
+        deleted[coll_name] = db[coll_name].delete_many({"_id": {"$in": ids}}).deleted_count if ids else 0
+
+    deleted["endData"] = db["endData"].delete_many(_number_match_query("Number", key)).deleted_count
+    deleted["DAI"] = db["DAI"].delete_many(_number_match_query("Phone Number", key)).deleted_count
+    deleted["waChatMessages"] = db["waChatMessages"].delete_many(
+        {"$or": [{"leadId": {"$in": lead_ids}}, _number_match_query("phone", key)]}
+    ).deleted_count
+    deleted["followupLogs"] = db["followupLogs"].delete_many(_number_match_query("phone", key)).deleted_count
+
+    print(f"[block] {raw!r} (key={key}) blocked. Deleted: {deleted}")
+    return {"key": key, "deleted": deleted}
+
+
+@app.route("/api/admin/block-number", methods=["POST"])
+def api_block_number():
+    """Admin only — block a number + delete all its leads. Body: {"number": "...", "reason": "..."}"""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    data = request.json or {}
+    try:
+        result = block_and_purge_number(
+            data.get("number"), data.get("reason", ""),
+            by=session.get("employee_name") or "admin"
+        )
+        return jsonify({"success": True, **result}), 200
+    except ValueError as ve:
+        return jsonify({"success": False, "message": str(ve)}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ONE-TIME: block + wipe the flooding number. Idempotent, so it's safe on
+# every restart. You can delete this try-block after the first successful run.
+try:
+    block_and_purge_number("+91982440060", reason="Flood: 223 duplicate leads", by="startup-cleanup")
+except Exception as _purge_err:
+    print(f"[block] startup purge failed: {_purge_err}")
 
 
 def phone_variants(raw):
@@ -4016,6 +4133,8 @@ def add_lead():
         raw_phone = data.get("Phone Number")
         if not raw_phone:
             return jsonify({"error": "Phone Number is required"}), 400
+        if is_number_blocked(raw_phone):
+            return jsonify({"error": "This number is blocked in CRM"}), 403
         if not phone_last10(raw_phone):
             return jsonify({"error": "Invalid Phone Number - need a valid 10-digit mobile number"}), 400
 
@@ -6454,7 +6573,7 @@ def import_leads_commit():
                 phone_col = mapping.get("Phone Number")
                 raw_phone = str(row.get(phone_col, "")).strip()
                 phone_clean = normalize_phone_91(raw_phone)
-                if not phone_last10(raw_phone):
+                if is_number_blocked(raw_phone) or not phone_last10(raw_phone):
                     skipped += 1
                     continue
                 doc = {}
@@ -8539,8 +8658,18 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
         phone = normalize_number(sender_phone)
         if not phone:
             return
-        if not phone.startswith("91"):
-            phone = "91" + phone
+
+        # Blocked numbers: no lead, no chat, no AI reply, nothing stored
+        if is_number_blocked(phone):
+            print(f"[wa-ai] ignoring message from BLOCKED number {phone}")
+            return
+
+        # Malformed numbers must never create leads (that was the duplicate-flood bug)
+        if not phone_last10(phone):
+            print(f"[wa-ai] ignoring message from INVALID number {phone}")
+            return
+
+        phone = normalize_phone_91(phone)
 
         coll_name, lead_doc = find_wa_lead_by_phone(phone)
         if not lead_doc:
