@@ -275,6 +275,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     <p>Pick the team members who should share new leads on rotation. Every new lead is handed to the next person in the list, in order — and they get a WhatsApp ping the moment it happens.</p>
   </div>
 
+    <div class="card">
+    <div class="card-title">Hide "All Leads" Section</div>
+    <div class="card-sub">Turn ON for a member and the All Leads section disappears for them on the dashboard (applies on their next page load)</div>
+    <div class="workload-list" id="hideLeadsList">
+      <div class="loader"></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">Status</div>
     <div class="card-sub">Turn round robin on or off without losing your saved list</div>
@@ -323,6 +331,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
   <div class="save-bar">
     <button class="reset-btn" id="resetPointerBtn">↺ Reset rotation to start</button>
+    <button class="reset-btn" id="sendReportNowBtn">📊 Send reports now</button>
     <button class="save-btn" id="saveBtn">Save Settings</button>
   </div>
 </div>
@@ -379,7 +388,8 @@ async function loadConfig(){
 
     renderMemberList();
     renderRotationList();
-    renderWorkloadList();
+renderWorkloadList();
+    renderHideList();
   }catch(e){
     console.error(e);
     document.getElementById('memberList').innerHTML = '<p style="color:var(--hot);font-size:0.85rem">Failed to load team members</p>';
@@ -489,7 +499,64 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     const d = await res.json();
     if(d.success){
       showToast('Settings saved ✓');
-      loadConfig();
+      function renderHideList(){
+  const box = document.getElementById('hideLeadsList');
+  if(!members.length){
+    box.innerHTML = '<div class="workload-empty">No team members found</div>';
+    return;
+  }
+  box.innerHTML = members.map(m => `
+    <div class="workload-row">
+      <div class="workload-avatar">${initials(m.name)}</div>
+      <div class="workload-info">
+        <div class="workload-name">${escHtml(m.name)}</div>
+        <div class="workload-meta">${m.number} · ${m.hideAllLeads ? 'All Leads hidden' : 'All Leads visible'}</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" ${m.hideAllLeads ? 'checked' : ''} onchange="toggleHideAllLeads(${m.number}, this.checked, this)">
+        <span class="slider"></span>
+      </label>
+    </div>`).join('');
+}
+
+async function toggleHideAllLeads(number, hidden, el){
+  try{
+    const res = await fetch(`${BASE}/round-robin/hide-all-leads`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({number, hidden})
+    });
+    const d = await res.json();
+    if(d.success){
+      const m = members.find(x => x.number === number);
+      if(m) m.hideAllLeads = hidden;
+      showToast(hidden ? 'All Leads hidden for this user ✓' : 'All Leads visible again ✓');
+      renderHideList();
+    }else{
+      el.checked = !hidden;
+      showToast(d.message || 'Failed to update');
+    }
+  }catch(e){
+    console.error(e);
+    el.checked = !hidden;
+    showToast('Failed to update');
+  }
+}
+
+document.getElementById('sendReportNowBtn').addEventListener('click', async ()=>{
+  if(!confirm('Send the activity report right now to everyone selected in the rotation?')) return;
+  try{
+    const res = await fetch(`${BASE}/activity-report/send-now`, {method:'POST', credentials:'include'});
+    const d = await res.json();
+    showToast(d.success ? 'Reports are being sent ✓' : (d.message || 'Failed'));
+  }catch(e){
+    console.error(e);
+    showToast('Failed to start reports');
+  }
+});
+
+loadConfig();
     }else{
       showToast(d.message || 'Failed to save');
     }

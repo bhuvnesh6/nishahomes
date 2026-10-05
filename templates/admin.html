@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NishaHomes CRM</title>
+{% if hide_all_leads %}
+<style>
+  .sidebar-link[data-page="leads"], #leadsPage { display:none !important; }
+</style>
+{% endif %}
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════
@@ -1161,7 +1166,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .leads-table .th-check{padding:12px 14px 12px 16px}
 </style>
 </head>
-<body>
+<body data-hide-leads="{{ 'true' if hide_all_leads else 'false' }}">
 
 <div class="loader-overlay" id="loader"><div class="loader"></div></div>
 <div class="sidebar-veil" id="sidebarVeil"></div>
@@ -1311,6 +1316,16 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         <div class="dash-date-pill" id="dashDatePill">—</div>
       </div>
     </div>
+
+        {% if role == 'admin' %}
+    <div class="dash-section" id="reportAlertsSection" style="display:none">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Activity Report Delivery Alerts</div>
+        <div class="dash-section-sub">WhatsApp reports that failed to send</div>
+      </div>
+      <div id="reportAlertsList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    {% endif %}
 
     <!-- KPI: lead volume by type -->
     <div class="dash-section anim anim-1">
@@ -1878,8 +1893,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Caller Remarks</label>
-        <textarea class="form-textarea" id="callerRemarks"></textarea>
+        <label class="form-label">Caller Remarks *</label>
+        <textarea class="form-textarea" id="callerRemarks" required></textarea>
       </div>
       <button type="submit" class="submit-btn">Save Call Log</button>
     </form>
@@ -2001,6 +2016,7 @@ const API = {
   agent:   `${BASE}/agent-leads`,
 };
 const END_DATA_API = `${BASE}/end-data`;
+const HIDE_ALL_LEADS = document.body.dataset.hideLeads === 'true';
 
 /* ═══════════════════════════════════
    STATE
@@ -2550,6 +2566,7 @@ function renderAssignedCards(){
 ═══════════════════════════════════ */
 const sidebarLinks = document.querySelectorAll('.sidebar-link[data-page]');
 function switchPage(page){
+  if(page==='leads' && HIDE_ALL_LEADS) page = 'dashboard';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById(page+'Page').classList.add('active');
   sidebarLinks.forEach(l=>l.classList.toggle('active', l.dataset.page===page));
@@ -2575,7 +2592,7 @@ sidebarVeil.addEventListener('click',closeSidebar);
 ═══════════════════════════════════ */
 document.getElementById('topbarSearch').addEventListener('input',function(){
   const q=this.value.trim();
-  if(q.length>0){
+  if(q.length>0 && !HIDE_ALL_LEADS){
     switchPage('leads');
     document.getElementById('leadSearch').value=q;
     applyFilter();
@@ -2593,6 +2610,7 @@ async function loadAllLeads(keepPage){
       loadEndData(),
       loadDaiList(),
       (async()=>{
+        if(HIDE_ALL_LEADS) return;
         const types=['buying','rental','selling','agent'];
         const results = await Promise.allSettled(types.map(async t=>{
           const res = await fetch(API[t]);
@@ -3796,7 +3814,13 @@ document.getElementById('callLogOverlay').addEventListener('click',e=>{if(e.targ
 document.getElementById('callLogForm').addEventListener('input',captureCallLogDraft);
 
 document.getElementById('callLogForm').addEventListener('submit',async e=>{
-  e.preventDefault();showLoader();
+  e.preventDefault();
+  if(!document.getElementById('callerRemarks').value.trim()){
+    alert('Caller Remarks is required');
+    document.getElementById('callerRemarks').focus();
+    return;
+  }
+  showLoader();
   const phone=document.getElementById('callLogPhone').value;
   const type=document.getElementById('callLogLeadType').value;
   const colMap={buying:'Leads',rental:'RentalLeads',selling:'sellingLeads',agent:'agentLeads'};
@@ -4188,8 +4212,46 @@ function renderLostLeadsList(){
 }
 
 /* ═══════════════════════════════════
-   INIT
+   ACTIVITY REPORT DELIVERY ALERTS (admin only)
 ═══════════════════════════════════ */
+async function loadReportAlerts(){
+  const sec = document.getElementById('reportAlertsSection');
+  if(!sec) return; // not an admin
+  try{
+    const res = await fetch(`${BASE}/activity-report/failures`);
+    const d = await res.json();
+    if(!d.success || !d.data.length){ sec.style.display = 'none'; return; }
+    sec.style.display = 'block';
+    document.getElementById('reportAlertsList').innerHTML = d.data.map(f => `
+      <div style="background:#fff;border:1.5px solid #fca5a5;border-left:5px solid var(--hot);border-radius:var(--radius-sm);padding:14px 16px;box-shadow:var(--sh-sm)">
+        <div style="font-weight:700;color:var(--primary);font-size:0.9rem">⚠ ${escHtml(f.employeeName)} — ${escHtml(f.slot)} (${escHtml(f.date)})</div>
+        <div style="color:var(--hot);font-size:0.82rem;margin-top:4px;font-weight:600">${escHtml(f.error)}</div>
+        <div style="color:var(--text-soft);font-size:0.74rem;margin-top:2px">${f.attempts} attempt(s) · last tried ${escHtml(f.at)}</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="action-btn-sm primary" onclick="retryReport('${escHtml(f.id)}')">↻ Retry now</button>
+          <button class="action-btn-sm" onclick="dismissReport('${escHtml(f.id)}')">Dismiss</button>
+        </div>
+      </div>`).join('');
+  }catch(e){ console.warn('report alerts load failed', e); }
+}
+
+async function retryReport(id){
+  try{
+    const res = await fetch(`${BASE}/activity-report/retry/${encodeURIComponent(id)}`, {method:'POST'});
+    const d = await res.json();
+    alert(d.success ? 'Retry started — it will disappear from here if it succeeds.' : (d.message || 'Retry failed'));
+    setTimeout(loadReportAlerts, 4000);
+  }catch(e){ console.error(e); alert('Retry failed'); }
+}
+
+async function dismissReport(id){
+  if(!confirm('Dismiss this alert? The report will not be re-sent.')) return;
+  try{
+    await fetch(`${BASE}/activity-report/dismiss/${encodeURIComponent(id)}`, {method:'POST'});
+    loadReportAlerts();
+  }catch(e){ console.error(e); }
+}
+setInterval(loadReportAlerts, 60000);
 
 window.addEventListener('load',()=>{
   setTimeout(()=>{
@@ -4199,6 +4261,7 @@ window.addEventListener('load',()=>{
     loadDashboardOverview('lifetime');
     loadDashboardFollowups('today');
     flushCallQueue();
+    loadReportAlerts();
   },600);
 });
 </script>

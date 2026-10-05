@@ -1642,11 +1642,23 @@ def admin():
     if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
         return redirect("/")
 
+    # Per-user "Hide All Leads" flag (set from the Round Robin page).
+    # Read fresh from Mongo on every page load, so it applies immediately.
+    hide_all_leads = False
+    try:
+        me = db["teamAssign"].find_one(
+            {"Employee number": session.get("employee_number")}, {"HideAllLeads": 1}
+        )
+        hide_all_leads = bool((me or {}).get("HideAllLeads", False))
+    except Exception as e:
+        print(f"[admin] hide_all_leads lookup failed: {e}")
+
     return render_template(
         "admin.html",
         employee_name=session.get("employee_name"),
         employee_number=session.get("employee_number"),
-        role=session.get("role")
+        role=session.get("role"),
+        hide_all_leads=hide_all_leads
     )
 
 @app.route("/emp")
@@ -9605,7 +9617,7 @@ def get_round_robin_config_api():
 
     members = list(db["teamAssign"].find(
         {"roll": {"$in": ["admin", "emp"]}},
-        {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1}
+        {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1, "HideAllLeads": 1}
     ).sort("Employee name", 1))
 
     next_up = None
@@ -9630,6 +9642,7 @@ def get_round_robin_config_api():
             "number": m.get("Employee number"),
             "role": (m.get("roll") or "").strip().lower(),
             "active": m.get("Active", True),
+            "hideAllLeads": bool(m.get("HideAllLeads", False)),
             "assignedLeadsCount": assigned_counts.get(m.get("Employee number"), 0)
         } for m in members if m.get("Employee number") is not None]
     }), 200
@@ -10095,6 +10108,520 @@ def inventory_intel_publish():
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
+
+#Autonotification to team 
+
+# =====================================================================
+# HIDE "ALL LEADS" SECTION — per-user toggle (Round Robin page)
+# =====================================================================
+@app.route("/api/round-robin/hide-all-leads", methods=["POST"])
+def round_robin_hide_all_leads():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    data = request.json or {}
+    try:
+        number = int(str(data.get("number")).strip())
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid employee number"}), 400
+
+    hidden = bool(data.get("hidden", False))
+    result = db["teamAssign"].update_one(
+        {"Employee number": number},
+        {"$set": {"HideAllLeads": hidden}}
+    )
+    if result.matched_count == 0:
+        return jsonify({"success": False, "message": "Team member not found"}), 404
+
+    return jsonify({"success": True, "hidden": hidden}), 200
+
+
+# =====================================================================
+# DAILY ACTIVITY REPORT (PNG) -> WhatsApp via Wirebase
+# Sent to every member currently SELECTED in Round Robin, at 3 PM and
+# 10 PM IST. Un-select a member and no report is generated for them.
+# Image is saved in ./activity_reports, sent, then deleted on success.
+# On failure: auto-retry, then an alert appears on the admin dashboard.
+# =====================================================================
+ACTIVITY_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "activity_reports")
+os.makedirs(ACTIVITY_REPORT_DIR, exist_ok=True)
+
+# (slot key, hour in IST 24h, title shown on the report)
+ACTIVITY_REPORT_SLOTS = [
+    ("3PM", 15, "Afternoon Update - 3:00 PM"),
+    ("10PM", 22, "Final Update - 10:00 PM"),
+]
+ACTIVITY_REPORT_CATCHUP_MINUTES = 60      # if server was down at slot time, still send within this window
+ACTIVITY_REPORT_MAX_ATTEMPTS = 3          # send attempts per report before it is marked failed
+ACTIVITY_REPORT_RETRY_WAITS = [30, 90]    # seconds to wait between attempts
+
+ACTIVITY_REPORT_LABELS = {
+    "CALLING": "Calling",
+    "WHATSAPP": "WhatsApp Engagement",
+    "SQUARE_YARDS_LISTING": "Square Yards Listing",
+    "NISHA_HOMES_LISTING": "Nisha Homes Portal Listing",
+    "SQUARE_YARDS_LEAD_CLAIM": "Square Yards Lead Claim",
+    "CRM": "CRM Lead Addition",
+}
+ACTIVITY_REPORT_SUBTEXT = {
+    "WHATSAPP": "Messages sent",
+    "SQUARE_YARDS_LISTING": "Listings logged",
+    "NISHA_HOMES_LISTING": "Properties listed",
+    "SQUARE_YARDS_LEAD_CLAIM": "Leads claimed",
+}
+# Daily target per activity. Colour of the number is based on this:
+# 0 = RED, under 40% of target = BLACK, 40-99% = BROWN, target or more = GREEN.
+ACTIVITY_REPORT_TARGETS = {
+    "CALLING": 60,
+    "WHATSAPP": 30,
+    "SQUARE_YARDS_LISTING": 5,
+    "NISHA_HOMES_LISTING": 5,
+    "SQUARE_YARDS_LEAD_CLAIM": 5,
+    "CRM": 5,
+}
+
+REPORT_RED = (220, 38, 38)
+REPORT_BLACK = (17, 24, 39)
+REPORT_BROWN = (146, 84, 14)
+REPORT_GREEN = (22, 163, 74)
+
+activity_report_logs_collection = db["activityReportLogs"]
+
+
+def _safe_remove(path):
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[activity-report] could not delete {path}: {e}")
+
+
+def _set_report_log(log_id, **fields):
+    fields["updatedAt"] = datetime.utcnow()
+    activity_report_logs_collection.update_one(
+        {"_id": log_id},
+        {"$set": fields, "$setOnInsert": {"createdAt": datetime.utcnow()}},
+        upsert=True
+    )
+
+
+def get_ist_day_range_utc():
+    """Start of TODAY in IST (as naive UTC) -> now. This is the 'morning to now' window."""
+    ist_now = get_ist_now()
+    ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ist_midnight - timedelta(hours=5, minutes=30), datetime.utcnow(), ist_now
+
+
+def compute_activity_summary(emp_number, emp_name, start, end):
+    """Same numbers the Activity Tracker page shows, for one employee."""
+    summary = {t: {"count": 0, "connected": 0, "notConnected": 0,
+                   "newCount": 0, "duplicateCount": 0} for t in ACTIVITY_TYPES}
+
+    pipeline = [
+        {"$match": _other_activity_query(start, end, emp_number, emp_name)},
+        {"$group": {
+            "_id": "$activity_type",
+            "count": {"$sum": 1},
+            "newCount": {"$sum": {"$cond": [{"$eq": ["$status", "new"]}, 1, 0]}},
+            "duplicateCount": {"$sum": {"$cond": [{"$eq": ["$status", "duplicate"]}, 1, 0]}},
+        }}
+    ]
+    for r in activity_collection.aggregate(pipeline):
+        t = r["_id"]
+        if t in summary:
+            summary[t]["count"] = r["count"]
+            summary[t]["newCount"] = r.get("newCount", 0)
+            summary[t]["duplicateCount"] = r.get("duplicateCount", 0)
+
+    call_pipeline = [
+        {"$match": _calling_query(start, end, emp_number, emp_name)},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "attemptOnly": {"$sum": {"$cond": [{"$eq": ["$CallAttemptOnly", True]}, 1, 0]}},
+            "lost": {"$sum": {"$cond": [
+                {"$in": [{"$ifNull": ["$CallStatus", ""]}, list(LOST_CALL_STATUSES)]}, 1, 0
+            ]}},
+        }}
+    ]
+    rows = list(call_logs_collection.aggregate(call_pipeline))
+    if rows:
+        c = rows[0]
+        summary["CALLING"]["count"] = c["total"]
+        summary["CALLING"]["notConnected"] = c["lost"]
+        summary["CALLING"]["connected"] = max(0, c["total"] - c["attemptOnly"] - c["lost"])
+
+    return summary
+
+
+def _activity_level_color(count, target):
+    if count <= 0:
+        return REPORT_RED
+    ratio = count / float(target or 1)
+    if ratio >= 1:
+        return REPORT_GREEN
+    if ratio >= 0.4:
+        return REPORT_BROWN
+    return REPORT_BLACK
+
+
+def build_activity_report_image(emp_name, summary, slot_title, ist_now):
+    """Returns PNG bytes of the activity report card."""
+    W, pad = 1080, 48
+    header_h, strip_h = 220, 120
+    row_h, gap = 112, 14
+    total_h, footer_h = 120, 110
+    n = len(ACTIVITY_TYPES)
+    H = header_h + strip_h + n * (row_h + gap) + total_h + footer_h
+
+    img = Image.new("RGB", (W, H), (245, 243, 238))
+    d = ImageDraw.Draw(img)
+
+    # ---------- header ----------
+    d.rectangle([0, 0, W, header_h], fill=BRAND_NAVY_SOLID)
+    d.text((pad, 42), "NISHA HOMES", font=_font("bold", 38), fill=BRAND_GOLD)
+    d.text((pad, 100), "Daily Activity Report", font=_font("bold", 58), fill="white")
+    d.text((pad, 172), "Your Trusted Real Estate Advisor", font=_font("regular", 24), fill=(200, 204, 214))
+    d.line([(0, header_h), (W, header_h)], fill=BRAND_GOLD, width=5)
+
+    # ---------- employee strip ----------
+    date_txt = ist_now.strftime("%d %b %Y")
+    f_date = _font("bold", 30)
+    date_w = d.textlength(date_txt, font=f_date)
+    f_name = _font("bold", 40)
+    max_name_w = W - pad * 2 - date_w - 30
+    name_txt = emp_name or "Unknown"
+    while name_txt and d.textlength(name_txt, font=f_name) > max_name_w:
+        name_txt = name_txt[:-1]
+    if name_txt != (emp_name or "Unknown"):
+        name_txt = name_txt.rstrip() + "..."
+    d.text((pad, header_h + 22), name_txt, font=f_name, fill=REPORT_BLACK)
+    d.text((W - pad - date_w, header_h + 30), date_txt, font=f_date, fill=BRAND_ORANGE)
+    d.text(
+        (pad, header_h + 78),
+        f"{slot_title}   |   Today 12:00 AM to {ist_now.strftime('%I:%M %p')} IST",
+        font=_font("regular", 25), fill=(107, 114, 128)
+    )
+
+    # ---------- activity rows ----------
+    f_label = _font("bold", 32)
+    f_sub = _font("regular", 24)
+    f_count = _font("bold", 56)
+    f_target = _font("regular", 20)
+
+    y = header_h + strip_h
+    total_count = 0
+    zero_count = 0
+
+    for t in ACTIVITY_TYPES:
+        s = summary.get(t, {})
+        count = s.get("count", 0)
+        target = ACTIVITY_REPORT_TARGETS.get(t, 5)
+        color = _activity_level_color(count, target)
+        total_count += count
+        if count == 0:
+            zero_count += 1
+
+        if t == "CALLING":
+            sub = f"Connected {s.get('connected', 0)}   |   Not connected {s.get('notConnected', 0)}"
+        elif t == "CRM":
+            sub = f"New {s.get('newCount', 0)}   |   Duplicate {s.get('duplicateCount', 0)}"
+        else:
+            sub = ACTIVITY_REPORT_SUBTEXT.get(t, "")
+
+        x1, x2 = pad, W - pad
+        d.rounded_rectangle([x1, y, x2, y + row_h], radius=18, fill="white", outline=(225, 222, 214), width=2)
+        d.rounded_rectangle([x1, y + 14, x1 + 10, y + row_h - 14], radius=5, fill=color)
+
+        d.text((x1 + 34, y + 18), ACTIVITY_REPORT_LABELS.get(t, t), font=f_label, fill=REPORT_BLACK)
+        d.text((x1 + 34, y + 66), sub, font=f_sub, fill=(107, 114, 128))
+
+        cnt_txt = str(count)
+        cw = d.textlength(cnt_txt, font=f_count)
+        d.text((x2 - 30 - cw, y + 10), cnt_txt, font=f_count, fill=color)
+        tgt_txt = f"target {target}"
+        tw = d.textlength(tgt_txt, font=f_target)
+        d.text((x2 - 30 - tw, y + 82), tgt_txt, font=f_target, fill=(150, 150, 150))
+
+        y += row_h + gap
+
+    # ---------- total block ----------
+    d.rounded_rectangle([pad, y, W - pad, y + total_h - 14], radius=18, fill=BRAND_NAVY_SOLID)
+    d.text((pad + 34, y + 22), "TOTAL ACTIVITIES", font=_font("bold", 24), fill=BRAND_GOLD)
+    d.text((pad + 34, y + 52), str(total_count), font=_font("bold", 48), fill="white")
+    idle_txt = f"Idle categories: {zero_count}"
+    f_idle = _font("bold", 30)
+    iw = d.textlength(idle_txt, font=f_idle)
+    d.text((W - pad - 34 - iw, y + 44), idle_txt, font=f_idle,
+           fill=(252, 165, 165) if zero_count else (134, 239, 172))
+    y += total_h
+
+    # ---------- legend + footer ----------
+    f_leg = _font("regular", 22)
+    x = pad
+    for label, col in (("None", REPORT_RED), ("Low", REPORT_BLACK),
+                       ("Medium", REPORT_BROWN), ("On target", REPORT_GREEN)):
+        d.ellipse([x, y + 12, x + 20, y + 32], fill=col)
+        d.text((x + 30, y + 8), label, font=f_leg, fill=(107, 114, 128))
+        x += 30 + d.textlength(label, font=f_leg) + 40
+    d.text((pad, y + 54),
+           f"Generated {ist_now.strftime('%I:%M %p')} IST  |  nishahomes.com",
+           font=f_leg, fill=(150, 150, 150))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def send_wirebase_image(to_phone, image_url, caption, instance_name=None):
+    """Sends an image via Wirebase. Returns (ok: bool, error_message: str|None, response_json)."""
+    if not WIREBASE_API_KEY:
+        return False, "WIREBASE_API_KEY not configured in .env", None
+    try:
+        resp = requests.post(
+            WIREBASE_API_URL,
+            headers={"X-API-Key": WIREBASE_API_KEY},
+            json={
+                "instanceName": instance_name or WIREBASE_INSTANCE_NAME,
+                "to": to_phone,
+                "type": "image",
+                "url": image_url,
+                "caption": caption,
+            },
+            timeout=60
+        )
+    except Exception as e:
+        return False, f"Network error: {e}", None
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+
+    if resp.ok and body.get("success"):
+        return True, None, body
+    return False, (body.get("error") or f"HTTP {resp.status_code}"), body
+
+
+def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
+    """Builds the PNG for one employee, sends it (with retries), deletes the PNG on
+    success. On failure the PNG is kept and the log is marked 'failed' so the admin
+    dashboard shows it with a Retry button. Returns True/False."""
+    ist_date = get_ist_now().strftime("%Y-%m-%d")
+    base_fields = {
+        "employeeNumber": emp_number, "slot": slot_key,
+        "slotTitle": slot_title, "dateIST": ist_date
+    }
+
+    prev = activity_report_logs_collection.find_one({"_id": log_id}) or {}
+    if prev.get("imageFile"):
+        _safe_remove(os.path.join(ACTIVITY_REPORT_DIR, prev["imageFile"]))
+
+    emp_name = "Unknown"
+    filename = None
+    attempts = 0
+    last_error = None
+
+    try:
+        member = db["teamAssign"].find_one({"Employee number": emp_number}) or {}
+        emp_name = member.get("Employee name") or "Unknown"
+
+        start, end, ist_now = get_ist_day_range_utc()
+        summary = compute_activity_summary(emp_number, emp_name, start, end)
+        png_bytes = build_activity_report_image(emp_name, summary, slot_title, ist_now)
+
+        filename = f"report_{emp_number}_{ist_date}_{slot_key}_{secrets.token_hex(8)}.png"
+        path = os.path.join(ACTIVITY_REPORT_DIR, filename)
+        with open(path, "wb") as fh:
+            fh.write(png_bytes)
+
+        base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
+        image_url = f"{base_url}/activity-reports/{filename}"
+        to_phone = normalize_phone_91(emp_number)
+
+        total = sum(summary[t]["count"] for t in ACTIVITY_TYPES)
+        zero_names = [ACTIVITY_REPORT_LABELS[t] for t in ACTIVITY_TYPES if summary[t]["count"] == 0]
+        caption_lines = [
+            f"📊 Daily Activity Report - {emp_name}",
+            f"📅 {ist_now.strftime('%d %b %Y')} | {slot_title}",
+            f"Total activities: {total}",
+        ]
+        if zero_names:
+            caption_lines.append("⚠️ No activity yet: " + ", ".join(zero_names))
+        caption = "\n".join(caption_lines)
+
+        for attempt in range(1, ACTIVITY_REPORT_MAX_ATTEMPTS + 1):
+            attempts = attempt
+            ok, err, _ = send_wirebase_image(to_phone, image_url, caption)
+            if ok:
+                _safe_remove(path)  # success -> delete the image
+                _set_report_log(
+                    log_id, status="sent", resolved=True, error=None,
+                    attempts=attempts, employeeName=emp_name, imageFile=None, **base_fields
+                )
+                print(f"[activity-report] sent {slot_key} report to {emp_name} ({emp_number})")
+                return True
+
+            last_error = err
+            print(f"[activity-report] attempt {attempt} failed for {emp_name} ({emp_number}): {err}")
+            if attempt < ACTIVITY_REPORT_MAX_ATTEMPTS:
+                wait = ACTIVITY_REPORT_RETRY_WAITS[min(attempt - 1, len(ACTIVITY_REPORT_RETRY_WAITS) - 1)]
+                time.sleep(wait)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        last_error = f"Report generation failed: {e}"
+
+    _set_report_log(
+        log_id, status="failed", resolved=False, error=last_error,
+        attempts=attempts, employeeName=emp_name, imageFile=filename, **base_fields
+    )
+    return False
+
+
+def run_activity_report_slot(slot_key, slot_title, manual=False):
+    """Generates + sends reports to everyone CURRENTLY selected in Round Robin."""
+    date_ist = get_ist_now().strftime("%Y-%m-%d")
+    selected = list(get_round_robin_config().get("employees") or [])
+    if not selected:
+        print(f"[activity-report] {slot_key}: nobody selected in Round Robin - nothing to send")
+        return
+
+    for emp in selected:
+        # Re-check selection right before each send, so an un-select takes effect immediately
+        current = get_round_robin_config().get("employees") or []
+        if emp not in current:
+            continue
+
+        member = db["teamAssign"].find_one({"Employee number": emp}, {"Active": 1})
+        if not member or member.get("Active", True) is False:
+            continue
+
+        log_id = f"{date_ist}_{slot_key}_{emp}"
+        if manual:
+            log_id += f"_{int(time.time())}"
+
+        # Atomic claim: only ONE gunicorn worker can send a given slot to a given person
+        try:
+            activity_report_logs_collection.insert_one({
+                "_id": log_id, "status": "sending", "resolved": False,
+                "employeeNumber": emp, "slot": slot_key, "slotTitle": slot_title,
+                "dateIST": date_ist, "createdAt": datetime.utcnow(), "updatedAt": datetime.utcnow()
+            })
+        except DuplicateKeyError:
+            continue
+
+        try:
+            deliver_activity_report(emp, slot_key, slot_title, log_id)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        time.sleep(3)
+
+
+def activity_report_scheduler_loop():
+    print("[activity-report] scheduler loop started (IST slots: "
+          + ", ".join(f"{k}@{h}:00" for k, h, _ in ACTIVITY_REPORT_SLOTS) + ")")
+    while True:
+        try:
+            ist_now = get_ist_now()
+            for slot_key, hour, title in ACTIVITY_REPORT_SLOTS:
+                slot_dt = ist_now.replace(hour=hour, minute=0, second=0, microsecond=0)
+                if slot_dt <= ist_now < slot_dt + timedelta(minutes=ACTIVITY_REPORT_CATCHUP_MINUTES):
+                    run_activity_report_slot(slot_key, title)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        time.sleep(30)
+
+
+_activity_report_thread_started = False
+
+
+def start_activity_report_scheduler():
+    global _activity_report_thread_started
+    if _activity_report_thread_started:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        threading.Thread(target=activity_report_scheduler_loop, daemon=True,
+                         name="activity-report-scheduler").start()
+        _activity_report_thread_started = True
+        print("[activity-report] scheduler thread launched")
+
+
+start_activity_report_scheduler()
+
+
+# Public (unguessable filename) — Wirebase has to be able to download the PNG.
+@app.route("/activity-reports/<path:filename>")
+def serve_activity_report(filename):
+    return send_from_directory(ACTIVITY_REPORT_DIR, filename)
+
+
+@app.route("/api/activity-report/failures", methods=["GET"])
+def activity_report_failures():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    docs = list(activity_report_logs_collection.find(
+        {"status": "failed", "resolved": {"$ne": True}}
+    ).sort("updatedAt", -1).limit(50))
+    data = [{
+        "id": d["_id"],
+        "employeeName": d.get("employeeName") or "Unknown",
+        "employeeNumber": d.get("employeeNumber"),
+        "slot": d.get("slotTitle") or d.get("slot"),
+        "date": d.get("dateIST"),
+        "error": d.get("error") or "Unknown error",
+        "attempts": d.get("attempts", 0),
+        "at": format_ist(d.get("updatedAt")) if isinstance(d.get("updatedAt"), datetime) else "-"
+    } for d in docs]
+    return jsonify({"success": True, "count": len(data), "data": data}), 200
+
+
+@app.route("/api/activity-report/retry/<log_id>", methods=["POST"])
+def activity_report_retry(log_id):
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    doc = activity_report_logs_collection.find_one({"_id": log_id})
+    if not doc or doc.get("status") != "failed":
+        return jsonify({"success": False, "message": "No failed report found"}), 404
+
+    activity_report_logs_collection.update_one(
+        {"_id": log_id}, {"$set": {"status": "sending", "updatedAt": datetime.utcnow()}}
+    )
+    threading.Thread(
+        target=deliver_activity_report,
+        args=(doc["employeeNumber"], doc.get("slot", "RETRY"), doc.get("slotTitle", "Activity Report"), log_id),
+        daemon=True, name="activity-report-retry"
+    ).start()
+    return jsonify({"success": True, "message": "Retry started"}), 200
+
+
+@app.route("/api/activity-report/dismiss/<log_id>", methods=["POST"])
+def activity_report_dismiss(log_id):
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    doc = activity_report_logs_collection.find_one({"_id": log_id})
+    if doc and doc.get("imageFile"):
+        _safe_remove(os.path.join(ACTIVITY_REPORT_DIR, doc["imageFile"]))
+    activity_report_logs_collection.update_one(
+        {"_id": log_id}, {"$set": {"resolved": True, "dismissed": True, "imageFile": None}}
+    )
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/activity-report/send-now", methods=["POST"])
+def activity_report_send_now():
+    """Admin test button — sends a report right now to everyone selected in Round Robin."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    threading.Thread(
+        target=run_activity_report_slot,
+        args=("MANUAL", "Manual Report", True),
+        daemon=True, name="activity-report-manual"
+    ).start()
+    return jsonify({"success": True, "message": "Reports are being generated and sent"}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
