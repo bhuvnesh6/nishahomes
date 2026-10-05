@@ -6990,8 +6990,8 @@ FOLLOWUP_SEND_WAIT_MAX_MINUTES = 3  # can land on a decimal (1.2, 2.6, ...), not
 FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES = 10   # after a 35-message batch, cool down 7-10 min
 FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES = 20  # before starting on any leads left over
  
-FOLLOWUP_BUSINESS_START_HOUR = 10   # 10:00 AM IST — no sends before this
-FOLLOWUP_BUSINESS_END_HOUR = 19     # 7:00 PM IST — no sends at/after this
+FOLLOWUP_BUSINESS_START_HOUR = 9    # 9:00 AM IST — no AI replies / follow-ups before this
+FOLLOWUP_BUSINESS_END_HOUR = 22     # 10:00 PM IST — no AI replies / follow-ups at/after this
  
 FOLLOWUP_RESCAN_INTERVAL_SEC = 3600     # re-scan for newly-eligible leads every hour (during business hours)
  
@@ -7183,6 +7183,7 @@ def get_eligible_followup_leads(limit=None):
     # limitation as the rest of this app's dashboard endpoints.
     base_query = {
         "Created At": {"$exists": True},
+        "followup_optout": {"$ne": True},   # NEW: customer said stop / do not spam
         "$or": [
             {"followup_send": {"$exists": False}},
             {"followup_send": {"$lt": FOLLOWUP_MAX_ATTEMPTS}},
@@ -7258,7 +7259,10 @@ def process_single_followup(ctx):
  
     # Fetch this lead's own follow-up history so Mistral never repeats a
     # message or CTA word it already sent.
-    lead_doc = db[coll_name].find_one({"_id": lead_id}, {"followupHistory": 1}) or {}
+    lead_doc = db[coll_name].find_one({"_id": lead_id}, {"followupHistory": 1, "followup_optout": 1}) or {}
+    if lead_doc.get("followup_optout"):
+        print(f"[followup] skipping {phone} ({ctx['name']}) — customer opted out")
+        return
     previous_messages = lead_doc.get("followupHistory", [])
  
     message = generate_followup_message(ctx, end_doc, call_logs, attempt_number, previous_messages)
@@ -7451,7 +7455,7 @@ def _compute_followup_stats():
  
     counts = {0: 0, 1: 0, 2: 0}
     manual = 0
-    query = {"Created At": {"$exists": True}}
+    query = {"Created At": {"$exists": True}, "followup_optout": {"$ne": True}}
  
     for coll_name in FOLLOWUP_COLLECTIONS:
         for lead in db[coll_name].find(query, {"followup_send": 1, "LeadType": 1, "Created At": 1}):
@@ -7534,7 +7538,7 @@ def followup_leads_list():
  
     out = []
     for coll_name in FOLLOWUP_COLLECTIONS:
-        for lead in db[coll_name].find():
+        for lead in db[coll_name].find({"followup_optout": {"$ne": True}}):
             lead_type = _normalize_lead_type_field(lead.get("LeadType"))
             if lead_type in FOLLOWUP_LEAD_TYPES_EXCLUDED:
                 continue
@@ -8665,6 +8669,93 @@ def apply_ai_result_to_lead(coll_name, lead_id, ai_result):
 # ---------------------------------------------------------------------
 # ORCHESTRATOR — runs in a background thread per inbound message
 # ---------------------------------------------------------------------
+# =====================================================================
+# BUSINESS-HOURS AUTO-REPLY + "STOP / DO NOT SPAM" OPT-OUT
+# =====================================================================
+AFTER_HOURS_REPLY_COOLDOWN_HOURS = 8     # send the "team will contact you" message at most once per 8h per lead
+OPTOUT_SEND_CONFIRMATION = True          # set False to stay completely silent when someone says stop
+OPTOUT_CONFIRMATION_TEXT = (
+    "Understood 🙏 We've stopped our follow-up messages. "
+    "If you need anything later, just message us anytime.\n\n— Nisha Homes"
+)
+
+_OPTOUT_REGEXES = [re.compile(p) for p in (
+    r"^\W*(please\s+|pls\s+|plz\s+)?(stop|stopp+|unsubscribe|dnd)\W*$",
+    r"\bunsubscribe\b",
+    r"\bspam(ming|med|my)?\b",
+    r"\bstop\s+(it|this|these|all|them|sending|messaging|texting|msgs?|messages?|spamming|spam|follow\s?-?ups?|whatsapp|calling|disturbing|contacting|bothering)\b",
+    r"\b(do\s+not|don'?t|dont|never)\s+(send|message|msg|text|whatsapp|contact|disturb|bother|spam|follow)\b",
+    r"\b(do\s+not|don'?t|dont)\s+want\s+(any\s+)?(more\s+)?(messages?|msgs?|follow\s?-?ups?|updates?)\b",
+    r"\bdnd\b",
+    r"\b(msg|message|whatsapp)\s+(mat|na)\s+(karo|kro|bhejo|karna)\b",
+    r"\b(mat|na)\s+(bhejo|bhejna)\b",
+    r"\b(band|bnd|bandh)\s+(karo|kro|kar\s?do|kardo)\b",
+    r"\b(pareshan|tang|disturb)\s+(mat|na)\s+(karo|kro)\b",
+)]
+
+
+def is_followup_optout_message(text):
+    """True if the customer is asking us to stop messaging / spamming them."""
+    if not text:
+        return False
+    t = str(text).lower().replace("’", "'").replace("`", "'").strip()
+    if not t or len(t) > 300:
+        return False
+    return any(rx.search(t) for rx in _OPTOUT_REGEXES)
+
+
+def mark_followup_opt_out(coll_name, lead_id, original_text=""):
+    """Permanently stops automatic follow-ups for this lead."""
+    db[coll_name].update_one(
+        {"_id": lead_id},
+        {"$set": {
+            "followup_optout": True,
+            "followupStatus": "opted_out",
+            "followupOptOutAt": datetime.utcnow(),
+            "followupOptOutMessage": str(original_text or "")[:300],
+            "Followup": "no"
+        }}
+    )
+    invalidate_cache("followup_stats")
+
+
+def _fmt_hour_ampm(hour):
+    return f"{hour % 12 or 12}:00 {'AM' if hour < 12 else 'PM'}"
+
+
+def send_after_hours_reply(coll_name, lead_id, phone, recipient_phone_id):
+    """Static (non-AI) reply used outside business hours. Atomically claimed so
+    two quick messages can't both trigger it, and throttled per lead."""
+    now = datetime.utcnow()
+    cutoff = now - timedelta(hours=AFTER_HOURS_REPLY_COOLDOWN_HOURS)
+
+    claimed = db[coll_name].find_one_and_update(
+        {"_id": lead_id, "$or": [
+            {"lastAfterHoursReplyAt": {"$exists": False}},
+            {"lastAfterHoursReplyAt": {"$lt": cutoff}}
+        ]},
+        {"$set": {"lastAfterHoursReplyAt": now}}
+    )
+    if not claimed:
+        print(f"[wa-ai] after-hours reply already sent recently to {phone} — staying silent")
+        return
+
+    text = (
+        "Thank you for reaching out to Nisha Homes 🙏\n\n"
+        "Our team is currently offline. We will contact you during business hours "
+        f"({_fmt_hour_ampm(FOLLOWUP_BUSINESS_START_HOUR)} – {_fmt_hour_ampm(FOLLOWUP_BUSINESS_END_HOUR)} IST).\n\n"
+        "🌐 https://nishahomes.com"
+    )
+    try:
+        send_whatsapp_text(phone, text, phone_no_id=recipient_phone_id)
+        save_chat_message(lead_id, phone, "assistant", text)
+        db[coll_name].update_one({"_id": lead_id}, {"$set": {"AIreply": text}})
+        print(f"[wa-ai] after-hours reply sent to {phone}")
+    except Exception as e:
+        print(f"[wa-ai] after-hours reply failed for {phone}: {e}")
+        db[coll_name].update_one({"_id": lead_id}, {"$unset": {"lastAfterHoursReplyAt": ""}})
+
+
 def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_phone_id):
     try:
         phone = normalize_number(sender_phone)
@@ -8699,8 +8790,25 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
             update_fields["Lead Name"] = sender_name
         db[coll_name].update_one({"_id": lead_id}, {"$set": update_fields})
 
+        # ---- "stop" / "do not spam" -> kill follow-ups for this lead, no AI reply ----
+        if is_followup_optout_message(user_text):
+            mark_followup_opt_out(coll_name, lead_id, user_text)
+            print(f"[wa-ai] {phone} opted out of follow-ups: {user_text!r}")
+            if OPTOUT_SEND_CONFIRMATION and not is_ai_disabled_for_phone(phone):
+                try:
+                    send_whatsapp_text(phone, OPTOUT_CONFIRMATION_TEXT, phone_no_id=recipient_phone_id)
+                    save_chat_message(lead_id, phone, "assistant", OPTOUT_CONFIRMATION_TEXT)
+                except Exception as optout_err:
+                    print(f"[wa-ai] opt-out confirmation failed: {optout_err}")
+            return
+
         if is_ai_disabled_for_phone(phone):
             print(f"[wa-ai] AI disabled for {phone} — message stored, no auto-reply")
+            return
+
+        # ---- outside business hours: no AI, just the static "team will contact you" message ----
+        if not is_within_business_hours():
+            send_after_hours_reply(coll_name, lead_id, phone, recipient_phone_id)
             return
 
         lead_doc = db[coll_name].find_one({"_id": lead_id})
@@ -9285,6 +9393,14 @@ def team_webhook_receiver(token):
             # NEW: Activity Tracker — only the employee's OWN outgoing
             # messages count as their WhatsApp Engagement activity;
             # inbound customer messages aren't a "caller" action.
+            # NEW: customer said "stop / do not spam" -> stop their follow-ups
+            if direction == "in" and lead_match and is_followup_optout_message(message_text):
+                try:
+                    mark_followup_opt_out(lead_match["collection"], ObjectId(lead_match["leadId"]), message_text)
+                    print(f"[team-webhook] {number} opted out of follow-ups: {message_text!r}")
+                except Exception as optout_err:
+                    print(f"[team-webhook] opt-out failed for {number}: {optout_err}")
+
             if direction == "out":
                 emp_doc = db["teamAssign"].find_one({"Employee number": wh.get("employeeNumber")})
                 log_activity(
