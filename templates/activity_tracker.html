@@ -75,8 +75,9 @@ label.fld{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-
     <h2>📥 Manual Entry — Square Yards</h2>
     <div class="sub" style="margin-bottom:10px">Square Yards Listing and Lead Claim have no direct integration yet, so log these by hand.</div>
     <div class="tabs2">
-      <div class="t on" data-mode="listing" onclick="setMode('listing')">Listing</div>
-      <div class="t" data-mode="claim" onclick="setMode('claim')">Lead Claim</div>
+      <div class="t on" data-mode="listing" onclick="setMode('listing')">SY Listing</div>
+      <div class="t" data-mode="claim" onclick="setMode('claim')">SY Lead Claim</div>
+      <div class="t" data-mode="visit" onclick="setMode('visit')">Site Visit</div>
     </div>
     <div id="listingForm">
       <div class="row">
@@ -106,6 +107,19 @@ label.fld{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-
       <textarea id="c_notes" placeholder="Notes (optional)" style="margin-top:8px;width:100%"></textarea>
       <button class="btn primary" style="margin-top:10px" onclick="submitClaim()">Log Lead Claim</button>
     </div>
+    <div id="visitForm" style="display:none">
+      <div class="sub" style="margin-bottom:8px">Log a customer who visited. If you pick a team member in the filter above and you are admin, the visit is credited to them.</div>
+      <div class="row">
+        <input type="text" id="v_name" placeholder="Visitor name *">
+        <input type="text" id="v_mobile" placeholder="Visitor mobile number *">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="v_prop" placeholder="Property / project visited">
+        <input type="date" id="v_date" style="flex:1;min-width:140px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:13px;font-family:inherit">
+      </div>
+      <textarea id="v_notes" placeholder="Notes (optional)" style="margin-top:8px;width:100%"></textarea>
+      <button class="btn primary" style="margin-top:10px" onclick="submitVisit()">Log Site Visit</button>
+    </div>
   </div>
 
   <div class="card">
@@ -125,7 +139,8 @@ function fmtDur(sec){if(!sec)return '-';const m=Math.round(sec/60);return m+'m';
 
 const TYPE_LABELS={
   ALL:'All', CALLING:'Calling', WHATSAPP:'WhatsApp', SQUARE_YARDS_LISTING:'SY Listing',
-  NISHA_HOMES_LISTING:'Portal Listing', SQUARE_YARDS_LEAD_CLAIM:'SY Lead Claim', CRM:'CRM Lead Added'
+  NISHA_HOMES_LISTING:'Portal Listing', SQUARE_YARDS_LEAD_CLAIM:'SY Lead Claim', CRM:'CRM Lead Added',
+  SITE_VISIT:'Site Visits'
 };
 let currentType='ALL';
 
@@ -156,6 +171,8 @@ async function loadSummary(){
     ['SQUARE_YARDS_LISTING','🏢 Square Yards Listing',`${d.SQUARE_YARDS_LISTING.newCount} new`],
     ['SQUARE_YARDS_LEAD_CLAIM','🎯 SY Lead Claim',`claimed`],
     ['CRM','📝 CRM Leads Added',`${d.CRM.newCount} new · ${d.CRM.duplicateCount} duplicate`],
+    ['SITE_VISIT','🚶 Site Visits',
+      `This week: <b>${d.SITE_VISIT.weekCount||0}/${d.SITE_VISIT.weekTarget||5}</b> · ${d.SITE_VISIT.weekRemaining||0} to go · ${d.SITE_VISIT.daysLeft||0} day(s) left`],
   ];
   $('#statGrid').innerHTML=cards.map(([key,label,sub])=>`
     <div class="stat-card" onclick="filterByType('${key}')">
@@ -183,6 +200,7 @@ async function loadList(){
     <div class="list-item">
       <div class="list-top"><b>${esc(TYPE_LABELS[a.activityType]||a.activityType)}</b><span class="mini">${esc(a.startTime)}</span></div>
       <div class="mini">${esc(a.callerName||'-')} · ${esc(a.customerName||a.propertyName||a.mobile||'-')} ${a.status?'· '+esc(a.status):''}</div>
+      ${a.activityType==='SITE_VISIT'?`<div class="mini">👤 Visitor: <b>${esc(a.customerName||'-')}</b> · 📞 ${esc(a.mobile||'-')} ${a.propertyName?'· 🏠 '+esc(a.propertyName):''}</div>`:''}
     </div>
   `).join('');
 }
@@ -190,10 +208,26 @@ async function loadList(){
 function reload(){loadSummary();loadList();}
 
 function setMode(m){
-  document.querySelectorAll('#listingForm ~ .t, .tabs2 .t').forEach(()=>{});
-  document.querySelectorAll('.card .tabs2 .t').forEach(t=>t.classList.toggle('on',t.dataset.mode===m));
+  document.querySelectorAll('.card .tabs2 .t[data-mode]').forEach(t=>t.classList.toggle('on',t.dataset.mode===m));
   $('#listingForm').style.display = m==='listing' ? '' : 'none';
   $('#claimForm').style.display = m==='claim' ? '' : 'none';
+  $('#visitForm').style.display = m==='visit' ? '' : 'none';
+}
+
+async function submitVisit(){
+  const body={
+    visitorName:$('#v_name').value.trim(), visitorMobile:$('#v_mobile').value.trim(),
+    propertyName:$('#v_prop').value, visitDate:$('#v_date').value,
+    notes:$('#v_notes').value, employeeNumber:$('#callerSelect').value
+  };
+  if(!body.visitorName||!body.visitorMobile){toast('Visitor name and mobile are required');return;}
+  const r=await fetch('/api/activity/site-visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.success){
+    toast(`Visit logged ✓ (${j.weekly.weekCount}/${j.weekly.weekTarget} this week)`);
+    ['v_name','v_mobile','v_prop','v_date','v_notes'].forEach(id=>$('#'+id).value='');
+    reload();
+  } else toast(j.message||'Failed');
 }
 
 async function submitListing(){

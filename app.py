@@ -9871,8 +9871,41 @@ def get_assigned_leads_for_employee(number):
 # =====================================================================
 ACTIVITY_TYPES = [
     "CALLING", "WHATSAPP", "SQUARE_YARDS_LISTING",
-    "NISHA_HOMES_LISTING", "SQUARE_YARDS_LEAD_CLAIM", "CRM"
+    "NISHA_HOMES_LISTING", "SQUARE_YARDS_LEAD_CLAIM", "CRM", "SITE_VISIT"
 ]
+
+# Weekly site-visit target (Monday to Saturday, IST)
+WEEKLY_VISIT_TARGET = 5
+
+
+def get_ist_week_range_utc():
+    """Returns (week_start_utc, week_end_utc, days_left).
+    Week = Monday 00:00 IST -> Sunday 00:00 IST (i.e. Mon-Sat working week).
+    days_left = working days left INCLUDING today (Mon=6 ... Sat=1, Sun=0)."""
+    ist_now = get_ist_now()
+    monday_ist = ist_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=ist_now.weekday())
+    start_utc = monday_ist - timedelta(hours=5, minutes=30)
+    end_utc = start_utc + timedelta(days=6)
+    days_left = max(0, 6 - ist_now.weekday())
+    return start_utc, end_utc, days_left
+
+
+def get_weekly_visit_stats(emp_number, emp_name):
+    """Visits logged this week (Mon-Sat IST) vs the weekly target."""
+    start_utc, end_utc, days_left = get_ist_week_range_utc()
+    q = {"activity_type": "SITE_VISIT", "start_time": {"$gte": start_utc, "$lt": end_utc}}
+    if emp_number is not None:
+        clauses = [{"caller_number": emp_number}]
+        if emp_name:
+            clauses.append({"caller_name": emp_name})
+        q["$or"] = clauses
+    count = activity_collection.count_documents(q)
+    return {
+        "weekCount": count,
+        "weekTarget": WEEKLY_VISIT_TARGET,
+        "weekRemaining": max(0, WEEKLY_VISIT_TARGET - count),
+        "daysLeft": days_left
+    }
 
 
 def get_activity_period_range(period):
@@ -10022,6 +10055,7 @@ def activity_summary():
                 "duplicateCount": 0,
             }
 
+        summary["SITE_VISIT"].update(get_weekly_visit_stats(emp_number, emp_name))
         return jsonify({"success": True, "period": period, "data": summary}), 200
     except Exception as e:
         import traceback
@@ -10104,6 +10138,60 @@ def activity_list():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/activity/site-visit", methods=["POST"])
+def activity_site_visit():
+    """Logs a customer site visit. Stores the visitor's name + number.
+    Counts toward the employee's weekly visit target (5 / Mon-Sat).
+    Admin can log on behalf of another employee by sending employeeNumber."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    data = request.json or {}
+    visitor_name = (data.get("visitorName") or "").strip()
+    visitor_mobile = (data.get("visitorMobile") or "").strip()
+    if not visitor_name or not visitor_mobile:
+        return jsonify({"success": False, "message": "Visitor name and mobile number are required"}), 400
+
+    emp_number = session.get("employee_number")
+    emp_name = session.get("employee_name")
+    if session.get("role") == "admin" and data.get("employeeNumber"):
+        try:
+            num = int(str(data.get("employeeNumber")).strip())
+            member = db["teamAssign"].find_one({"Employee number": num})
+            if member:
+                emp_number = num
+                emp_name = member.get("Employee name")
+        except ValueError:
+            pass
+
+    # Visit date (optional, YYYY-MM-DD, IST). Default = right now.
+    visit_dt = datetime.utcnow()
+    if data.get("visitDate"):
+        try:
+            d = datetime.strptime(str(data["visitDate"]).strip(), "%Y-%m-%d")
+            visit_dt = d.replace(hour=12) - timedelta(hours=5, minutes=30)   # noon IST
+        except ValueError:
+            pass
+
+    mobile = normalize_phone_91(visitor_mobile) if phone_last10(visitor_mobile) else visitor_mobile
+
+    log_activity(
+        activity_type="SITE_VISIT",
+        source_platform="Site Visit",
+        caller_number=emp_number,
+        caller_name=emp_name,
+        customer_name=visitor_name,
+        mobile=mobile,
+        property_name=data.get("propertyName", ""),
+        start_time=visit_dt,
+        status="completed",
+        extra={"notes": data.get("notes", "")}
+    )
+
+    stats = get_weekly_visit_stats(emp_number, emp_name)
+    return jsonify({"success": True, "weekly": stats}), 200
 
 @app.route("/api/activity/square-yards-listing", methods=["POST"])
 def activity_square_yards_listing():
@@ -10278,6 +10366,7 @@ ACTIVITY_REPORT_LABELS = {
     "NISHA_HOMES_LISTING": "Nisha Homes Portal Listing",
     "SQUARE_YARDS_LEAD_CLAIM": "Square Yards Lead Claim",
     "CRM": "CRM Lead Addition",
+    "SITE_VISIT": "Site Visits (Weekly)",
 }
 ACTIVITY_REPORT_SUBTEXT = {
     "WHATSAPP": "Messages sent",
@@ -10294,6 +10383,7 @@ ACTIVITY_REPORT_TARGETS = {
     "NISHA_HOMES_LISTING": 5,
     "SQUARE_YARDS_LEAD_CLAIM": 5,
     "CRM": 5,
+    "SITE_VISIT": WEEKLY_VISIT_TARGET,
 }
 
 REPORT_RED = (220, 38, 38)
@@ -10367,6 +10457,7 @@ def compute_activity_summary(emp_number, emp_name, start, end):
         summary["CALLING"]["notConnected"] = c["lost"]
         summary["CALLING"]["connected"] = max(0, c["total"] - c["attemptOnly"] - c["lost"])
 
+    summary["SITE_VISIT"].update(get_weekly_visit_stats(emp_number, emp_name))
     return summary
 
 
@@ -10431,10 +10522,19 @@ def build_activity_report_image(emp_name, summary, slot_title, ist_now):
 
     for t in ACTIVITY_TYPES:
         s = summary.get(t, {})
-        count = s.get("count", 0)
+        today_count = s.get("count", 0)
+        count = today_count
         target = ACTIVITY_REPORT_TARGETS.get(t, 5)
+        tgt_txt = f"target {target}"
+
+        if t == "SITE_VISIT":
+            # Weekly (Mon-Sat) visits vs weekly target
+            count = s.get("weekCount", 0)
+            target = s.get("weekTarget", WEEKLY_VISIT_TARGET)
+            tgt_txt = f"target {target}/week"
+
         color = _activity_level_color(count, target)
-        total_count += count
+        total_count += today_count
         if count == 0:
             zero_count += 1
 
@@ -10442,6 +10542,15 @@ def build_activity_report_image(emp_name, summary, slot_title, ist_now):
             sub = f"Connected {s.get('connected', 0)}   |   Not connected {s.get('notConnected', 0)}"
         elif t == "CRM":
             sub = f"New {s.get('newCount', 0)}   |   Duplicate {s.get('duplicateCount', 0)}"
+        elif t == "SITE_VISIT":
+            remaining = max(0, target - count)
+            days_left = s.get("daysLeft", 0)
+            if remaining == 0:
+                sub = f"Weekly target achieved ({count}/{target})   |   Today {today_count}"
+            elif days_left == 0:
+                sub = f"Week ended: {remaining} short of target   |   Today {today_count}"
+            else:
+                sub = f"{remaining} more to go   |   {days_left} day(s) left   |   Today {today_count}"
         else:
             sub = ACTIVITY_REPORT_SUBTEXT.get(t, "")
 
@@ -10455,7 +10564,6 @@ def build_activity_report_image(emp_name, summary, slot_title, ist_now):
         cnt_txt = str(count)
         cw = d.textlength(cnt_txt, font=f_count)
         d.text((x2 - 30 - cw, y + 10), cnt_txt, font=f_count, fill=color)
-        tgt_txt = f"target {target}"
         tw = d.textlength(tgt_txt, font=f_target)
         d.text((x2 - 30 - tw, y + 82), tgt_txt, font=f_target, fill=(150, 150, 150))
 
@@ -10463,7 +10571,7 @@ def build_activity_report_image(emp_name, summary, slot_title, ist_now):
 
     # ---------- total block ----------
     d.rounded_rectangle([pad, y, W - pad, y + total_h - 14], radius=18, fill=BRAND_NAVY_SOLID)
-    d.text((pad + 34, y + 22), "TOTAL ACTIVITIES", font=_font("bold", 24), fill=BRAND_GOLD)
+    d.text((pad + 34, y + 22), "TOTAL ACTIVITIES (TODAY)", font=_font("bold", 24), fill=BRAND_GOLD)
     d.text((pad + 34, y + 52), str(total_count), font=_font("bold", 48), fill="white")
     idle_txt = f"Idle categories: {zero_count}"
     f_idle = _font("bold", 30)
@@ -10556,7 +10664,10 @@ def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
         to_phone = normalize_phone_91(emp_number)
 
         total = sum(summary[t]["count"] for t in ACTIVITY_TYPES)
-        zero_names = [ACTIVITY_REPORT_LABELS[t] for t in ACTIVITY_TYPES if summary[t]["count"] == 0]
+        zero_names = [
+            ACTIVITY_REPORT_LABELS[t] for t in ACTIVITY_TYPES
+            if (summary[t].get("weekCount", 0) if t == "SITE_VISIT" else summary[t]["count"]) == 0
+        ]
         caption_lines = [
             f"📊 Daily Activity Report - {emp_name}",
             f"📅 {ist_now.strftime('%d %b %Y')} | {slot_title}",
@@ -10564,6 +10675,17 @@ def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
         ]
         if zero_names:
             caption_lines.append("⚠️ No activity yet: " + ", ".join(zero_names))
+        sv = summary.get("SITE_VISIT", {})
+        sv_done = sv.get("weekCount", 0)
+        sv_target = sv.get("weekTarget", WEEKLY_VISIT_TARGET)
+        sv_left = max(0, sv_target - sv_done)
+        if sv_left == 0:
+            caption_lines.append(f"✅ Site visits this week: {sv_done}/{sv_target} - target achieved")
+        else:
+            caption_lines.append(
+                f"🏠 Site visits this week: {sv_done}/{sv_target} - {sv_left} more needed, "
+                f"{sv.get('daysLeft', 0)} day(s) left (Mon-Sat)"
+            )
         caption = "\n".join(caption_lines)
 
         for attempt in range(1, ACTIVITY_REPORT_MAX_ATTEMPTS + 1):
