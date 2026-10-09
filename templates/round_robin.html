@@ -568,54 +568,7 @@ document.getElementById('sendReportNowBtn').addEventListener('click', async ()=>
   }
 });
 
-async function toggleHideAllLeads(number, hidden, el){
-  try{
-    const res = await fetch(`${BASE}/round-robin/hide-all-leads`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({number, hidden})
-    });
-    const d = await res.json();
-    if(d.success){
-      const m = members.find(x => x.number === number);
-      if(m) m.hideAllLeads = hidden;
-      showToast(hidden ? 'All Leads hidden for this user ✓' : 'All Leads visible again ✓');
-      renderHideList();
-    }else{
-      el.checked = !hidden;
-      showToast(d.message || 'Failed to update');
-    }
-  }catch(e){
-    console.error(e);
-    el.checked = !hidden;
-    showToast('Failed to update');
-  }
-}
 
-document.getElementById('sendReportNowBtn').addEventListener('click', async ()=>{
-  if(!confirm('Send the activity report right now to everyone selected in the rotation?')) return;
-  try{
-    const res = await fetch(`${BASE}/activity-report/send-now`, {method:'POST', credentials:'include'});
-    const d = await res.json();
-    showToast(d.success ? 'Reports are being sent ✓' : (d.message || 'Failed'));
-  }catch(e){
-    console.error(e);
-    showToast('Failed to start reports');
-  }
-});
-
-loadConfig();
-    }else{
-      showToast(d.message || 'Failed to save');
-    }
-  }catch(e){
-    console.error(e);
-    showToast('Failed to save settings');
-  }finally{
-    btn.disabled = false; btn.textContent = 'Save Settings';
-  }
-});
 
 document.getElementById('resetPointerBtn').addEventListener('click', async ()=>{
   if(!confirm('Reset the rotation back to the first person in the list?')) return;
