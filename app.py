@@ -10861,5 +10861,589 @@ def activity_report_send_now():
     ).start()
     return jsonify({"success": True, "message": "Reports are being generated and sent"}), 200
 
+# =====================================================================
+# AI OUTBOUND CALLING (PravaahAI)
+# Flow per lead (strictly ONE call at a time):
+#   place AI call -> wait until Pravaah says "ready" (summary + recording +
+#   transcript) -> fill lead fields -> send best matching property on
+#   WhatsApp -> only THEN place the next call.
+# Calls only run inside business hours (9 AM - 10 PM IST, same as Pravaah).
+# =====================================================================
+PRAVAAH_API_KEY = os.getenv("PRAVAAH_API_KEY")
+PRAVAAH_BASE_URL = os.getenv("PRAVAAH_BASE_URL", "https://pravahai.sanjivanitechno.com/api/public/v1")
+PRAVAAH_AGENT_ID = os.getenv("PRAVAAH_AGENT_ID", "")
+
+AI_CALL_RESULT_MAX_WAIT_SEC = 25 * 60   # max wait for a finished call + summary + recording
+AI_CALL_POLL_INTERVAL_SEC = 12
+AI_CALL_GAP_SECONDS = 20                # pause between one finished lead and the next call
+AI_CALL_STALE_MINUTES = 40              # job stuck longer than this (crash/restart) -> failed
+AI_CALL_LOCK_TTL_SEC = 600
+_AI_CALL_OWNER = f"{socket.gethostname()}-{os.getpid()}"
+
+ai_call_queue_collection = db["aiCallQueue"]
+try:
+    ai_call_queue_collection.create_index([("status", 1), ("createdAt", 1)])
+    ai_call_queue_collection.create_index("phone10")
+except Exception as _aq_err:
+    print(f"[startup] aiCallQueue index warning: {_aq_err}")
+
+
+class PravaahError(Exception):
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _pravaah_headers():
+    if not PRAVAAH_API_KEY:
+        raise PravaahError("PRAVAAH_API_KEY not configured in .env")
+    return {"X-API-Key": PRAVAAH_API_KEY, "Content-Type": "application/json"}
+
+
+def place_pravaah_ai_call(phone10, name, reference_id):
+    """POST /calls/place with mode=ai. Returns the 202 body (call_id, result_url...)."""
+    payload = {"phone": phone10, "mode": "ai", "reference_id": reference_id}
+    if name:
+        payload["name"] = name
+    if PRAVAAH_AGENT_ID:
+        payload["agent_id"] = PRAVAAH_AGENT_ID
+    try:
+        resp = requests.post(f"{PRAVAAH_BASE_URL}/calls/place",
+                             headers=_pravaah_headers(), json=payload, timeout=30)
+    except requests.RequestException as e:
+        raise PravaahError(f"Network error: {e}")
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    if resp.status_code not in (200, 201, 202) or not body.get("success", True):
+        raise PravaahError(body.get("error") or body.get("message") or f"HTTP {resp.status_code}",
+                           resp.status_code)
+    return body
+
+
+def _acquire_ai_call_lock(owner, ttl_seconds):
+    """Mongo lock so only ONE gunicorn worker ever runs the calling loop."""
+    now = datetime.utcnow()
+    expires = now + timedelta(seconds=ttl_seconds)
+    res = system_locks_collection.find_one_and_update(
+        {"_id": "ai_call_worker", "$or": [{"lockedUntil": {"$lt": now}}, {"lockedBy": owner}]},
+        {"$set": {"lockedUntil": expires, "lockedBy": owner, "lockedAt": now}}
+    )
+    if res is not None:
+        return True
+    try:
+        system_locks_collection.insert_one({
+            "_id": "ai_call_worker", "lockedUntil": expires, "lockedBy": owner, "lockedAt": now
+        })
+        return True
+    except Exception:
+        return False
+
+
+def poll_pravaah_call_result(call_id):
+    """Waits (polling result_url) until Pravaah returns ready=true.
+    Returns the call dict (or the last partial one on timeout, or None)."""
+    deadline = time.time() + AI_CALL_RESULT_MAX_WAIT_SEC
+    last = None
+    while time.time() < deadline:
+        _acquire_ai_call_lock(_AI_CALL_OWNER, AI_CALL_LOCK_TTL_SEC)   # keep lock alive while waiting
+        try:
+            resp = requests.get(f"{PRAVAAH_BASE_URL}/calls/{call_id}", headers=_pravaah_headers(), timeout=30)
+            if resp.ok:
+                body = resp.json() or {}
+                call = body.get("call") if isinstance(body.get("call"), dict) else body
+                if isinstance(call, dict):
+                    last = call
+                    if call.get("ready"):
+                        return call
+        except Exception as e:
+            print(f"[ai-call] poll error for {call_id}: {e}")
+        time.sleep(AI_CALL_POLL_INTERVAL_SEC)
+    return last
+
+
+# ---------------------------------------------------------------------
+# REQUIREMENTS: parse Pravaah's "budget: 1.2 Cr\nlocation: Gurgaon" text
+# ---------------------------------------------------------------------
+_AI_REQ_KEY_MAP = {
+    "budget": "budget", "budget range": "budget",
+    "location": "location", "city": "location", "area": "location",
+    "locality": "location", "preferred location": "location",
+    "type": "type", "property type": "type",
+    "bhk": "bhk", "configuration": "bhk", "config": "bhk",
+    "timeline": "timeline", "buying timeline": "timeline",
+    "purpose": "purpose",
+}
+_AI_BHK_RE = re.compile(r"\d+(\.\d+)?\s*(bhk|rk)|studio", re.I)
+
+
+def _empty_reqs():
+    return {"budget": "", "location": "", "property_type": "", "bhk": "",
+            "timeline": "", "purpose": "", "extra": {}}
+
+
+def parse_ai_call_requirements(raw_text):
+    out = _empty_reqs()
+    for line in re.split(r"[\n;]+", str(raw_text or "")):
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        k = k.strip().lower().replace("_", " ")
+        v = v.strip()
+        if not k or not v:
+            continue
+        target = _AI_REQ_KEY_MAP.get(k)
+        if target == "type":
+            if _AI_BHK_RE.search(v) and not out["bhk"]:
+                out["bhk"] = v
+            else:
+                out["property_type"] = v
+        elif target:
+            key = "property_type" if target == "property_type" else target
+            out[key] = v
+        else:
+            safe_key = re.sub(r"[^A-Za-z0-9 _-]", "", k)[:40].strip()
+            if safe_key:
+                out["extra"][safe_key] = v
+    return out
+
+
+def _normalize_transcript(transcript):
+    out = []
+    for t in (transcript or []):
+        if isinstance(t, dict) and t.get("text"):
+            out.append({"role": t.get("role", ""), "text": t.get("text", "")})
+    return out
+
+
+def get_ai_call_requirements(call):
+    """Pravaah's own 'requirements' first; if it is empty on an answered call,
+    ask the LLM to pull them out of the summary + transcript."""
+    reqs = parse_ai_call_requirements(call.get("requirements"))
+    has_core = reqs["budget"] or reqs["location"] or reqs["property_type"] or reqs["bhk"]
+    if has_core or not (call.get("answered") or call.get("call_result") == "answered"):
+        return reqs
+
+    transcript = _normalize_transcript(call.get("transcript"))
+    summary = call.get("ai_summary") or ""
+    if not transcript and not summary:
+        return reqs
+    try:
+        convo = "\n".join(f"{t['role']}: {t['text']}" for t in transcript)[:8000]
+        system_prompt = (
+            "You extract real-estate requirements from a phone call between a Nisha Homes AI agent "
+            "and a lead. Return ONLY a JSON object with keys: budget, location, property_type, bhk, "
+            "timeline, purpose. Use only what the LEAD explicitly said; empty string if unknown. "
+            "No markdown, no commentary."
+        )
+        content = call_llm_chat(system_prompt, json.dumps({"summary": summary, "transcript": convo}),
+                                temperature=0.1, timeout=40)
+        res = _extract_json_from_llm(content) or {}
+        for k in ("budget", "location", "property_type", "bhk", "timeline", "purpose"):
+            if not reqs[k] and res.get(k):
+                reqs[k] = str(res[k]).strip()
+    except Exception as e:
+        print(f"[ai-call] LLM requirement extraction failed: {e}")
+    return reqs
+
+
+# ---------------------------------------------------------------------
+# SAVE RESULT -> lead doc (existing fields for requirements, NEW fields for the rest)
+# ---------------------------------------------------------------------
+def apply_ai_call_to_lead(coll_name, lead_id, call, reqs):
+    now = datetime.utcnow()
+    set_fields = {
+        # ---- NEW fields (call data) ----
+        "AICallLastId": call.get("call_id"),
+        "AICallLastAt": now,
+        "AICallLastResult": call.get("call_result") or "",
+        "AICallLastOutcome": call.get("outcome") or "",
+        "AICallLastDurationSecs": call.get("duration_secs"),
+        "AICallSummary": call.get("ai_summary") or "",
+        "AICallRecordingUrl": call.get("recording_url") or "",
+        "AICallTranscript": _normalize_transcript(call.get("transcript")),
+        "AICallRequirementsRaw": call.get("requirements") or "",
+        "AICallStatusAfter": call.get("lead_status_after") or "",
+    }
+
+    # ---- EXISTING requirement fields (only overwritten when the call gave a value) ----
+    if reqs["location"]:
+        set_fields["Location Interested In"] = reqs["location"]
+    if reqs["budget"]:
+        set_fields["Budget Range"] = reqs["budget"]
+    if reqs["property_type"]:
+        set_fields["Property Type"] = reqs["property_type"]
+    if reqs["bhk"]:
+        set_fields["Configuration"] = reqs["bhk"]
+    if reqs["timeline"]:
+        set_fields["Buying Timeline"] = reqs["timeline"]
+    if reqs["purpose"]:
+        set_fields["Size_Purpose_Note"] = f"Size: , purpose: {reqs['purpose']}, note: "
+
+    # ---- any other requirement the AI captured -> NEW "AI Req - <name>" field ----
+    for k, v in reqs["extra"].items():
+        set_fields[f"AI Req - {k}"] = v
+
+    history_entry = {
+        "callId": call.get("call_id"), "at": now,
+        "result": call.get("call_result"), "outcome": call.get("outcome"),
+        "durationSecs": call.get("duration_secs"),
+        "summary": call.get("ai_summary") or "",
+        "recordingUrl": call.get("recording_url") or "",
+    }
+    db[coll_name].update_one(
+        {"_id": lead_id},
+        {"$set": set_fields,
+         "$inc": {"AICallCount": 1},
+         "$push": {"AICallHistory": {"$each": [history_entry], "$slice": -20}}}
+    )
+
+
+_AI_CALL_STATUS_MAP = {
+    "answered": "Connected", "answered_no_reply": "No Response",
+    "cut_by_user": "Call Disconnected", "not_answered": "Call Not Picked",
+    "failed": "Call Disconnected",
+}
+_AI_INTEREST_MAP = {"hot": "High", "warm": "Medium", "cold": "Cold"}
+
+
+def sync_ai_call_to_end_data(phone91, lead_id, call, reqs):
+    """Keeps the dashboard (Hot/Warm/Cold, Lost, Follow-ups) in sync with the AI call."""
+    now = datetime.utcnow()
+    outcome = (call.get("outcome") or "").lower()
+    fields = {
+        "Call Status": _AI_CALL_STATUS_MAP.get(call.get("call_result") or ""),
+        "Customer Response": "Not Interested" if outcome == "not_interested"
+                             else ("Interested" if outcome == "interested" else None),
+        "Interest Level": _AI_INTEREST_MAP.get((call.get("lead_status_after") or "").lower()),
+        "Caller Remarks": call.get("ai_summary") or None,
+        "Location Interested In": reqs["location"] or None,
+        "Budget Range": reqs["budget"] or None,
+        "Property Type": reqs["property_type"] or None,
+        "Configuration": reqs["bhk"] or None,
+        "LeadId": str(lead_id),
+        "lastCallBy": "AI Agent",
+        "lastCallAt": now,
+        "lastCallAtFormatted": format_ist(now),
+        "lastUpdatedAt": now,
+    }
+    fields = {k: v for k, v in fields.items() if v not in (None, "")}
+    db["endData"].update_one(
+        {"Number": phone91},
+        {"$set": fields, "$inc": {"Call_attempt": 1}, "$setOnInsert": {"Number": phone91}},
+        upsert=True
+    )
+
+
+# ---------------------------------------------------------------------
+# WHATSAPP: send best-matching property from inventory (existing infra)
+# ---------------------------------------------------------------------
+def send_property_after_ai_call(coll_name, lead_doc, phone91, call, reqs):
+    if not (call.get("answered") or call.get("call_result") == "answered"):
+        return {"status": "skipped", "reason": "call not answered"}
+    if (call.get("outcome") or "").lower() == "not_interested":
+        return {"status": "skipped", "reason": "lead not interested"}
+
+    lead_type = (lead_doc.get("LeadType") or "").strip()
+    raw_req = str(call.get("requirements") or "").lower()
+    if lead_type in ("buyer_rental", "seller", "agent", "marketing") or re.search(r"\brent(al)?\b", raw_req):
+        return {"status": "skipped", "reason": f"not a buy lead ({lead_type or 'rent requirement'})"}
+
+    location = reqs["location"]
+    if (location or "").strip().lower() in ("ncr", "delhi ncr", "ncr region"):
+        return {"status": "skipped", "reason": "location too vague (NCR only)"}
+    if not ((reqs["property_type"] or reqs["bhk"]) and location and reqs["budget"]):
+        return {"status": "skipped", "reason": "requirements incomplete (need type + location + budget)"}
+
+    query = " ".join(filter(None, [reqs["bhk"], reqs["property_type"], "in", location, "budget", reqs["budget"]]))
+    results = run_property_vector_search(
+        query_text=query, deal_type="For Sale", location=location, budget=reqs["budget"],
+        property_type=reqs["property_type"], bhk=reqs["bhk"], limit=3
+    )
+    best = None
+    for p in (results or []):
+        reasons = p.get("_matchReasons") or []
+        if "location_mismatch" in reasons or "budget_mismatch" in reasons:
+            continue
+        best = p
+        break
+    if not best:
+        return {"status": "skipped", "reason": "no inventory matches location + budget"}
+
+    caption = build_property_caption(best)
+    banner = best.get("bannerUrl")
+    if banner:
+        send_whatsapp_image(phone91, banner, caption=caption)
+    else:
+        send_whatsapp_text(phone91, caption)
+
+    save_chat_message(lead_doc["_id"], phone91, "assistant", caption)
+    db[coll_name].update_one({"_id": lead_doc["_id"]}, {"$set": {
+        "LastMatchedProperties": [best.get("name")],
+        "AIPropertySentName": best.get("name"),
+        "AIPropertySentAt": datetime.utcnow()
+    }})
+    return {"status": "sent", "property": best.get("name"), "uniqueId": best.get("uniqueId")}
+
+
+# ---------------------------------------------------------------------
+# ONE JOB = place call -> wait -> save -> WhatsApp property
+# Returns None (normal), "defer" (outside hours, retry later) or "stop"
+# ---------------------------------------------------------------------
+def process_ai_call_job(job):
+    job_id = job["_id"]
+
+    def _upd(**fields):
+        fields["updatedAt"] = datetime.utcnow()
+        ai_call_queue_collection.update_one({"_id": job_id}, {"$set": fields})
+
+    phone10 = job.get("phone10")
+    phone91 = "91" + phone10
+    coll_name = job.get("collection")
+
+    try:
+        lead_id = ObjectId(job.get("leadId"))
+        if is_number_blocked(phone10) or is_ai_disabled_for_phone(phone91):
+            _upd(status="skipped", error="number blocked or AI disabled for this lead")
+            return None
+
+        try:
+            placed = place_pravaah_ai_call(phone10, job.get("name"), reference_id=str(job_id))
+        except PravaahError as e:
+            if e.status_code == 409:      # outside calling hours -> put back, retry later
+                _upd(status="queued", error="Outside calling hours - will retry")
+                return "defer"
+            if e.status_code == 402:      # plan / limit reached -> stop the whole queue
+                _upd(status="failed", error=f"Plan/limit reached: {e}")
+                settings_collection.update_one(
+                    {"_id": "ai_calling"},
+                    {"$set": {"enabled": False, "pausedReason": f"Pravaah limit reached: {e}"}},
+                    upsert=True
+                )
+                return "stop"
+            _upd(status="failed", error=str(e))
+            return None
+
+        call_id = placed.get("call_id")
+        _upd(status="waiting_result", callId=call_id, placedAt=datetime.utcnow())
+        print(f"[ai-call] placed call {call_id} to {phone10} - waiting for result...")
+
+        # ---- WAIT until Pravaah has summary + recording + transcript ----
+        call = poll_pravaah_call_result(call_id)
+        if not call:
+            _upd(status="failed", error="No result received from Pravaah (timeout)")
+            return None
+        partial = not call.get("ready")
+
+        lead_doc = db[coll_name].find_one({"_id": lead_id})
+        property_result = {"status": "skipped", "reason": "lead not found"}
+        reqs = get_ai_call_requirements(call)
+
+        if lead_doc:
+            apply_ai_call_to_lead(coll_name, lead_id, call, reqs)
+            try:
+                sync_ai_call_to_end_data(phone91, lead_id, call, reqs)
+            except Exception as ed_err:
+                print(f"[ai-call] endData sync failed: {ed_err}")
+
+            answered = bool(call.get("answered") or call.get("call_result") == "answered")
+            log_activity(
+                activity_type="CALLING", source_platform="AI Calling (Pravaah)",
+                caller_number=None, caller_name="AI Agent", mobile=phone91,
+                customer_name=job.get("name"), lead_id=str(lead_id),
+                duration_seconds=call.get("duration_secs"),
+                status="connected" if answered else "not_connected",
+                extra={"callId": call_id, "outcome": call.get("outcome", "")}
+            )
+
+            # ---- WhatsApp the best property BEFORE the next call is placed ----
+            try:
+                property_result = send_property_after_ai_call(coll_name, lead_doc, phone91, call, reqs)
+            except Exception as wa_err:
+                print(f"[ai-call] property WhatsApp failed for {phone91}: {wa_err}")
+                property_result = {"status": "send_failed", "error": str(wa_err)}
+
+        _upd(
+            status="done", partial=partial, error=None,
+            callResult=call.get("call_result"), outcome=call.get("outcome"),
+            durationSecs=call.get("duration_secs"),
+            aiSummary=call.get("ai_summary") or "", recordingUrl=call.get("recording_url") or "",
+            leadStatusAfter=call.get("lead_status_after") or "",
+            propertyResult=property_result, call=call, completedAt=datetime.utcnow()
+        )
+        print(f"[ai-call] done {phone10}: result={call.get('call_result')} property={property_result.get('status')}")
+        return None
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _upd(status="failed", error=str(e))
+        return None
+
+
+def ai_call_worker_loop():
+    print("[ai-call] worker loop started")
+    while True:
+        try:
+            cfg = settings_collection.find_one({"_id": "ai_calling"}) or {}
+            if not cfg.get("enabled"):
+                time.sleep(20)
+                continue
+            if not is_within_business_hours():
+                time.sleep(300)
+                continue
+            if not _acquire_ai_call_lock(_AI_CALL_OWNER, AI_CALL_LOCK_TTL_SEC):
+                time.sleep(30)
+                continue
+
+            now = datetime.utcnow()
+            ai_call_queue_collection.update_many(
+                {"status": {"$in": ["calling", "waiting_result"]},
+                 "updatedAt": {"$lt": now - timedelta(minutes=AI_CALL_STALE_MINUTES)}},
+                {"$set": {"status": "failed", "error": "Interrupted (restart / timeout)"}}
+            )
+
+            job = ai_call_queue_collection.find_one_and_update(
+                {"status": "queued"},
+                {"$set": {"status": "calling", "startedAt": now, "updatedAt": now}},
+                sort=[("createdAt", 1)], return_document=ReturnDocument.AFTER
+            )
+            if not job:
+                time.sleep(15)
+                continue
+
+            outcome = process_ai_call_job(job)
+            time.sleep(300 if outcome == "defer" else AI_CALL_GAP_SECONDS)
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            time.sleep(30)
+
+
+_ai_call_thread_started = False
+
+
+def start_ai_call_worker():
+    global _ai_call_thread_started
+    if _ai_call_thread_started:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        threading.Thread(target=ai_call_worker_loop, daemon=True, name="ai-call-worker").start()
+        _ai_call_thread_started = True
+        print("[ai-call] worker thread launched")
+
+
+start_ai_call_worker()
+
+
+# ---------------------------------------------------------------------
+# API: queue leads / status / pause-resume / cancel
+# POST /api/ai-calls/queue  {"leads":[{"id":"<mongo _id>","collection":"Leads"}], "phones":["9876543210"]}
+# ---------------------------------------------------------------------
+@app.route("/api/ai-calls/queue", methods=["POST"])
+def ai_calls_queue():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    data = request.json or {}
+    targets, skipped = [], []
+
+    for it in (data.get("leads") or []):
+        it = it or {}
+        coll = str(it.get("collection") or "Leads").strip()
+        if coll not in WA_LEAD_COLLECTIONS:
+            skipped.append({"id": it.get("id"), "reason": "invalid collection"})
+            continue
+        try:
+            doc = db[coll].find_one({"_id": ObjectId(str(it.get("id")))})
+        except Exception:
+            doc = None
+        if doc:
+            targets.append((coll, doc))
+        else:
+            skipped.append({"id": it.get("id"), "reason": "lead not found"})
+
+    for p in (data.get("phones") or []):
+        coll, doc = find_lead_by_any_phone(p)
+        if doc:
+            targets.append((coll, doc))
+        else:
+            skipped.append({"phone": p, "reason": "not in CRM"})
+
+    queued = 0
+    for coll, doc in targets:
+        name = doc.get("Lead Name") or doc.get("Name") or ""
+        p10 = phone_last10(doc.get("Phone Number"))
+        if not p10:
+            skipped.append({"name": name, "reason": "invalid phone"}); continue
+        if is_number_blocked(p10):
+            skipped.append({"name": name, "reason": "blocked number"}); continue
+        if doc.get("followup_optout"):
+            skipped.append({"name": name, "reason": "lead asked not to be contacted"}); continue
+        if is_ai_disabled_for_phone("91" + p10):
+            skipped.append({"name": name, "reason": "AI disabled for this lead"}); continue
+        if ai_call_queue_collection.find_one({"phone10": p10, "status": {"$in": ["queued", "calling", "waiting_result"]}}):
+            skipped.append({"name": name, "reason": "already in queue"}); continue
+
+        now = datetime.utcnow()
+        ai_call_queue_collection.insert_one({
+            "leadId": str(doc["_id"]), "collection": coll, "name": name,
+            "phone10": p10, "status": "queued",
+            "queuedBy": session.get("employee_name"), "createdAt": now, "updatedAt": now
+        })
+        queued += 1
+
+    return jsonify({"success": True, "queued": queued, "skipped": skipped}), 200
+
+
+@app.route("/api/ai-calls/status", methods=["GET"])
+def ai_calls_status():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    cfg = settings_collection.find_one({"_id": "ai_calling"}) or {}
+    counts = {s: ai_call_queue_collection.count_documents({"status": s})
+              for s in ("queued", "calling", "waiting_result", "done", "failed", "skipped", "cancelled")}
+    jobs = list(ai_call_queue_collection.find({}, {"call": 0}).sort("createdAt", -1).limit(100))
+    return jsonify({
+        "success": True,
+        "enabled": bool(cfg.get("enabled")),
+        "pausedReason": cfg.get("pausedReason", ""),
+        "inCallingHours": is_within_business_hours(),
+        "counts": counts,
+        "jobs": [serialize_doc(j) for j in jobs]
+    }), 200
+
+
+@app.route("/api/ai-calls/toggle", methods=["POST"])
+def ai_calls_toggle():
+    """Admin only — start / pause the auto-dialer. Default is OFF (paused)."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    enabled = bool((request.json or {}).get("enabled", False))
+    settings_collection.update_one(
+        {"_id": "ai_calling"},
+        {"$set": {"enabled": enabled, "pausedReason": ""}}, upsert=True
+    )
+    return jsonify({"success": True, "enabled": enabled}), 200
+
+
+@app.route("/api/ai-calls/cancel/<job_id>", methods=["POST"])
+def ai_calls_cancel(job_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    try:
+        res = ai_call_queue_collection.update_one(
+            {"_id": ObjectId(job_id), "status": "queued"},
+            {"$set": {"status": "cancelled", "updatedAt": datetime.utcnow()}}
+        )
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid id"}), 400
+    if res.matched_count == 0:
+        return jsonify({"success": False, "message": "Only queued calls can be cancelled"}), 404
+    return jsonify({"success": True}), 200
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
