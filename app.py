@@ -11444,6 +11444,395 @@ def ai_calls_cancel(job_id):
         return jsonify({"success": False, "message": "Only queued calls can be cancelled"}), 404
     return jsonify({"success": True}), 200
 
+# =====================================================================
+# LEAD AI-CALL DETAILS (recording / summary / transcript)
+# + PRAVAAH AI -> CRM WEBHOOK (hourly lead/call sync)
+# =====================================================================
+import hashlib
+
+PRAVAAH_WEBHOOK_SECRET = os.getenv("PRAVAAH_WEBHOOK_SECRET")
+
+
+@app.route("/api/lead-ai-call", methods=["GET"])
+def get_lead_ai_call():
+    """Powers the 'AI Call Recording / Summary / Transcript' popup
+    (3-dot menu in All Leads + Assigned Leads)."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    coll_name = (request.args.get("collection") or "").strip()
+    lead_id = (request.args.get("id") or "").strip()
+    if coll_name not in LEAD_COLLECTIONS_ALL:
+        return jsonify({"success": False, "message": "Invalid collection"}), 400
+    try:
+        oid = ObjectId(lead_id)
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid lead id"}), 400
+
+    doc = db[coll_name].find_one({"_id": oid}, {
+        "Lead Name": 1, "Name": 1, "Phone Number": 1,
+        "AICallLastId": 1, "AICallLastAt": 1, "AICallLastResult": 1,
+        "AICallLastOutcome": 1, "AICallLastDurationSecs": 1,
+        "AICallSummary": 1, "AICallRecordingUrl": 1, "AICallTranscript": 1,
+        "AICallRequirementsRaw": 1, "AICallStatusAfter": 1,
+        "AICallHistory": 1, "AICallCount": 1
+    })
+    if not doc:
+        return jsonify({"success": False, "message": "Lead not found"}), 404
+
+    history = []
+    for h in reversed(doc.get("AICallHistory") or []):
+        if not isinstance(h, dict):
+            continue
+        history.append({
+            "callId": h.get("callId"),
+            "at": format_ist(h.get("at")),
+            "result": h.get("result") or "",
+            "outcome": h.get("outcome") or "",
+            "durationSecs": h.get("durationSecs"),
+            "summary": h.get("summary") or "",
+            "recordingUrl": h.get("recordingUrl") or "",
+        })
+
+    transcript = doc.get("AICallTranscript") or []
+    has_call = bool(doc.get("AICallLastId") or doc.get("AICallSummary")
+                    or doc.get("AICallRecordingUrl") or transcript or history)
+
+    return jsonify({
+        "success": True,
+        "hasCall": has_call,
+        "name": doc.get("Lead Name") or doc.get("Name") or "",
+        "phone": doc.get("Phone Number") or "",
+        "callCount": doc.get("AICallCount", 0),
+        "last": {
+            "callId": doc.get("AICallLastId"),
+            "at": format_ist(doc.get("AICallLastAt")),
+            "result": doc.get("AICallLastResult") or "",
+            "outcome": doc.get("AICallLastOutcome") or "",
+            "durationSecs": doc.get("AICallLastDurationSecs"),
+            "statusAfter": doc.get("AICallStatusAfter") or "",
+            "summary": doc.get("AICallSummary") or "",
+            "recordingUrl": doc.get("AICallRecordingUrl") or "",
+            "transcript": transcript,
+            "requirements": doc.get("AICallRequirementsRaw") or "",
+        },
+        "history": history
+    }), 200
+
+
+# ---------------------------------------------------------------------
+# WEBHOOK HELPERS
+# ---------------------------------------------------------------------
+_WH_PHONE_KEYS = ("phone", "phone_number", "mobile", "mobile_number", "number",
+                  "to", "to_number", "contact_number", "customer_number")
+_WH_NAME_KEYS = ("name", "lead_name", "customer_name", "contact_name")
+
+
+def _wh_pick(d, keys, default=""):
+    for k in keys:
+        v = d.get(k)
+        if v is not None and v != "" and v != [] and v != {}:
+            return v
+    return default
+
+
+def _wh_flatten(item):
+    """Lets Pravaah nest things as {"lead": {...}, "call": {...}} or send them flat."""
+    base = dict(item)
+    for nested_key in ("call", "lead", "contact", "customer"):
+        nested = item.get(nested_key)
+        if isinstance(nested, dict):
+            for k, v in nested.items():
+                base.setdefault(k, v)
+    return base
+
+
+def _wh_extract_items(body):
+    if isinstance(body, list):
+        return [b for b in body if isinstance(b, dict)]
+    if isinstance(body, dict):
+        for key in ("leads", "calls", "data", "items", "results", "records"):
+            v = body.get(key)
+            if isinstance(v, list):
+                return [b for b in v if isinstance(b, dict)]
+            if isinstance(v, dict):
+                return [v]
+        return [body]
+    return []
+
+
+def _wh_requirements_text(base):
+    """Turns requirements (string / dict / list / loose top-level keys) into
+    the 'budget: 1.2 Cr\\nlocation: Gurgaon' text parse_ai_call_requirements() reads."""
+    req = _wh_pick(base, ("requirements", "requirement"), "")
+    lines = []
+    if isinstance(req, dict):
+        lines = [f"{k}: {v}" for k, v in req.items() if v not in (None, "")]
+    elif isinstance(req, list):
+        lines = [str(r) for r in req if r]
+    elif req:
+        lines = [str(req)]
+
+    existing = "\n".join(lines).lower()
+    for key in ("budget", "location", "property_type", "bhk", "timeline", "purpose"):
+        val = base.get(key)
+        if val not in (None, "") and not isinstance(val, (dict, list)) and (key + ":") not in existing:
+            lines.append(f"{key}: {val}")
+    return "\n".join(lines)
+
+
+def _wh_transcript(raw):
+    out = []
+    if isinstance(raw, str):
+        txt = raw.strip()
+        if not txt:
+            return []
+        try:
+            parsed = json.loads(txt)
+            if isinstance(parsed, list):
+                raw = parsed
+        except Exception:
+            pass
+        if isinstance(raw, str):
+            for line in txt.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if ":" in line and len(line.split(":", 1)[0]) <= 20:
+                    role, text = line.split(":", 1)
+                    out.append({"role": role.strip().lower(), "text": text.strip()})
+                else:
+                    out.append({"role": "", "text": line})
+            return out
+
+    if isinstance(raw, list):
+        for t in raw:
+            if isinstance(t, dict):
+                text = t.get("text") or t.get("message") or t.get("content") or ""
+                role = t.get("role") or t.get("speaker") or ""
+                if text:
+                    out.append({"role": str(role), "text": str(text)})
+            elif isinstance(t, str) and t.strip():
+                out.append({"role": "", "text": t.strip()})
+    return out
+
+
+def _wh_refresh_existing_call(coll_name, lead, call):
+    """Same call_id already stored (e.g. hourly resend, or recording/summary
+    became ready later) -> only fill in what's new. Never double-counts the call."""
+    cid = call["call_id"]
+    entry = next((h for h in (lead.get("AICallHistory") or [])
+                  if isinstance(h, dict) and h.get("callId") == cid), {})
+    sets, hist_sets = {}, {}
+
+    if call.get("recording_url") and entry.get("recordingUrl") != call["recording_url"]:
+        hist_sets["AICallHistory.$[h].recordingUrl"] = call["recording_url"]
+    if call.get("ai_summary") and entry.get("summary") != call["ai_summary"]:
+        hist_sets["AICallHistory.$[h].summary"] = call["ai_summary"]
+
+    if lead.get("AICallLastId") == cid:
+        if call.get("recording_url") and lead.get("AICallRecordingUrl") != call["recording_url"]:
+            sets["AICallRecordingUrl"] = call["recording_url"]
+        if call.get("ai_summary") and lead.get("AICallSummary") != call["ai_summary"]:
+            sets["AICallSummary"] = call["ai_summary"]
+        if call.get("transcript") and lead.get("AICallTranscript") != call["transcript"]:
+            sets["AICallTranscript"] = call["transcript"]
+        if call.get("outcome") and lead.get("AICallLastOutcome") != call["outcome"]:
+            sets["AICallLastOutcome"] = call["outcome"]
+        if call.get("lead_status_after") and lead.get("AICallStatusAfter") != call["lead_status_after"]:
+            sets["AICallStatusAfter"] = call["lead_status_after"]
+
+    if not sets and not hist_sets:
+        return False
+
+    kwargs = {"array_filters": [{"h.callId": cid}]} if hist_sets else {}
+    db[coll_name].update_one({"_id": lead["_id"]}, {"$set": {**sets, **hist_sets}}, **kwargs)
+    return True
+
+
+def _wh_log_call_activity(lead_id, phone91, name, call):
+    try:
+        log_activity(
+            activity_type="CALLING", source_platform="AI Calling (Pravaah)",
+            caller_number=None, caller_name="AI Agent", mobile=phone91,
+            customer_name=name, lead_id=str(lead_id),
+            duration_seconds=call.get("duration_secs"),
+            status="connected" if call.get("answered") else "not_connected",
+            extra={"callId": call.get("call_id"), "outcome": call.get("outcome", "")}
+        )
+    except Exception as e:
+        print(f"[pravaah-webhook] activity log failed: {e}")
+
+
+def process_pravaah_webhook_item(item):
+    base = _wh_flatten(item)
+
+    raw_phone = str(_wh_pick(base, _WH_PHONE_KEYS, "")).strip()
+    p10 = phone_last10(raw_phone)
+    if not p10:
+        return {"phone": raw_phone, "action": "skipped", "reason": "missing or invalid phone number"}
+    if is_number_blocked(p10):
+        return {"phone": p10, "action": "skipped", "reason": "number is blocked in CRM"}
+
+    phone91 = "91" + p10
+    name = str(_wh_pick(base, _WH_NAME_KEYS, "")).strip()
+    call_result = str(_wh_pick(base, ("call_result", "result", "call_status"), "")).strip().lower()
+    outcome = str(_wh_pick(base, ("outcome",), "")).strip().lower()
+    status_after = str(_wh_pick(base, ("lead_status_after", "lead_status"), "")).strip().lower()
+    summary = str(_wh_pick(base, ("ai_summary", "summary", "call_summary"), "")).strip()
+    recording = str(_wh_pick(base, ("recording_url", "recording", "recordingUrl"), "")).strip()
+    called_at = str(_wh_pick(base, ("called_at", "started_at", "created_at", "timestamp"), "")).strip()
+    try:
+        duration = int(float(_wh_pick(base, ("duration_secs", "duration_seconds", "duration"), 0) or 0))
+    except (TypeError, ValueError):
+        duration = None
+
+    answered = base.get("answered")
+    if isinstance(answered, str):
+        answered = answered.strip().lower() in ("true", "1", "yes")
+    elif answered is None:
+        answered = (call_result == "answered")
+
+    nested_call = item.get("call") if isinstance(item.get("call"), dict) else {}
+    call_id = str(_wh_pick(base, ("call_id", "callId"), "") or nested_call.get("id") or "").strip()
+    if not call_id:
+        fp = f"{p10}|{called_at}|{duration}|{call_result}"
+        call_id = "wh_" + hashlib.sha1(fp.encode("utf-8")).hexdigest()[:16]
+
+    req_text = _wh_requirements_text(base)
+    reqs = parse_ai_call_requirements(req_text)
+
+    call = {
+        "call_id": call_id, "call_result": call_result, "outcome": outcome,
+        "duration_secs": duration, "ai_summary": summary, "recording_url": recording,
+        "transcript": _wh_transcript(_wh_pick(base, ("transcript", "transcription"), [])),
+        "requirements": req_text, "lead_status_after": status_after, "answered": bool(answered),
+    }
+
+    # Does this number already exist in ANY lead collection (any phone format)?
+    coll_name, lead = find_or_claim_lead(raw_phone)
+
+    # ================= EXISTING LEAD -> UPDATE =================
+    if lead:
+        history = lead.get("AICallHistory") or []
+        already = any(isinstance(h, dict) and h.get("callId") == call_id for h in history)
+
+        if already:
+            changed = _wh_refresh_existing_call(coll_name, lead, call)
+            return {"phone": phone91, "action": "updated" if changed else "unchanged",
+                    "collection": coll_name, "leadId": str(lead["_id"]), "callId": call_id}
+
+        apply_ai_call_to_lead(coll_name, lead["_id"], call, reqs)
+        if name and not (lead.get("Lead Name") or lead.get("Name")):
+            db[coll_name].update_one({"_id": lead["_id"]}, {"$set": {"Lead Name": name}})
+        try:
+            sync_ai_call_to_end_data(phone91, lead["_id"], call, reqs)
+        except Exception as ed_err:
+            print(f"[pravaah-webhook] endData sync failed: {ed_err}")
+        _wh_log_call_activity(lead["_id"], phone91, name or lead.get("Lead Name"), call)
+
+        return {"phone": phone91, "action": "updated", "collection": coll_name,
+                "leadId": str(lead["_id"]), "callId": call_id}
+
+    # ================= NEW LEAD -> CREATE =================
+    is_rental = bool(re.search(r"\brent(al)?\b", req_text, re.I))
+    new_coll = "RentalLeads" if is_rental else "Leads"
+    now = datetime.utcnow()
+
+    new_doc = {
+        "Phone Number": normalize_phone_91(raw_phone),
+        "Lead Name": name,
+        "LeadType": "buyer_rental" if is_rental else "buyer_purchase",
+        "Lead Source": "Pravaah AI",
+        "Created At": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "Date": now.strftime("%d-%m-%Y"),
+        "DateObj": now,
+    }
+    insert_res = db[new_coll].insert_one(new_doc)
+    new_id = insert_res.inserted_id
+
+    apply_ai_call_to_lead(new_coll, new_id, call, reqs)
+    try:
+        sync_ai_call_to_end_data(phone91, new_id, call, reqs)
+    except Exception as ed_err:
+        print(f"[pravaah-webhook] endData sync failed: {ed_err}")
+
+    try:
+        create_contact(name, phone91)
+    except Exception as contact_err:
+        print(f"[pravaah-webhook] create_contact failed (non-fatal): {contact_err}")
+
+    auto_assign_round_robin(new_coll, new_id, phone91, name)
+
+    log_activity(
+        activity_type="CRM", source_platform="Pravaah AI Webhook",
+        caller_number=None, caller_name="Pravaah AI", customer_name=name,
+        mobile=phone91, lead_id=str(new_id), status="new",
+        extra={"collection": new_coll, "callId": call_id}
+    )
+    _wh_log_call_activity(new_id, phone91, name, call)
+
+    return {"phone": phone91, "action": "created", "collection": new_coll,
+            "leadId": str(new_id), "callId": call_id}
+
+
+@app.route("/webhook/pravaah-ai", methods=["GET", "POST"])
+def pravaah_ai_webhook():
+    """
+    Pravaah AI -> CRM. Meant to be hit once an hour with lead/call data.
+    Auth: header  X-Webhook-Secret: <PRAVAAH_WEBHOOK_SECRET>
+          or      ?secret=<PRAVAAH_WEBHOOK_SECRET>
+          or      Authorization: Bearer <PRAVAAH_WEBHOOK_SECRET>
+    """
+    if request.method == "GET":
+        return jsonify({"status": "ok", "message": "Pravaah AI webhook is live"}), 200
+
+    if not PRAVAAH_WEBHOOK_SECRET:
+        return jsonify({"success": False, "message": "PRAVAAH_WEBHOOK_SECRET not configured on server"}), 503
+
+    provided = (request.headers.get("X-Webhook-Secret")
+                or request.headers.get("X-API-Key")
+                or request.args.get("secret") or "")
+    auth = request.headers.get("Authorization", "")
+    if not provided and auth.lower().startswith("bearer "):
+        provided = auth[7:].strip()
+    try:
+        ok = secrets.compare_digest(provided.encode("utf-8"), PRAVAAH_WEBHOOK_SECRET.encode("utf-8"))
+    except Exception:
+        ok = False
+    if not ok:
+        return jsonify({"success": False, "message": "Invalid or missing secret"}), 401
+
+    body = request.get_json(silent=True, force=True)
+    if body is None:
+        body = request.form.to_dict() or {}
+
+    try:
+        print(f"[pravaah-webhook] RAW BODY: {json.dumps(body, default=str)[:1500]}")
+    except Exception:
+        pass
+
+    items = _wh_extract_items(body)[:1000]
+    if not items:
+        return jsonify({"success": False, "message": "No leads found in request body"}), 400
+
+    counts = {"created": 0, "updated": 0, "unchanged": 0, "skipped": 0, "errors": 0}
+    results = []
+    for item in items:
+        try:
+            res = process_pravaah_webhook_item(item)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            res = {"phone": str(item.get("phone") or item.get("number") or ""),
+                   "action": "error", "reason": str(e)}
+        key = "errors" if res["action"] == "error" else res["action"]
+        counts[key] = counts.get(key, 0) + 1
+        results.append(res)
+
+    invalidate_cache("followup_stats")
+    print(f"[pravaah-webhook] processed {len(items)} item(s): {counts}")
+    return jsonify({"success": True, "received": len(items), **counts, "results": results}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

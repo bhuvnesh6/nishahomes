@@ -1652,13 +1652,34 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" class="filter-search" id="assignedSearch" placeholder="Search name, phone, assigned to…" autocomplete="off">
         </div>
-        <div class="filter-chips">
-          <button class="filter-chip active" data-afilter="all">All</button>
-          <button class="filter-chip" data-afilter="buying">Buying</button>
-          <button class="filter-chip" data-afilter="rental">Rental</button>
-          <button class="filter-chip" data-afilter="selling">Selling</button>
-          <button class="filter-chip" data-afilter="agent">Agent</button>
-        </div>
+        <select class="filter-select" id="assignedTypeFilterSelect">
+          <option value="all" selected>All Types</option>
+          <option value="buying">Buying</option>
+          <option value="rental">Rental</option>
+          <option value="selling">Selling</option>
+          <option value="agent">Agent</option>
+        </select>
+
+        <select class="filter-select" id="assignedDateFilterSelect">
+          <option value="none" selected>Any Date</option>
+          <option value="today">Today</option>
+          <option value="this_month">This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="lifetime">Lifetime</option>
+        </select>
+
+        <select class="filter-select" id="assignedConvFilterSelect">
+          <option value="none" selected>Any Conversation</option>
+          <option value="today">Msg Today</option>
+          <option value="3days">Last 3 Days</option>
+          <option value="7days">Last 7 Days</option>
+          <option value="30days">Last 30 Days</option>
+        </select>
+
+        <select class="filter-select" id="assignedAddonFilterSelect">
+          <option value="none" selected>All Leads</option>
+          <option value="addons">Add Ons</option>
+        </select>
       </div>
 
       <div class="leads-table-section anim anim-3">
@@ -2002,6 +2023,16 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   </div>
 </div>
 
+<!-- AI Call Details Modal (recording / summary / transcript) -->
+<div class="modal-overlay" id="aiCallModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-close" onclick="closeAICallModal()">✕</button>
+    <h2>AI Call · <span id="aiCallTitle" style="color:var(--accent)"></span></h2>
+    <div id="aiCallPhone" style="color:rgba(255,255,255,0.5);font-size:0.82rem;margin:-14px 0 14px"></div>
+    <div id="aiCallBody" style="max-height:68vh;overflow-y:auto;color:#fff"></div>
+  </div>
+</div>
+
 <button id="installBtn" style="display:none">📲 Install App</button>
 
 <script>
@@ -2135,6 +2166,9 @@ function normalizeLeadType(lt){
 let assignedLeadsFlat = [];
 let filteredAssignedLeads = [];
 let assignedCurrentFilter = 'all';
+let assignedDateFilter = 'none';
+let assignedConvFilter = 'none';
+let assignedAddonFilter = 'none';
 let assignedCurrentPage = 1;
 
 /* ═══════════════════════════════════
@@ -2384,10 +2418,45 @@ async function loadAssignedLeads(){
   }
 }
 
+function _filterDateOk(lead, mode){
+  if(mode === 'none') return true;
+  const d = parseLeadDateClient(lead.Date);
+  if(!d) return false;
+  const now = new Date();
+  if(mode === 'today') return d.toDateString() === now.toDateString();
+  if(mode === 'this_month') return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+  if(mode === 'last_month'){
+    const lm = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    return d.getFullYear()===lm.getFullYear() && d.getMonth()===lm.getMonth();
+  }
+  return true; // lifetime
+}
+function _filterConvOk(lead, mode){
+  if(mode === 'none') return true;
+  const d = parseLastUserMsgAt(lead.lastUserMsgAt);
+  if(!d) return false;
+  const now = new Date();
+  const diffDays = (now - d) / 86400000;
+  if(diffDays < 0) return false;
+  if(mode === 'today') return d.toDateString() === now.toDateString();
+  if(mode === '3days') return diffDays <= 3;
+  if(mode === '7days') return diffDays <= 7;
+  if(mode === '30days') return diffDays <= 30;
+  return true;
+}
+function _filterAddonOk(lead, mode){
+  if(mode === 'none') return true;
+  if(mode === 'addons') return Object.prototype.hasOwnProperty.call(lead, 'adon_leads') && lead.adon_leads === 0;
+  return true;
+}
+
 function applyAssignedFilter(keepPage){
   const q = (document.getElementById('assignedSearch').value||'').toLowerCase();
   filteredAssignedLeads = assignedLeadsFlat.filter(l=>{
     if(assignedCurrentFilter!=='all' && l._leadType!==assignedCurrentFilter) return false;
+    if(!_filterDateOk(l, assignedDateFilter)) return false;
+    if(!_filterConvOk(l, assignedConvFilter)) return false;
+    if(!_filterAddonOk(l, assignedAddonFilter)) return false;
     if(!q) return true;
     const name = (l['Lead Name']||l.Name||'').toLowerCase();
     const phone = fmtPhone(l['Phone Number']).toLowerCase();
@@ -2399,13 +2468,17 @@ function applyAssignedFilter(keepPage){
   renderAssignedCards();
 }
 
-document.querySelectorAll('.filter-chip[data-afilter]').forEach(chip=>{
-  chip.addEventListener('click',function(){
-    document.querySelectorAll('.filter-chip[data-afilter]').forEach(c=>c.classList.remove('active'));
-    this.classList.add('active');
-    assignedCurrentFilter = this.dataset.afilter;
-    applyAssignedFilter();
-  });
+document.getElementById('assignedTypeFilterSelect').addEventListener('change', function(){
+  assignedCurrentFilter = this.value; applyAssignedFilter();
+});
+document.getElementById('assignedDateFilterSelect').addEventListener('change', function(){
+  assignedDateFilter = this.value; applyAssignedFilter();
+});
+document.getElementById('assignedConvFilterSelect').addEventListener('change', function(){
+  assignedConvFilter = this.value; applyAssignedFilter();
+});
+document.getElementById('assignedAddonFilterSelect').addEventListener('change', function(){
+  assignedAddonFilter = this.value; applyAssignedFilter();
 });
 document.getElementById('assignedSearch').addEventListener('input',()=>applyAssignedFilter());
 
@@ -2459,6 +2532,7 @@ function renderAssignedTable(){
         <button class="icon-btn" title="Call" onclick="logCallClick('${escHtml(rawPhone)}','${name}','${t}');location.href='tel:${rawPhone}'"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 1h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.91 8.1a16 16 0 006 6l.61-.61a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 15.92z"/></svg></button>
         <a href="https://wa.me/${rawPhone}" target="_blank" class="icon-btn" title="WhatsApp"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></a>
         <button class="icon-btn" title="Add Call Log" data-lead="${rowData}" onclick="openCallLogModal(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>
+        <button class="icon-btn" title="AI Call Recording, Summary & Transcript" data-lead="${rowData}" onclick="openLeadAICall(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
         <button class="icon-btn" title="Reassign" onclick="openAssignModal('${escHtml(l._id)}','${collection}','${escHtml(phone)}','${name}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>
         <button class="icon-btn" title="Edit" data-lead="${rowData}" onclick="openEditModalFromData(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="icon-btn" title="AI Summary" data-lead="${rowData}" onclick="senReqtoAI(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></button>
@@ -2783,6 +2857,9 @@ function renderTable(){
         <button class="icon-btn" title="History" onclick="openHistoryModal('${escHtml(phone)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
+        <button class="icon-btn" title="AI Call Recording, Summary & Transcript" data-lead="${rowData}" onclick="openLeadAICall(this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg>
+        </button>
         <button class="icon-btn danger" title="Delete" onclick="deleteLead('${escHtml(l._id)}','${srcType}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
         </button>
@@ -3004,6 +3081,10 @@ function openCardMenu(btn){
     <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();openSendPropertyModal(this)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       Send Property
+    </button>
+    <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();openLeadAICall(this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg>
+      AI Call · Recording & Summary
     </button>
     <button class="cm-menu-item" onclick="closeCardMenu();openHistoryModal('${escHtml(data.phone)}')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -4252,6 +4333,107 @@ async function dismissReport(id){
   }catch(e){ console.error(e); }
 }
 setInterval(loadReportAlerts, 60000);
+
+
+/* ═══════════════════════════════════
+   AI CALL: recording / summary / transcript popup
+═══════════════════════════════════ */
+function _aiSafeUrl(u){ return /^https?:\/\//i.test(String(u||'')) ? String(u) : ''; }
+function _aiFmtDur(s){
+  const n = parseInt(s,10);
+  if(isNaN(n)) return '';
+  const m = Math.floor(n/60), r = n % 60;
+  return m ? `${m}m ${r}s` : `${r}s`;
+}
+function _aiChip(text, bg, color){
+  return text ? `<span class="badge" style="background:${bg};color:${color}">${escHtml(text)}</span>` : '';
+}
+function _aiSection(title){
+  return `<div class="call-log-section-title" style="margin:16px 0 8px">${title}</div>`;
+}
+function _aiRecordingHtml(url){
+  const u = _aiSafeUrl(url);
+  if(!u) return '<div style="color:rgba(255,255,255,0.45);font-size:0.82rem">No recording available yet</div>';
+  return `<audio controls preload="none" style="width:100%" src="${escHtml(u)}"></audio>
+    <a href="${escHtml(u)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:0.78rem;color:var(--accent)">Open recording in new tab ↗</a>`;
+}
+function _aiTranscriptHtml(list){
+  if(!Array.isArray(list) || !list.length){
+    return '<div style="color:rgba(255,255,255,0.45);font-size:0.82rem">No transcript available</div>';
+  }
+  return list.map(t=>{
+    const role = String(t.role||'').toLowerCase();
+    const isAI = /^(agent|assistant|ai|bot)/.test(role);
+    const who = isAI ? 'AI Agent' : (role ? 'Lead' : '');
+    return `<div style="display:flex;justify-content:${isAI?'flex-start':'flex-end'};margin-bottom:8px">
+      <div style="max-width:85%;padding:8px 12px;border-radius:12px;font-size:0.82rem;line-height:1.5;background:${isAI?'rgba(255,255,255,0.08)':'rgba(239,131,84,0.22)'};color:#fff">
+        ${who?`<div style="font-size:0.66rem;font-weight:700;opacity:0.6;margin-bottom:2px;text-transform:uppercase">${who}</div>`:''}${escHtml(t.text)}
+      </div></div>`;
+  }).join('');
+}
+
+async function openLeadAICall(btn){
+  const data = JSON.parse(decodeURIComponent(btn.dataset.lead));
+  document.getElementById('aiCallTitle').textContent = data.name || 'Lead';
+  document.getElementById('aiCallPhone').textContent = data.phone || '';
+  const body = document.getElementById('aiCallBody');
+  body.innerHTML = '<div class="loader" style="margin:24px auto"></div>';
+  document.getElementById('aiCallModal').classList.add('active');
+
+  try{
+    const res = await fetch(`${BASE}/lead-ai-call?collection=${encodeURIComponent(data.collection||'Leads')}&id=${encodeURIComponent(data.id||'')}`);
+    const d = await res.json();
+    if(!d.success){
+      body.innerHTML = `<p style="color:#ff6b6b">${escHtml(d.message||'Failed to load')}</p>`;
+      return;
+    }
+    if(!d.hasCall){
+      body.innerHTML = '<div style="text-align:center;padding:30px 10px;color:rgba(255,255,255,0.5)">🎧<br>No AI call data for this lead yet</div>';
+      return;
+    }
+
+    const l = d.last || {};
+    const chips = [
+      _aiChip(l.result, 'rgba(59,130,246,.18)', '#93c5fd'),
+      _aiChip(l.outcome, 'rgba(16,185,129,.18)', '#6ee7b7'),
+      _aiChip(l.statusAfter ? 'Intent: '+l.statusAfter : '', 'rgba(245,158,11,.18)', '#fcd34d'),
+      _aiChip(_aiFmtDur(l.durationSecs), 'rgba(255,255,255,.1)', '#e5e7eb'),
+      _aiChip(l.at && l.at!=='-' ? l.at : '', 'rgba(255,255,255,.1)', '#e5e7eb'),
+      _aiChip(d.callCount ? d.callCount+' AI call'+(d.callCount>1?'s':'') : '', 'rgba(239,131,84,.2)', '#fdba74')
+    ].join(' ');
+
+    const prev = (d.history||[]).filter(h => h.callId !== l.callId);
+    const prevHtml = prev.length ? _aiSection('Previous Calls') + prev.map(h=>`
+      <details style="background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+        <summary style="cursor:pointer;font-size:0.82rem;color:rgba(255,255,255,0.85)">
+          ${escHtml(h.at)} · ${escHtml(h.result||'—')}${h.outcome?' · '+escHtml(h.outcome):''}${_aiFmtDur(h.durationSecs)?' · '+_aiFmtDur(h.durationSecs):''}
+        </summary>
+        <div style="font-size:0.82rem;color:rgba(255,255,255,0.75);margin:8px 0;line-height:1.6">${escHtml(h.summary||'No summary')}</div>
+        ${_aiRecordingHtml(h.recordingUrl)}
+      </details>`).join('') : '';
+
+    body.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+      ${_aiSection('Call Summary')}
+      <div class="ai-summary-box">${l.summary ? escHtml(l.summary) : '<span style="opacity:.5">No summary available</span>'}</div>
+      ${l.requirements ? _aiSection('Requirements Captured') + `<div class="ai-summary-box" style="white-space:pre-line">${escHtml(l.requirements)}</div>` : ''}
+      ${_aiSection('Recording')}
+      ${_aiRecordingHtml(l.recordingUrl)}
+      ${_aiSection('Transcript')}
+      ${_aiTranscriptHtml(l.transcript)}
+      ${prevHtml}`;
+  }catch(e){
+    console.error(e);
+    body.innerHTML = '<p style="color:#ff6b6b">Failed to load AI call details</p>';
+  }
+}
+function closeAICallModal(){
+  document.getElementById('aiCallModal').classList.remove('active');
+  document.getElementById('aiCallBody').innerHTML = '';   // also stops audio playback
+}
+document.getElementById('aiCallModal').addEventListener('click', e=>{ if(e.target.id==='aiCallModal') closeAICallModal(); });
+
+
 
 window.addEventListener('load',()=>{
   setTimeout(()=>{
