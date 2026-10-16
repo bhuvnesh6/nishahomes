@@ -919,6 +919,13 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .s-notconnected{background:rgba(239,68,68,.1);color:#dc2626}
 .s-notconnected .lc-status-dot{background:#ef4444}
 
+.score-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:var(--radius-pill);font-size:0.72rem;font-weight:800;cursor:pointer;white-space:nowrap;transition:var(--transition)}
+.score-badge:hover{transform:translateY(-1px)}
+.score-hot{background:rgba(16,185,129,.14);color:#059669}
+.score-warm{background:rgba(245,158,11,.14);color:#d97706}
+.score-cold{background:rgba(239,68,68,.12);color:#dc2626}
+.score-na{background:rgba(107,114,128,.12);color:#6b7280}
+
 /* Empty / Pagination */
 .empty-state{padding:64px 20px;text-align:center}
 .empty-state-icon{font-size:3rem;margin-bottom:12px;opacity:0.6}
@@ -2251,6 +2258,35 @@ function buildLeadCallLogPayload(l){
    gets retried automatically the moment connectivity returns, so no
    call ever goes unrecorded.
 ═══════════════════════════════════ */
+/* ═══════════════ AI SCORE BADGE ═══════════════ */
+function scoreBadge(l, collection){
+  const s = Number(l && l.AIScore);
+  const tip = escHtml((l && l.AIScoreReason) || 'Click to calculate AI score');
+  const click = `onclick="refreshLeadScore(event,'${escHtml(l._id)}','${escHtml(collection||'Leads')}')"`;
+  if(!s) return `<span class="score-badge score-na" title="${tip}" ${click}>🎯 AI —</span>`;
+  const cls = s>=75 ? 'score-hot' : (s>=45 ? 'score-warm' : 'score-cold');
+  return `<span class="score-badge ${cls}" title="${tip}" ${click}>🎯 AI ${s}/100</span>`;
+}
+
+async function refreshLeadScore(ev, id, collection){
+  ev.stopPropagation();
+  const el = ev.currentTarget;
+  el.textContent = '🎯 …';
+  try{
+    const res = await fetch(`${BASE}/lead-score/refresh`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, collection })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Score failed'); return; }
+    [flatLeads, assignedLeadsFlat].forEach(arr=>{
+      const lead = arr.find(x=>x._id===id);
+      if(lead){ lead.AIScore = d.score; lead.AIScoreReason = d.reason; }
+    });
+    renderTable(); renderMobileCards(); renderAssignedTable(); renderAssignedCards();
+  }catch(e){ console.error(e); alert('Score failed'); }
+}
+
 const CALL_QUEUE_KEY = 'nh_pending_call_attempts';
 
 function readCallQueue(){
@@ -2521,7 +2557,7 @@ function renderAssignedTable(){
     return `
     <tr data-phone="${escHtml(phone)}">
       <td></td>
-      <td><div class="td-name">${name}</div><div class="td-date">${escHtml(l.Date||'')}</div></td>
+      <td><div class="td-name">${name}</div><div class="td-date">${escHtml(l.Date||'')}</div><div style="margin-top:4px">${scoreBadge(l, collection)}</div></td>
       <td><a href="tel:${rawPhone}" class="td-phone">${escHtml(phone)}</a></td>
       <td><span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span></td>
       <td><span class="badge" style="background:rgba(59,130,246,.12);color:#2563eb">${escHtml(l.AssignTo||'—')}</span></td>
@@ -2600,6 +2636,7 @@ function renderAssignedCards(){
           <div class="lc-badges">
             <span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span>
             <span class="badge" style="background:rgba(59,130,246,.12);color:#2563eb">→ ${escHtml(l.AssignTo||'—')}</span>
+            ${scoreBadge(l, collection)}
           </div>
         </div>
         <button class="lc-more-btn" data-lead="${rowData}" data-id="${escHtml(l._id)}" data-leadtype="${t}" onclick="openCardMenu(this)" title="More">
@@ -2817,6 +2854,7 @@ function renderTable(){
       <td>
         <div class="td-name">${name}</div>
         <div class="td-date">${date}</div>
+        <div style="margin-top:4px">${scoreBadge(l, TYPE_TO_COLLECTION[srcType]||'Leads')}</div>
       </td>
       <td><a href="tel:${rawPhone}" class="td-phone">${escHtml(phone)}</a></td>
       <td><span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span></td>
@@ -2951,6 +2989,7 @@ function renderMobileCards(){
           <div class="lc-date">${escHtml(date)}</div>
           <div class="lc-badges">
             <span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span>
+            ${scoreBadge(l, TYPE_TO_COLLECTION[srcType]||'Leads')}
             ${callAttempts>0?`<span class="badge" style="background:rgba(59,130,246,.1);color:#3b82f6">📞 ${callAttempts}×</span>`:''}
             ${interest?`<span class="badge" style="background:rgba(16,185,129,.08);color:#059669">${escHtml(interest)}</span>`:''}
             ${isAiDisabled?`<span class="badge" style="background:rgba(239,68,68,.1);color:#dc2626">🔕 AI Off</span>`:''}

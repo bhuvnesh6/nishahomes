@@ -2762,6 +2762,8 @@ def add_call_log():
                 }}
             )
 
+        schedule_ai_score_by_phone(number)   # NEW: re-score this lead (remarks + requirements)
+
         updated_doc = end_collection.find_one({"Number": number})
 
         return jsonify({
@@ -4026,6 +4028,8 @@ def block_and_purge_number(raw, reason="", by="system"):
         {"$or": [{"leadId": {"$in": lead_ids}}, _number_match_query("phone", key)]}
     ).deleted_count
     deleted["followupLogs"] = db["followupLogs"].delete_many(_number_match_query("phone", key)).deleted_count
+    deleted["teamWebhookMessages"] = db["teamWebhookMessages"].delete_many(_number_match_query("number", key)).deleted_count
+    deleted["aiCallQueue"] = db["aiCallQueue"].delete_many({"phone10": key, "status": {"$in": ["queued", "calling", "waiting_result"]}}).deleted_count
 
     print(f"[block] {raw!r} (key={key}) blocked. Deleted: {deleted}")
     return {"key": key, "deleted": deleted}
@@ -7991,6 +7995,8 @@ Our team will personally connect with you very soon.
 # WHATSAPP SEND HELPERS (bizautomation.io)
 # ---------------------------------------------------------------------
 def send_whatsapp_text(to_phone, text, phone_no_id=None):
+    if is_number_blocked(to_phone):
+        raise RuntimeError("Number is blocked / opted out - message not sent")
     if not BIZAUTOMATION_API_KEY:
         raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
     payload = {
@@ -8016,6 +8022,8 @@ def send_whatsapp_text(to_phone, text, phone_no_id=None):
 # WHATSAPP SEND HELPERS (bizautomation.io)
 # ---------------------------------------------------------------------
 def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
+    if is_number_blocked(to_phone):
+        raise RuntimeError("Number is blocked / opted out - message not sent")
     if not BIZAUTOMATION_API_KEY:
         raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
     payload = {
@@ -8673,35 +8681,142 @@ def apply_ai_result_to_lead(coll_name, lead_id, ai_result):
 # BUSINESS-HOURS AUTO-REPLY + "STOP / DO NOT SPAM" OPT-OUT
 # =====================================================================
 AFTER_HOURS_REPLY_COOLDOWN_HOURS = 8     # send the "team will contact you" message at most once per 8h per lead
-OPTOUT_SEND_CONFIRMATION = True          # set False to stay completely silent when someone says stop
+OPTOUT_SEND_CONFIRMATION = False         # never message someone who opted out (guide: no repeat confirmations)
+OPTOUT_PURGE_NOT_INTERESTED = False      # True = also delete leads that only say "not interested / not required"
 OPTOUT_CONFIRMATION_TEXT = (
     "Understood 🙏 We've stopped our follow-up messages. "
     "If you need anything later, just message us anytime.\n\n— Nisha Homes"
 )
 
-_OPTOUT_REGEXES = [re.compile(p) for p in (
-    r"^\W*(please\s+|pls\s+|plz\s+)?(stop|stopp+|unsubscribe|dnd)\W*$",
-    r"\bunsubscribe\b",
-    r"\bspam(ming|med|my)?\b",
-    r"\bstop\s+(it|this|these|all|them|sending|messaging|texting|msgs?|messages?|spamming|spam|follow\s?-?ups?|whatsapp|calling|disturbing|contacting|bothering)\b",
-    r"\b(do\s+not|don'?t|dont|never)\s+(send|message|msg|text|whatsapp|contact|disturb|bother|spam|follow)\b",
-    r"\b(do\s+not|don'?t|dont)\s+want\s+(any\s+)?(more\s+)?(messages?|msgs?|follow\s?-?ups?|updates?)\b",
-    r"\bdnd\b",
-    r"\b(msg|message|whatsapp)\s+(mat|na)\s+(karo|kro|bhejo|karna)\b",
-    r"\b(mat|na)\s+(bhejo|bhejna)\b",
-    r"\b(band|bnd|bandh)\s+(karo|kro|kar\s?do|kardo)\b",
-    r"\b(pareshan|tang|disturb)\s+(mat|na)\s+(karo|kro)\b",
+# ---------------------------------------------------------------------
+# OPT-OUT DETECTION (Nisha Homes AutoChat Opt-Out Guide)
+# level "hard" = stop / spam complaint / Hinglish stop / wrong number -> number is deleted + blocked forever
+# level "soft" = "not interested / not required" -> no more messages (deleted only if flag is True)
+# ---------------------------------------------------------------------
+def _normalize_optout_text(text):
+    t = str(text or "").lower().replace("’", "'").replace("`", "'")
+    t = re.sub(r"\b(do|did|does)\s+not\b", r"\1nt", t)          # "do not" -> "dont"
+    t = t.replace("'", "")                                       # "don't" -> "dont"
+    t = re.sub(r"[^a-z0-9\u0900-\u097f\s]", " ", t)              # strip punctuation, keep Devanagari
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _phrase_re(phrases):
+    ordered = sorted(set(phrases), key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(p) for p in ordered) + r")\b")
+
+
+_OPTOUT_EXACT = {"stop", "stopp", "stop it", "stop all", "stop now", "please stop", "pls stop",
+                 "plz stop", "dnd", "unsubscribe", "optout", "opt out"}
+
+_OPTOUT_NEGATION_RE = re.compile(
+    r"\b(?:dont|never)\s+(?:stop|unsubscribe|remove|block|delete)\b|\bnot\s+(?:a\s+)?spam\b"
+)
+
+_OPTOUT_HARD_RE = _phrase_re([
+    # 1. direct opt-out
+    "stop messaging", "stop messages", "stop message", "unsubscribe", "opt out", "opted out", "optout",
+    "dont message", "dont message me", "no more messages", "no more message", "remove me",
+    "remove my number", "delete my number", "block my number", "no further messages", "end messages",
+    "cancel messages", "stop contacting me", "stop contacting", "never message me", "dont contact",
+    "dont contact me", "take me off your list", "stop calling", "stop calling me", "dont call me",
+    "dont text me", "dont send me messages", "dont send messages", "dont whatsapp me", "dnd",
+    # 3. spam complaint
+    "this is spam", "you are spamming", "stop spamming", "spam messages", "spam calls",
+    "why are you messaging me", "why do you keep messaging", "i never asked for this",
+    "i didnt sign up", "i didnt give consent", "who gave you my number", "how did you get my number",
+    "reporting you as spam", "i will report you", "i will block you", "i will complain",
+    "this is annoying", "you keep disturbing me", "dont disturb me", "dont disturb", "enough is enough",
+    # wrong number
+    "wrong number",
+])
+
+_OPTOUT_HARD_REGEXES = [re.compile(p) for p in (
+    # 4. Hindi / Hinglish
+    r"\b(?:msg|mesg|message|messages|whatsapp|call|calls|contact|calling)\s+(?:mat|math|na|nahi|nhi)\s+(?:karo|kro|karna|kare|karein|kren|kijiye|kijiyega|bhejo|bhejna|bhejein|bheje|bhejiye)\b",
+    r"\b(?:mat|na)\s+(?:bhejo|bhejna|bhejein|bheje|bhejiye)\b",
+    r"\b(?:message|msg|messages)\s+(?:nahi|nhi)\s+chahiye\b",
+    r"\b(?:mera|mere)\s+number\s+(?:ko\s+)?(?:hata|delete|remove)\b",
+    r"\bnumber\s+(?:delete|hata|remove)\s*(?:kar\s*)?(?:do|dijiye|dena)\b",
+    r"\blist\s+se\s+(?:hata|nikal)\b",
+    r"\bmujhe\s+hata\s+do\b",
+    r"\bblock\s*(?:kar|kr)\s*(?:do|dijiye)\b",
+    r"\b(?:ye|yeh)\s+sab\s+(?:band|bnd|bandh)\b",
+    r"\bband\s+karo\s+(?:ye|yeh)\s+sab\b",
+    r"\b(?:msg|message|messaging|call|calling)\s+(?:band|bnd|bandh)\s*(?:karo|kro|kar\s*do|kardo)\b",
+    r"\b(?:pareshan|paresan|tang|disturb)\s+(?:mat|na)\s+(?:karo|kro|karna|kare)\b",
+    r"\bspam\s+(?:mat|na)\s+(?:karo|kro)\b",
+    r"\bbas\s+ab\s+(?:mat|na)\b",
+    r"\bgalat\s+number\b",
+    r"\b(?:ye|yeh)\s+mera\s+number\s+nahi\b",
+    r"\b(?:humne|hamne|maine)\s+nahi\s+manga\b",
+    r"\bspam(?:ming|med|my)?\b",
+)]
+
+_OPTOUT_DEVANAGARI = ["मैसेज मत करो", "मैसेज मत भेजो", "मेरा नंबर हटा", "स्टॉप", "परेशान मत करो"]
+
+_OPTOUT_SOFT_RE = _phrase_re([
+    "not interested", "not interested anymore", "i am not interested", "not required", "no requirement",
+    "no need", "dont need it", "dont need", "not looking", "not looking for property", "no interest",
+    "i dont want this", "not my requirement", "no thanks", "no thank you", "not needed",
+    "i dont need property", "no property required", "not planning to buy", "not planning to rent",
+    "dont send", "please dont send",
+])
+_OPTOUT_SOFT_REGEXES = [re.compile(p) for p in (
+    r"\binterested\s+(?:nahi|nhi)\b",
+    r"\b(?:zaroorat|zarurat|jarurat)\s+(?:nahi|nhi)\b",
+    r"\brequirement\s+(?:nahi|nhi)\b",
+    r"\bproperty\s+(?:nahi|nhi)\s+chahiye\b",
+    r"\bkoi\s+interest\s+(?:nahi|nhi)\b",
 )]
 
 
-def is_followup_optout_message(text):
-    """True if the customer is asking us to stop messaging / spamming them."""
+def detect_optout_level(text):
+    """Returns "hard", "soft" or None. Checks full-sentence meaning (negation aware),
+    so 'I am interested' / 'do not stop sending me updates' are NOT opt-outs."""
     if not text:
-        return False
-    t = str(text).lower().replace("’", "'").replace("`", "'").strip()
-    if not t or len(t) > 300:
-        return False
-    return any(rx.search(t) for rx in _OPTOUT_REGEXES)
+        return None
+    raw = str(text)
+    if len(raw) > 400:
+        return None
+    t = _normalize_optout_text(raw)
+    if not t:
+        return None
+    if _OPTOUT_NEGATION_RE.search(t):
+        return None
+    if t in _OPTOUT_EXACT:
+        return "hard"
+    if (_OPTOUT_HARD_RE.search(t)
+            or any(p in t for p in _OPTOUT_DEVANAGARI)
+            or any(rx.search(t) for rx in _OPTOUT_HARD_REGEXES)):
+        return "hard"
+    if _OPTOUT_SOFT_RE.search(t) or any(rx.search(t) for rx in _OPTOUT_SOFT_REGEXES):
+        # long sentences / "but..." sentences are probably a changed requirement, not a refusal
+        if len(t) <= 80 and not re.search(r"\b(but|however|instead|rather|otherwise|except)\b", t):
+            return "soft"
+    return None
+
+
+def is_followup_optout_message(text):
+    """True when the number must be wiped + blocked."""
+    level = detect_optout_level(text)
+    return level == "hard" or (level == "soft" and OPTOUT_PURGE_NOT_INTERESTED)
+
+
+def purge_optout_number(raw_phone, text, source):
+    """Blocks the number forever and deletes it from the system. Never raises."""
+    try:
+        res = block_and_purge_number(
+            raw_phone,
+            reason=f"AUTO OPT-OUT via {source}: {str(text)[:200]}",
+            by=f"auto-optout-{source}"
+        )
+        invalidate_cache("followup_stats")
+        print(f"[opt-out] {raw_phone} wiped via {source}: {res}")
+        return res
+    except Exception as e:
+        print(f"[opt-out] purge failed for {raw_phone}: {e}")
+        return None
 
 
 def mark_followup_opt_out(coll_name, lead_id, original_text=""):
@@ -8774,6 +8889,11 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         phone = normalize_phone_91(phone)
 
+        # ---- OPT-OUT: stop / spam complaint / wrong number -> delete everything, reply nothing ----
+        if is_followup_optout_message(user_text):
+            purge_optout_number(phone, user_text, "whatsapp-ai")
+            return
+
         coll_name, lead_doc = find_wa_lead_by_phone(phone)
         if not lead_doc:
             coll_name, lead_doc = create_wa_lead(phone, sender_name)
@@ -8790,16 +8910,10 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
             update_fields["Lead Name"] = sender_name
         db[coll_name].update_one({"_id": lead_id}, {"$set": update_fields})
 
-        # ---- "stop" / "do not spam" -> kill follow-ups for this lead, no AI reply ----
-        if is_followup_optout_message(user_text):
+        # ---- soft "not interested / not required": keep the lead, but no more automatic messages ----
+        if detect_optout_level(user_text) == "soft":
             mark_followup_opt_out(coll_name, lead_id, user_text)
-            print(f"[wa-ai] {phone} opted out of follow-ups: {user_text!r}")
-            if OPTOUT_SEND_CONFIRMATION and not is_ai_disabled_for_phone(phone):
-                try:
-                    send_whatsapp_text(phone, OPTOUT_CONFIRMATION_TEXT, phone_no_id=recipient_phone_id)
-                    save_chat_message(lead_id, phone, "assistant", OPTOUT_CONFIRMATION_TEXT)
-                except Exception as optout_err:
-                    print(f"[wa-ai] opt-out confirmation failed: {optout_err}")
+            print(f"[wa-ai] {phone} said not interested - auto messages stopped: {user_text!r}")
             return
 
         if is_ai_disabled_for_phone(phone):
@@ -8886,6 +9000,7 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         apply_ai_result_to_lead(coll_name, lead_id, ai_result)
         save_chat_message(lead_id, phone, "assistant", ai_result.get("message", ""))
+        schedule_ai_score(coll_name, lead_id, delay=1)   # NEW
 
         sending_media = ai_result.get("media") == "yes" and bool(ai_result.get("imgfield"))
 
@@ -9394,12 +9509,15 @@ def team_webhook_receiver(token):
             # messages count as their WhatsApp Engagement activity;
             # inbound customer messages aren't a "caller" action.
             # NEW: customer said "stop / do not spam" -> stop their follow-ups
-            if direction == "in" and lead_match and is_followup_optout_message(message_text):
-                try:
-                    mark_followup_opt_out(lead_match["collection"], ObjectId(lead_match["leadId"]), message_text)
-                    print(f"[team-webhook] {number} opted out of follow-ups: {message_text!r}")
-                except Exception as optout_err:
-                    print(f"[team-webhook] opt-out failed for {number}: {optout_err}")
+            if direction == "in":
+                _lvl = detect_optout_level(message_text)
+                if _lvl == "hard" or (_lvl == "soft" and OPTOUT_PURGE_NOT_INTERESTED):
+                    purge_optout_number(number, message_text, "team-webhook")
+                elif _lvl == "soft" and lead_match:
+                    try:
+                        mark_followup_opt_out(lead_match["collection"], ObjectId(lead_match["leadId"]), message_text)
+                    except Exception as optout_err:
+                        print(f"[team-webhook] soft opt-out failed for {number}: {optout_err}")
 
             if direction == "out":
                 emp_doc = db["teamAssign"].find_one({"Employee number": wh.get("employeeNumber")})
@@ -11098,6 +11216,7 @@ def apply_ai_call_to_lead(coll_name, lead_id, call, reqs):
          "$inc": {"AICallCount": 1},
          "$push": {"AICallHistory": {"$each": [history_entry], "$slice": -20}}}
     )
+    schedule_ai_score(coll_name, lead_id)   # NEW: re-score with the new transcript/summary
 
 
 _AI_CALL_STATUS_MAP = {
@@ -11833,6 +11952,251 @@ def pravaah_ai_webhook():
     invalidate_cache("followup_stats")
     print(f"[pravaah-webhook] processed {len(items)} item(s): {counts}")
     return jsonify({"success": True, "received": len(items), **counts, "results": results}), 200
+
+# =====================================================================
+# AI LEAD SCORE (1-100)
+# Inputs: call transcript (AI calls), caller remarks, requirements,
+# interest level, call outcomes, WhatsApp chat.
+# Saved on the lead as AIScore / AIScoreReason / AIScoreSource / AIScoreAt.
+# =====================================================================
+import queue as _queue
+
+_score_queue = _queue.Queue()
+_score_pending = set()
+
+
+def _clamp_score(v):
+    try:
+        return max(1, min(100, int(round(float(v)))))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _build_score_inputs(lead):
+    phone91 = normalize_phone_91(lead.get("Phone Number"))
+    ed = db["endData"].find_one({"Number": phone91}) or {}
+
+    logs = list(call_logs_collection.find(
+        {"Number": phone91, "CallAttemptOnly": {"$ne": True}}
+    ).sort("CreatedAt", -1).limit(6))
+    remarks = [l.get("CallerRemarks") for l in logs if l.get("CallerRemarks")]
+    if ed.get("Caller Remarks") and ed.get("Caller Remarks") not in remarks:
+        remarks.insert(0, ed.get("Caller Remarks"))
+
+    transcript = "\n".join(
+        f"{t.get('role', '')}: {t.get('text', '')}"
+        for t in (lead.get("AICallTranscript") or []) if isinstance(t, dict)
+    )[:3000]
+
+    chats = get_recent_chat_messages(lead["_id"], limit=12)
+    chat_text = format_chat_history_for_prompt(chats)[:2000] if chats else ""
+
+    return {
+        "requirements": {
+            "budget": lead.get("Budget Range") or ed.get("Budget Range") or "",
+            "location": lead.get("Location Interested In") or ed.get("Location Interested In") or "",
+            "propertyType": lead.get("Property Type") or ed.get("Property Type") or "",
+            "configuration": lead.get("Configuration") or ed.get("Configuration") or "",
+            "timeline": lead.get("Buying Timeline") or "",
+        },
+        "interestLevel": ed.get("Interest Level") or "",
+        "callStatus": ed.get("Call Status") or "",
+        "customerResponse": ed.get("Customer Response") or "",
+        "objection": ed.get("Objection / Reason") or "",
+        "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+        "callerRemarks": remarks[:6],
+        "aiCallSummary": lead.get("AICallSummary") or "",
+        "aiCallOutcome": lead.get("AICallLastOutcome") or "",
+        "aiCallIntent": lead.get("AICallStatusAfter") or "",
+        "aiCallTranscript": transcript,
+        "whatsappChat": chat_text,
+    }
+
+
+def _rules_score(inp):
+    """Fallback score when the LLM is unavailable / there is nothing to read."""
+    score = 20
+    req = inp["requirements"]
+    if req.get("budget"): score += 8
+    if req.get("location"): score += 7
+    if req.get("propertyType") or req.get("configuration"): score += 6
+    tl = str(req.get("timeline") or "").lower()
+    if tl:
+        score += 12 if re.search(r"immed|urgent|asap|now|this month|1 month|week|15 days|ready", tl) else 5
+
+    score += {"very high": 25, "high": 18, "medium": 8, "cold": -10}.get(inp["interestLevel"].strip().lower(), 0)
+
+    st = inp["callStatus"].strip().lower()
+    if st in ("site visit scheduled", "site visit completed", "meeting fixed"): score += 15
+    elif st in ("call back requested", "follow-up required", "call rescheduled"): score += 6
+    elif st in ("call not picked", "no response", "line busy", "number switched off"): score -= 4
+
+    rs = inp["customerResponse"].strip().lower()
+    if rs in ("interested", "shortlisted property", "budget confirmed", "asked for callback"): score += 10
+    elif rs in ("price negotiation", "comparing options", "thinking / considering", "will revert", "call later"): score += 4
+    elif rs in ("budget mismatch", "requirement changed"): score -= 5
+
+    if str(inp["aiCallOutcome"]).lower() == "interested": score += 8
+    score += {"hot": 10, "warm": 4, "cold": -6}.get(str(inp["aiCallIntent"]).lower(), 0)
+
+    customer_msgs = inp["whatsappChat"].count("Customer:") if inp["whatsappChat"] else 0
+    score += min(10, customer_msgs * 2)
+    if inp["callerRemarks"]: score += 3
+    if inp["callAttempts"] >= 6 and inp["interestLevel"].strip().lower() in ("", "cold"): score -= 5
+
+    return score, "Rule-based estimate from requirements, interest level, call outcome and chat activity"
+
+
+def _apply_score_caps(score, inp):
+    st = inp["callStatus"].strip().lower()
+    rs = inp["customerResponse"].strip().lower()
+    if st in ("wrong number", "invalid number") or rs == "wrong lead":
+        return min(score, 5)
+    if rs == "not interested":
+        return min(score, 15)
+    return score
+
+
+def _llm_score(inp):
+    if not LLM_API_KEY:
+        return None
+    has_signal = any([
+        inp["callerRemarks"], inp["aiCallSummary"], inp["aiCallTranscript"],
+        inp["whatsappChat"], inp["interestLevel"], any(inp["requirements"].values())
+    ])
+    if not has_signal:
+        return None
+
+    system_prompt = (
+        "You are a real-estate CRM lead-scoring assistant for Nisha Homes (Delhi NCR). "
+        "Given a lead's requirements, caller remarks, call outcomes, AI call transcript/summary and "
+        "WhatsApp chat, give ONE integer score from 1 to 100 for how likely this lead is to buy/rent soon. "
+        "Rubric: 85-100 = ready to move, budget + location + timeline clear, site visit/meeting or strong interest. "
+        "60-84 = genuinely interested, some details missing or comparing options. "
+        "30-59 = lukewarm, vague requirement, slow replies, budget mismatch. "
+        "10-29 = cold, unreachable or barely responsive. 1-9 = wrong number / explicitly not interested. "
+        "Judge from what the customer actually said, not from the agent's wording. "
+        "Return ONLY JSON: {\"score\": <int 1-100>, \"reason\": \"<max 15 words>\"}. No markdown."
+    )
+    try:
+        content = call_llm_chat(system_prompt, json.dumps(inp, default=str)[:9000], temperature=0.1, timeout=40)
+        res = _extract_json_from_llm(content) or {}
+        return {"score": _clamp_score(res.get("score")), "reason": str(res.get("reason", ""))[:200], "source": "ai"}
+    except Exception as e:
+        print(f"[ai-score] LLM scoring failed: {e}")
+        return None
+
+
+def compute_and_save_ai_score(coll_name, lead_id, use_llm=True):
+    lead = db[coll_name].find_one({"_id": lead_id})
+    if not lead:
+        return None
+    inp = _build_score_inputs(lead)
+
+    res = _llm_score(inp) if use_llm else None
+    if not res:
+        s, why = _rules_score(inp)
+        res = {"score": s, "reason": why, "source": "rules"}
+
+    res["score"] = _clamp_score(_apply_score_caps(res["score"], inp))
+    db[coll_name].update_one({"_id": lead_id}, {"$set": {
+        "AIScore": res["score"],
+        "AIScoreReason": res["reason"],
+        "AIScoreSource": res["source"],
+        "AIScoreAt": datetime.utcnow(),
+    }})
+    return res
+
+
+def schedule_ai_score(coll_name, lead_id, delay=3):
+    """Queues a re-score (de-duplicated, runs on ONE background thread)."""
+    try:
+        key = (coll_name, str(lead_id))
+        if key in _score_pending:
+            return
+        _score_pending.add(key)
+        _score_queue.put((key, time.time() + delay))
+    except Exception as e:
+        print(f"[ai-score] schedule failed: {e}")
+
+
+def schedule_ai_score_by_phone(raw_phone):
+    try:
+        coll, doc = find_lead_by_any_phone(raw_phone)
+        if doc:
+            schedule_ai_score(coll, doc["_id"])
+    except Exception as e:
+        print(f"[ai-score] schedule by phone failed: {e}")
+
+
+def _ai_score_worker():
+    print("[ai-score] worker started")
+    while True:
+        key, run_at = _score_queue.get()
+        try:
+            wait = run_at - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            compute_and_save_ai_score(key[0], ObjectId(key[1]))
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        finally:
+            _score_pending.discard(key)
+
+
+threading.Thread(target=_ai_score_worker, daemon=True, name="ai-score-worker").start()
+
+
+@app.route("/api/lead-score/refresh", methods=["POST"])
+def lead_score_refresh():
+    """Re-scores one lead right now (used when staff click the score badge)."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+    data = request.json or {}
+    coll = str(data.get("collection") or "").strip()
+    if coll not in LEAD_COLLECTIONS_ALL:
+        return jsonify({"success": False, "message": "Invalid collection"}), 400
+    try:
+        res = compute_and_save_ai_score(coll, ObjectId(str(data.get("id"))))
+        if not res:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
+        return jsonify({"success": True, "score": res["score"], "reason": res["reason"], "source": res["source"]}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def _backfill_scores(use_llm, only_missing):
+    for coll in LEAD_COLLECTIONS_ALL:
+        q = {"AIScore": {"$exists": False}} if only_missing else {}
+        ids = [d["_id"] for d in db[coll].find(q, {"_id": 1})]
+        print(f"[ai-score] backfill {coll}: {len(ids)} lead(s)")
+        for lid in ids:
+            try:
+                compute_and_save_ai_score(coll, lid, use_llm=use_llm)
+            except Exception as e:
+                print(f"[ai-score] backfill error {lid}: {e}")
+            if use_llm:
+                time.sleep(0.5)
+    print("[ai-score] backfill finished")
+
+
+@app.route("/api/admin/rescore-leads", methods=["POST"])
+def admin_rescore_leads():
+    """Admin: score every lead in the background.
+    Body: {"use_llm": false, "only_missing": true}  (defaults: rules-only, only leads with no score yet)"""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    data = request.json or {}
+    threading.Thread(
+        target=_backfill_scores,
+        args=(bool(data.get("use_llm", False)), bool(data.get("only_missing", True))),
+        daemon=True, name="ai-score-backfill"
+    ).start()
+    return jsonify({"success": True, "message": "Scoring started in background - check server logs"}), 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
