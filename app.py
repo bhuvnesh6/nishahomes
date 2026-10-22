@@ -6627,8 +6627,22 @@ def import_leads_commit():
                     updated += 1
                 else:
                     doc["Created At"] = created_at_str   # set once
-                    collection.insert_one(doc)
+                    insert_res = collection.insert_one(doc)
                     inserted += 1
+
+                    # NEW: Round Robin auto-assign + Wirebase WhatsApp notification
+                    # (same function /add-lead uses). Each brand-new imported lead goes
+                    # to the next selected employee in the rotation, and only that
+                    # employee gets the "New Lead Assigned" WhatsApp message.
+                    try:
+                        auto_assign_round_robin(
+                            collection_name,
+                            insert_res.inserted_id,
+                            phone_clean,
+                            doc.get("Lead Name", "")
+                        )
+                    except Exception as rr_err:
+                        print(f"[import-leads] round-robin failed (non-fatal): {rr_err}")
 
             except Exception as row_err:
                 skipped += 1
@@ -12184,7 +12198,10 @@ def _backfill_scores(use_llm, only_missing):
 
 
 @app.route("/api/admin/rescore-leads", methods=["POST"])
-def admin_rescore_leads():
+def admin_rescore_leads():                else:
+                    doc["Created At"] = created_at_str   # set once
+                    collection.insert_one(doc)
+                    inserted += 1
     """Admin: score every lead in the background.
     Body: {"use_llm": false, "only_missing": true}  (defaults: rules-only, only leads with no score yet)"""
     if session.get("role") != "admin":
