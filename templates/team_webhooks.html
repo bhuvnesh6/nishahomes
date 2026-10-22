@@ -465,6 +465,8 @@
     </div>
   </div>
   <div class="topbar-right">
+
+        <button class="topbar-export-btn" id="waSettingsBtn" title="My WhatsApp settings (QR)" onclick="openMyWa()">⚙️</button>
     <button class="topbar-export-btn" id="exportBtn" title="Export conversations">⬇️</button>
     <span class="staff-pill">{{ employee_name or "Staff" }} · {{ (role or "")|capitalize }}</span>
     <a class="dash-link" href="/admin">← Dashboard</a>
@@ -477,7 +479,8 @@
   <div class="col col-members">
     <div class="col-head">
       <h3>Team Members</h3>
-      <p>Select a member to view their WhatsApp activity</p>
+            <p>Select a member to view their WhatsApp activity</p>
+      <button class="btn btn-accent btn-sm" style="width:100%;margin-top:10px;" onclick="openMyWa()">📱 My WhatsApp Settings</button>
     </div>
     <div class="search-box">
       <input type="text" id="memberSearch" placeholder="Search team members...">
@@ -618,6 +621,15 @@ async function waRefreshStatus(){
       if (q.success) waRenderQr(q);
     }
   }catch(e){ console.error(e); }
+}
+
+
+function openMyWa(){
+  const myNum = Number("{{ employee_number or 0 }}");
+  const me = members.find(x => Number(x.number) === myNum);
+  if (!me){ showToast("Your account was not found in the team list yet, try again in a moment"); return; }
+  activeMember = me;
+  openWaModal();
 }
 
 async function waConnect(){
