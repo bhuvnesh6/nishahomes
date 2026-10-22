@@ -538,6 +538,119 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  .status-dot.off{ background:var(--hot); }
+  #waQrBox{ display:flex; justify-content:center; padding:14px 0; min-height:60px; }
+  #waQrBox img{ width:240px; height:240px; }
+  .wa-badge{ display:inline-block; padding:4px 12px; border-radius:var(--radius-pill); font-size:12px; font-weight:700; color:#fff; }
+  .wa-badge.connected{ background:var(--success); }
+  .wa-badge.disconnected, .wa-badge.logged_out{ background:var(--hot); }
+  .wa-badge.not_setup, .wa-badge.waiting_scan{ background:var(--warm); }
+</style>
+
+<div class="modal-overlay" id="waModalOverlay">
+  <div class="modal-box" style="text-align:center;">
+    <h3 id="waModalTitle">WhatsApp connection</h3>
+    <p>Scan this QR from WhatsApp → Linked devices on the phone of this team member.</p>
+    <div id="waStateWrap"><span class="wa-badge not_setup" id="waBadge">Checking…</span></div>
+    <div id="waPhoneText" style="font-size:12px;color:var(--text-soft);margin-top:6px;"></div>
+    <div id="waQrBox"></div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn btn-accent btn-sm" id="waConnectBtn" onclick="waConnect()">📱 Connect / Show QR</button>
+      <button class="btn btn-danger-ghost btn-sm" id="waLogoutBtn" onclick="waLogout()">Disconnect</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeWaModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let waTimer = null, waWantQr = false, waTick = 0;
+
+function openWaModal(){
+  if (!activeMember) return;
+  document.getElementById("waModalTitle").textContent = "WhatsApp · " + activeMember.name;
+  document.getElementById("waQrBox").innerHTML = "";
+  document.getElementById("waPhoneText").textContent = "";
+  waWantQr = false; waTick = 0;
+  document.getElementById("waModalOverlay").classList.add("open");
+  waRefreshStatus();
+  clearInterval(waTimer);
+  waTimer = setInterval(waRefreshStatus, 4000);
+}
+
+async function closeWaModal(){
+  clearInterval(waTimer); waTimer = null; waWantQr = false;
+  document.getElementById("waModalOverlay").classList.remove("open");
+  await loadMembers();
+  const refreshed = members.find(x => activeMember && x.number === activeMember.number);
+  if (refreshed){ const wasToken = activeMember.token; activeMember = refreshed; if (refreshed.token && !wasToken) selectMember(refreshed); }
+}
+
+function waSetBadge(state){
+  const labels = { connected:"Connected", disconnected:"Disconnected", logged_out:"Logged out", not_setup:"Not connected", waiting_scan:"Waiting for scan" };
+  const b = document.getElementById("waBadge");
+  b.className = "wa-badge " + state;
+  b.textContent = labels[state] || state;
+}
+
+function waRenderQr(d){
+  const box = document.getElementById("waQrBox");
+  box.innerHTML = "";
+  if (!d.qr){ box.innerHTML = "<span style='font-size:12px;color:var(--text-soft)'>QR not ready yet…</span>"; return; }
+  if (d.isImage){ const i = document.createElement("img"); i.src = d.qr; box.appendChild(i); }
+  else { new QRCode(box, { text: d.qr, width: 240, height: 240 }); }
+}
+
+async function waRefreshStatus(){
+  if (!activeMember) return;
+  try{
+    const res = await fetch(`/api/wa/status/${activeMember.number}`);
+    const d = await res.json();
+    if (!d.success) return;
+    waSetBadge(d.state);
+    if (d.state === "connected"){
+      waWantQr = false;
+      document.getElementById("waQrBox").innerHTML = "<div style='font-size:42px'>✅</div>";
+      document.getElementById("waPhoneText").textContent = d.phone ? ("Linked number: +" + d.phone) : "";
+    } else if (waWantQr && ++waTick % 4 === 0){      // QR expires — refresh every ~16s
+      const q = await (await fetch(`/api/wa/qr/${activeMember.number}`)).json();
+      if (q.success) waRenderQr(q);
+    }
+  }catch(e){ console.error(e); }
+}
+
+async function waConnect(){
+  const btn = document.getElementById("waConnectBtn");
+  btn.disabled = true; btn.textContent = "Please wait…";
+  try{
+    const res = await fetch("/api/wa/connect", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ number: activeMember.number })
+    });
+    const d = await res.json();
+    if (!d.success){ showToast(d.message || "Failed"); return; }
+    waSetBadge(d.state);
+    if (d.state === "connected"){
+      document.getElementById("waQrBox").innerHTML = "<div style='font-size:42px'>✅</div>";
+      document.getElementById("waPhoneText").textContent = d.phone ? ("Linked number: +" + d.phone) : "";
+    } else { waWantQr = true; waTick = 0; waRenderQr(d); }
+  }catch(e){ showToast("Error: " + e.message); }
+  finally{ btn.disabled = false; btn.textContent = "📱 Connect / Show QR"; }
+}
+
+async function waLogout(){
+  if (!confirm("Disconnect this WhatsApp number?")) return;
+  const res = await fetch("/api/wa/logout", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ number: activeMember.number })
+  });
+  const d = await res.json();
+  showToast(d.success ? "Disconnected" : (d.message || "Failed"));
+  waRefreshStatus();
+}
+</script>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -653,7 +766,7 @@ function renderMemberList(filterText){
     row.className = "member-row" + (activeMember && activeMember.number === m.number ? " active" : "");
 
     let dotClass = "";
-    if (m.hasWebhook) dotClass = m.lastReceivedAt ? "live" : "setup";
+    if (m.hasWebhook) dotClass = m.waStatus === "connected" ? "live" : (m.waStatus ? "off" : "setup");
 
     row.innerHTML = `
       <div class="avatar">
@@ -702,23 +815,13 @@ function renderSetupPanel(){
   const wrap = document.getElementById("conversationsWrap");
   wrap.innerHTML = `
     <div class="setup-panel">
-      <div class="setup-icon">🔗</div>
-      <h3>No webhook yet</h3>
-      <p>Generate a unique webhook URL for <strong>${escapeHtml(activeMember.name)}</strong> and paste it into
-      their unofficial WhatsApp API instance. Every incoming message will show up here automatically.</p>
-      <button class="btn btn-accent" id="genBtn">⚡ Generate Webhook</button>
-      <div class="url-box" id="genUrlBox" style="display:none;">
-        <label>Webhook URL</label>
-        <div class="url-row">
-          <code id="genUrlText">—</code>
-          <button class="btn btn-ghost btn-sm" id="genCopyBtn">Copy</button>
-        </div>
-      </div>
-      <button class="btn btn-ghost btn-sm" id="genContinueBtn" style="display:none; margin-top:4px;">View Conversations →</button>
+      <div class="setup-icon">📱</div>
+      <h3>WhatsApp not connected</h3>
+      <p>Connect <strong>${escapeHtml(activeMember.name)}</strong>'s WhatsApp by scanning a QR code.
+      Messages will then appear here automatically.</p>
+      <button class="btn btn-accent" onclick="openWaModal()">📱 Connect WhatsApp</button>
     </div>
   `;
-
-  document.getElementById("genBtn").addEventListener("click", () => generateWebhook(false));
 }
 
 async function generateWebhook(regenerate){
@@ -769,6 +872,7 @@ function renderConversationsShell(){
         <h3 style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(activeMember.name)}</h3>
         <p>${escapeHtml(String(activeMember.number))}</p>
       </div>
+      <button class="icon-btn" id="convWaBtn" title="WhatsApp connection (QR)" onclick="openWaModal()">📱</button>
       <button class="icon-btn" id="convSettingsBtn" title="Webhook settings">⚙️</button>
       <div class="settings-panel" id="convSettingsPanel">
         <div class="url-box">

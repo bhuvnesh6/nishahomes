@@ -229,6 +229,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 }
 .workload-view-btn:hover{border-color:var(--accent);color:var(--accent)}
 
+.workload-view-btn.sa-on{background:var(--accent);border-color:var(--accent);color:#fff}
+
 /* ---- assigned-leads modal ---- */
 .wl-modal-overlay{
   position:fixed;inset:0;background:rgba(30,34,53,0.55);
@@ -596,13 +598,35 @@ function renderWorkloadList(){
     <div class="workload-row">
       <div class="workload-avatar">${initials(m.name)}</div>
       <div class="workload-info">
-        <div class="workload-name">${escHtml(m.name)}</div>
-        <div class="workload-meta">${m.number}${!m.active?' · Inactive':''}</div>
+        <div class="workload-name">${escHtml(m.name)}${m.superAdmin?' 👑':''}</div>
+        <div class="workload-meta">${m.number}${!m.active?' · Inactive':''}${m.superAdmin?' · Super Admin (sends alerts & reports)':''}</div>
       </div>
       <span class="workload-count-pill ${count===0?'zero':''}">${count} lead${count===1?'':'s'}</span>
+      <button class="workload-view-btn ${m.superAdmin?'sa-on':''}" onclick="setSuperAdmin(${m.number}, ${!m.superAdmin})">${m.superAdmin?'👑 Super Admin':'Make Super Admin'}</button>
       <button class="workload-view-btn" onclick="openWorkloadModal(${m.number})">View</button>
     </div>`;
   }).join('');
+}
+
+async function setSuperAdmin(number, enabled){
+  const m = members.find(x=>x.number===number);
+  const msg = enabled
+    ? `Make ${m?m.name:number} the Super Admin? Their WhatsApp will send all alerts, notifications and reports. Any previous Super Admin is removed.`
+    : `Remove Super Admin from ${m?m.name:number}?`;
+  if(!confirm(msg)) return;
+  try{
+    const res = await fetch(`${BASE}/round-robin/super-admin`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({number, enabled})
+    });
+    const d = await res.json();
+    showToast(d.success ? (enabled ? 'Super Admin set 👑' : 'Super Admin removed') : (d.message || 'Failed'));
+    if(d.success) loadConfig();
+  }catch(e){
+    console.error(e);
+    showToast('Failed to update');
+  }
 }
 
 async function openWorkloadModal(number){

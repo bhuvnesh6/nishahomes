@@ -9324,6 +9324,7 @@ def team_webhooks_members():
                 "role": (m.get("roll") or "").strip().lower(),
                 "active": m.get("Active", True),
                 "hasWebhook": bool(wh),
+                "waStatus": wh.get("waStatus") if wh else None,
                 "token": wh.get("token") if wh else None,
                 "lastReceivedAt": None,
                 "conversationCount": 0,
@@ -9450,9 +9451,26 @@ def team_webhook_receiver(token):
         return jsonify({"success": True, "message": "Webhook is live"}), 200
  
     try:
+        raw_body = request.get_data() or b""
         body = request.get_json(silent=True)
         if body is None:
             body = request.form.to_dict() or {}
+
+        # ---- Wirebase Developer API: verify signature + normalize payload ----
+        sig_header = request.headers.get("X-Wirebase-Signature", "")
+        if sig_header and wh.get("webhookSecret"):
+            ts_header = request.headers.get("X-Wirebase-Timestamp", "")
+            expected = "sha256=" + hmac.new(
+                wh["webhookSecret"].encode("utf-8"),
+                f"{ts_header}.".encode("utf-8") + raw_body,
+                hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(sig_header, expected):
+                return jsonify({"success": False, "message": "Bad signature"}), 401
+
+        body = normalize_wirebase_event(body, token)
+        if body is None:                       # instance.status event, already saved
+            return jsonify({"success": True}), 200
  
         now = datetime.utcnow()
  
@@ -9658,33 +9676,32 @@ round_robin_collection = db["roundRobinSettings"]
 
 
 def send_wirebase_message(to_phone, message, instance_name=None):
-    """
-    Sends a plain-text WhatsApp message via the Wirebase API. Returns the
-    parsed JSON response on success, or None on failure (never raises —
-    a notification failure should never break the calling request).
-    """
-    if not WIREBASE_API_KEY:
-        print("[wirebase] WIREBASE_API_KEY not configured in .env — skipping notification")
-        return None
+    """Sends a text via the SUPER ADMIN's Wirebase-API instance. Falls back to the
+    old Wirebase key only if no super admin / not connected. Never raises."""
     if not to_phone:
         print("[wirebase] no destination phone — skipping notification")
+        return None
+
+    ok, err, data = wb_send_via_super_admin(to_phone, {"type": "text", "message": message})
+    if ok:
+        return data or {"success": True}
+    print(f"[wirebase] super-admin send failed ({err})")
+
+    # ---- legacy fallback (delete this block when fully migrated) ----
+    if not WIREBASE_API_KEY:
         return None
     try:
         resp = requests.post(
             WIREBASE_API_URL,
             headers={"X-API-Key": WIREBASE_API_KEY},
-            json={
-                "instanceName": instance_name or WIREBASE_INSTANCE_NAME,
-                "to": to_phone,
-                "type": "text",
-                "message": message,
-            },
+            json={"instanceName": instance_name or WIREBASE_INSTANCE_NAME,
+                  "to": to_phone, "type": "text", "message": message},
             timeout=15
         )
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        print(f"[wirebase] send failed to {to_phone}: {e}")
+        print(f"[wirebase] legacy send failed to {to_phone}: {e}")
         return None
 
 
@@ -9819,6 +9836,361 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
         import traceback
         traceback.print_exc()
 
+
+
+# =====================================================================
+# WIREBASE DEVELOPER API (wirebaseapi)
+# - every team member scans their OWN QR (one instance per member)
+# - the Super Admin's instance sends all alerts / notifications / reports
+# - instances forward incoming/outgoing messages to /webhook/team/<token>
+# =====================================================================
+import hmac
+import hashlib
+
+WIREBASE_DEV_BASE_URL = (os.getenv("WIREBASE_DEV_BASE_URL") or "").rstrip("/")
+WIREBASE_APP_SECRET = os.getenv("WIREBASE_APP_SECRET")
+CRM_WEBHOOK_BASE_URL = (
+    os.getenv("nishahomes_PUBLIC_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://crm.nishahomes.com"
+).rstrip("/")
+
+
+def wb_dev(method, path, payload=None, timeout=25):
+    """Calls the Wirebase Developer API. Returns (ok, data, status_code). Never raises."""
+    if not WIREBASE_DEV_BASE_URL or not WIREBASE_APP_SECRET:
+        return False, {"error": "WIREBASE_DEV_BASE_URL / WIREBASE_APP_SECRET not set in .env"}, 0
+    try:
+        resp = requests.request(
+            method, f"{WIREBASE_DEV_BASE_URL}/api/v1/developer{path}",
+            headers={"Authorization": f"Bearer {WIREBASE_APP_SECRET}"},
+            json=payload, timeout=timeout
+        )
+    except requests.RequestException as e:
+        return False, {"error": f"Network error: {e}"}, 0
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {"raw": resp.text[:300]}
+    return resp.ok, data, resp.status_code
+
+
+def _wb_err(data):
+    if isinstance(data, dict):
+        return str(data.get("error") or data.get("message") or data)[:250]
+    return str(data)[:250]
+
+
+def _wb_list(data, key):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        v = data.get(key)
+        if isinstance(v, list):
+            return v
+    return []
+
+
+def _wb_is_connected(d):
+    return isinstance(d, dict) and (d.get("connected") is True or str(d.get("status", "")).lower() == "connected")
+
+
+def _extract_qr(d):
+    """Returns (qr_value, is_image). Handles data-URL images or raw QR strings."""
+    if not isinstance(d, dict):
+        return None, False
+    for k in ("qr", "qrCode", "qrcode", "qr_code", "base64", "image", "dataUrl"):
+        v = d.get(k)
+        if isinstance(v, str) and v:
+            return v, v.startswith("data:image")
+    for nested in ("data", "instance"):
+        if isinstance(d.get(nested), dict):
+            q, img = _extract_qr(d[nested])
+            if q:
+                return q, img
+    return None, False
+
+
+def get_super_admin_instance_id():
+    sa = db["teamAssign"].find_one({"SuperAdmin": True}, {"Employee number": 1})
+    if not sa:
+        return None, "No Super Admin selected (Round Robin page)"
+    wh = team_webhooks_collection.find_one({"employeeNumber": sa.get("Employee number")})
+    if not wh or not wh.get("instanceId"):
+        return None, "Super Admin has not connected WhatsApp yet"
+    return wh["instanceId"], None
+
+
+def wb_send_via_super_admin(to_phone, payload):
+    """Sends a message from the Super Admin's connected WhatsApp. Returns (ok, err, data)."""
+    instance_id, err = get_super_admin_instance_id()
+    if not instance_id:
+        return False, err, None
+    ok, data, st = wb_dev("POST", f"/instances/{instance_id}/messages", {"to": to_phone, **payload})
+    if ok:
+        return True, None, data
+    return False, f"HTTP {st}: {_wb_err(data)}", data
+
+
+def ensure_wa_instance(member):
+    """Makes sure this team member has a webhook token, a tenant and a Wirebase instance.
+    Returns (webhook_doc, error_message)."""
+    number = member["Employee number"]
+    name = member.get("Employee name") or str(number)
+    now = datetime.utcnow()
+
+    wh = team_webhooks_collection.find_one({"employeeNumber": number})
+    if not wh:
+        team_webhooks_collection.insert_one({
+            "employeeNumber": number, "employeeName": name,
+            "token": generate_webhook_token(), "createdAt": now,
+            "lastPayload": None, "lastReceivedAt": None
+        })
+        wh = team_webhooks_collection.find_one({"employeeNumber": number})
+
+    webhook_url = f"{CRM_WEBHOOK_BASE_URL}/webhook/team/{wh['token']}"
+    ext = str(number)
+
+    ok, data, st = wb_dev("POST", "/tenants", {"externalUserId": ext, "name": name, "webhookUrl": webhook_url})
+    if not ok:
+        return None, f"Tenant error: {_wb_err(data)}"
+
+    if not wh.get("instanceId"):
+        inst_name = f"nh-{number}"
+        ok, data, st = wb_dev("POST", f"/tenants/{ext}/instances", {"name": inst_name, "webhookUrl": webhook_url})
+        inst = None
+        if ok:
+            inst = data.get("instance") or data
+        elif st == 409:   # name already taken -> find the existing one
+            ok2, d2, _ = wb_dev("GET", f"/tenants/{ext}/instances")
+            for it in _wb_list(d2, "instances"):
+                if it.get("name") == inst_name:
+                    iid = str(it.get("id") or it.get("_id"))
+                    ok3, d3, _ = wb_dev("GET", f"/instances/{iid}")
+                    inst = (d3.get("instance") if ok3 and isinstance(d3.get("instance"), dict) else d3) if ok3 else it
+                    break
+        if not inst:
+            return None, f"Instance error: {_wb_err(data)}"
+
+        instance_id = str(inst.get("id") or inst.get("_id") or "")
+        if not instance_id:
+            return None, "Instance created but no id returned"
+        team_webhooks_collection.update_one({"_id": wh["_id"]}, {"$set": {
+            "instanceId": instance_id,
+            "instanceName": inst_name,
+            "webhookSecret": inst.get("webhookSecret") or wh.get("webhookSecret"),
+            "employeeName": name
+        }})
+        wh = team_webhooks_collection.find_one({"_id": wh["_id"]})
+
+    return wh, None
+
+
+def _save_wa_state(wh, status_data):
+    state = "connected" if _wb_is_connected(status_data) else str(status_data.get("status") or "disconnected").lower()
+    team_webhooks_collection.update_one({"_id": wh["_id"]}, {"$set": {
+        "waStatus": state, "waPhone": status_data.get("phoneNumber"), "waStatusAt": datetime.utcnow()
+    }})
+    return state
+
+
+def _wa_member_from_request(number_raw):
+    try:
+        number = int(str(number_raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return db["teamAssign"].find_one({"Employee number": number})
+
+
+@app.route("/api/wa/connect", methods=["POST"])
+def wa_connect():
+    """Creates (if needed) + connects the member's instance and returns the QR to scan."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    member = _wa_member_from_request((request.json or {}).get("number"))
+    if not member:
+        return jsonify({"success": False, "message": "Team member not found"}), 404
+
+    wh, err = ensure_wa_instance(member)
+    if err:
+        return jsonify({"success": False, "message": err}), 502
+
+    iid = wh["instanceId"]
+    wb_dev("POST", f"/instances/{iid}/connect")          # ok to fail if already connected
+
+    ok, st_data, _ = wb_dev("GET", f"/instances/{iid}/status")
+    if ok and _wb_is_connected(st_data):
+        _save_wa_state(wh, st_data)
+        return jsonify({"success": True, "state": "connected", "phone": st_data.get("phoneNumber")}), 200
+
+    ok, qr_data, st = wb_dev("GET", f"/instances/{iid}/qr")
+    if not ok:
+        return jsonify({"success": False, "message": f"QR error: {_wb_err(qr_data)}"}), 502
+    qr, is_img = _extract_qr(qr_data)
+    return jsonify({"success": True, "state": "waiting_scan", "qr": qr, "isImage": is_img}), 200
+
+
+@app.route("/api/wa/qr/<number>", methods=["GET"])
+def wa_qr(number):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    member = _wa_member_from_request(number)
+    wh = team_webhooks_collection.find_one({"employeeNumber": member.get("Employee number")}) if member else None
+    if not wh or not wh.get("instanceId"):
+        return jsonify({"success": False, "message": "Not set up"}), 404
+    ok, d, _ = wb_dev("GET", f"/instances/{wh['instanceId']}/qr")
+    if not ok:
+        return jsonify({"success": False, "message": _wb_err(d)}), 502
+    qr, is_img = _extract_qr(d)
+    return jsonify({"success": True, "qr": qr, "isImage": is_img}), 200
+
+
+@app.route("/api/wa/status/<number>", methods=["GET"])
+def wa_status(number):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    member = _wa_member_from_request(number)
+    wh = team_webhooks_collection.find_one({"employeeNumber": member.get("Employee number")}) if member else None
+    if not wh or not wh.get("instanceId"):
+        return jsonify({"success": True, "state": "not_setup"}), 200
+    ok, d, _ = wb_dev("GET", f"/instances/{wh['instanceId']}/status")
+    if not ok:
+        return jsonify({"success": False, "message": _wb_err(d)}), 502
+    state = _save_wa_state(wh, d)
+    return jsonify({"success": True, "state": state, "phone": d.get("phoneNumber")}), 200
+
+
+@app.route("/api/wa/logout", methods=["POST"])
+def wa_logout():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    member = _wa_member_from_request((request.json or {}).get("number"))
+    wh = team_webhooks_collection.find_one({"employeeNumber": member.get("Employee number")}) if member else None
+    if not wh or not wh.get("instanceId"):
+        return jsonify({"success": False, "message": "Not set up"}), 404
+    ok, d, _ = wb_dev("POST", f"/instances/{wh['instanceId']}/logout")
+    if not ok:
+        return jsonify({"success": False, "message": _wb_err(d)}), 502
+    team_webhooks_collection.update_one({"_id": wh["_id"]}, {"$set": {"waStatus": "logged_out", "waPhone": None}})
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/wa/dashboard-status", methods=["GET"])
+def wa_dashboard_status():
+    """Dashboard widget. Normal user -> only their own connection.
+    Super Admin -> every active admin/emp member (disconnected ones first)."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    my_num = session.get("employee_number")
+    sa = db["teamAssign"].find_one({"SuperAdmin": True}, {"Employee number": 1, "Employee name": 1})
+    is_super = bool(sa and sa.get("Employee number") == my_num)
+
+    whs = {w["employeeNumber"]: w for w in team_webhooks_collection.find()}
+    live = {}
+    ok, d, _ = wb_dev("GET", "/instances")
+    if ok:
+        for it in _wb_list(d, "instances"):
+            iid = str(it.get("id") or it.get("_id") or it.get("instanceId") or "")
+            if iid:
+                live[iid] = it
+
+    def state_for(num):
+        wh = whs.get(num)
+        if not wh or not wh.get("instanceId"):
+            return "not_setup", None
+        it = live.get(wh["instanceId"])
+        if it is not None:
+            state = "connected" if _wb_is_connected(it) else "disconnected"
+            phone = it.get("phoneNumber")
+            if wh.get("waStatus") != state:
+                team_webhooks_collection.update_one({"_id": wh["_id"]}, {"$set": {
+                    "waStatus": state, "waPhone": phone, "waStatusAt": datetime.utcnow()}})
+            return state, phone
+        stored = wh.get("waStatus")
+        return ("connected" if stored == "connected" else "disconnected"), wh.get("waPhone")
+
+    if is_super:
+        members = list(db["teamAssign"].find(
+            {"roll": {"$in": ["admin", "emp"]}, "Active": {"$ne": False}},
+            {"Employee name": 1, "Employee number": 1, "roll": 1}))
+    else:
+        m = db["teamAssign"].find_one({"Employee number": my_num}, {"Employee name": 1, "Employee number": 1, "roll": 1})
+        members = [m] if m else []
+
+    rows = []
+    for m in members:
+        num = m.get("Employee number")
+        state, phone = state_for(num)
+        rows.append({
+            "name": m.get("Employee name", "Unknown"), "number": num,
+            "role": (m.get("roll") or "").lower(), "state": state, "phone": phone,
+            "isSelf": num == my_num, "isSuper": bool(sa and sa.get("Employee number") == num)
+        })
+    order = {"disconnected": 0, "not_setup": 1, "connected": 2}
+    rows.sort(key=lambda r: (order.get(r["state"], 3), r["name"].lower()))
+
+    sa_info = None
+    if sa:
+        s_state, _ = state_for(sa.get("Employee number"))
+        sa_info = {"name": sa.get("Employee name"), "state": s_state}
+
+    return jsonify({"success": True, "isSuperAdmin": is_super, "superAdmin": sa_info, "data": rows}), 200
+
+
+@app.route("/api/round-robin/super-admin", methods=["POST"])
+def round_robin_set_super_admin():
+    """Admin only. Only ONE member can be Super Admin at a time — making someone
+    Super Admin automatically removes it from everyone else."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    data = request.json or {}
+    try:
+        number = int(str(data.get("number")).strip())
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid employee number"}), 400
+
+    member = db["teamAssign"].find_one({"Employee number": number})
+    if not member:
+        return jsonify({"success": False, "message": "Team member not found"}), 404
+
+    if bool(data.get("enabled", True)):
+        if (member.get("roll") or "").lower() not in ("admin", "emp"):
+            return jsonify({"success": False, "message": "Only admin/emp can be Super Admin"}), 400
+        db["teamAssign"].update_many({"Employee number": {"$ne": number}, "SuperAdmin": True},
+                                     {"$unset": {"SuperAdmin": ""}})
+        db["teamAssign"].update_one({"Employee number": number}, {"$set": {"SuperAdmin": True}})
+        return jsonify({"success": True, "superAdmin": True}), 200
+
+    db["teamAssign"].update_one({"Employee number": number}, {"$unset": {"SuperAdmin": ""}})
+    return jsonify({"success": True, "superAdmin": False}), 200
+
+
+def normalize_wirebase_event(body, token):
+    """Converts a Wirebase Developer-API webhook (message.received / message.sent /
+    instance.status) into the legacy flat shape the receiver already understands.
+    Returns None for events that are fully handled here (instance.status)."""
+    if not isinstance(body, dict) or not str(body.get("event", "")).startswith(("message.", "instance.")):
+        return body    # legacy payload, pass through untouched
+
+    event = body["event"]
+    if event == "instance.status":
+        team_webhooks_collection.update_one({"token": token}, {"$set": {
+            "waStatus": str(body.get("status") or "").lower(),
+            "waPhone": body.get("phoneNumber"),
+            "waStatusAt": datetime.utcnow()
+        }})
+        return None
+
+    m = body.get("message") or {}
+    direction = body.get("direction") or ("out" if event == "message.sent" else "in")
+    number = (m.get("to") if direction == "out" else m.get("from")) or m.get("from") or m.get("to")
+    return {
+        "number": number, "message": m.get("text"), "messageId": m.get("id"),
+        "timestamp": m.get("timestamp"), "direction": direction,
+        "isGroup": bool(body.get("isGroup")), "groupId": body.get("groupId"),
+        "pushName": body.get("pushName"), "instanceId": body.get("instanceId"),
+        "instanceName": body.get("instanceName"),
+    }
+
 @app.route("/round-robin")
 def round_robin_page():
     if not session.get("user_id") or session.get("role") != "admin":
@@ -9865,7 +10237,7 @@ def get_round_robin_config_api():
 
     members = list(db["teamAssign"].find(
         {"roll": {"$in": ["admin", "emp"]}},
-        {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1, "HideAllLeads": 1}
+        {"Employee name": 1, "Employee number": 1, "roll": 1, "Active": 1, "HideAllLeads": 1, "SuperAdmin": 1}
     ).sort("Employee name", 1))
 
     next_up = None
@@ -9891,6 +10263,7 @@ def get_round_robin_config_api():
             "role": (m.get("roll") or "").strip().lower(),
             "active": m.get("Active", True),
             "hideAllLeads": bool(m.get("HideAllLeads", False)),
+            "superAdmin": bool(m.get("SuperAdmin", False)),
             "assignedLeadsCount": assigned_counts.get(m.get("Employee number"), 0)
         } for m in members if m.get("Employee number") is not None]
     }), 200
@@ -10730,30 +11103,29 @@ def build_activity_report_image(emp_name, summary, slot_title, ist_now):
 
 
 def send_wirebase_image(to_phone, image_url, caption, instance_name=None):
-    """Sends an image via Wirebase. Returns (ok: bool, error_message: str|None, response_json)."""
+    """Sends an image via the SUPER ADMIN's instance. Returns (ok, error_message, response_json)."""
+    ok, err, data = wb_send_via_super_admin(
+        to_phone, {"type": "image", "url": image_url, "caption": caption})
+    if ok:
+        return True, None, data
+
+    # ---- legacy fallback (delete this block when fully migrated) ----
     if not WIREBASE_API_KEY:
-        return False, "WIREBASE_API_KEY not configured in .env", None
+        return False, err, None
     try:
         resp = requests.post(
             WIREBASE_API_URL,
             headers={"X-API-Key": WIREBASE_API_KEY},
-            json={
-                "instanceName": instance_name or WIREBASE_INSTANCE_NAME,
-                "to": to_phone,
-                "type": "image",
-                "url": image_url,
-                "caption": caption,
-            },
+            json={"instanceName": instance_name or WIREBASE_INSTANCE_NAME,
+                  "to": to_phone, "type": "image", "url": image_url, "caption": caption},
             timeout=60
         )
     except Exception as e:
-        return False, f"Network error: {e}", None
-
+        return False, f"{err} | legacy network error: {e}", None
     try:
         body = resp.json()
     except ValueError:
         body = {}
-
     if resp.ok and body.get("success"):
         return True, None, body
     return False, (body.get("error") or f"HTTP {resp.status_code}"), body

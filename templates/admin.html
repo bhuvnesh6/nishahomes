@@ -1334,6 +1334,15 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
     {% endif %}
 
+        <div class="dash-section anim anim-1" id="waStatusSection" style="display:none">
+      <div class="dash-section-head">
+        <div class="dash-section-title">WhatsApp Connection</div>
+        <div class="dash-section-sub" id="waStatusSub"></div>
+      </div>
+      <div id="waSuperWarn" style="display:none;background:#fff7ed;border:1.5px solid #fdba74;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px;font-size:0.82rem;color:#9a3412;font-weight:600"></div>
+      <div id="waStatusList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
     <!-- KPI: lead volume by type -->
     <div class="dash-section anim anim-1">
       <div class="kpi-grid">
@@ -4331,6 +4340,56 @@ function renderLostLeadsList(){
   }).join('');
 }
 
+
+/* ═══════ WHATSAPP CONNECTION STATUS ═══════ */
+async function loadWaStatus(){
+  const sec = document.getElementById('waStatusSection');
+  try{
+    const res = await fetch(`${BASE}/wa/dashboard-status`, {credentials:'include'});
+    const d = await res.json();
+    if(!d.success){ sec.style.display='none'; return; }
+    sec.style.display = 'block';
+
+    const bad = d.data.filter(r => r.state !== 'connected').length;
+    document.getElementById('waStatusSub').textContent = d.isSuperAdmin
+      ? (bad ? `${bad} of ${d.data.length} not connected` : `All ${d.data.length} connected ✓`)
+      : 'Your WhatsApp';
+
+    const warn = document.getElementById('waSuperWarn');
+    if(!d.superAdmin){
+      warn.style.display='block';
+      warn.textContent = '⚠ No Super Admin selected — alerts, notifications and reports cannot be sent. Choose one on the Round Robin page.';
+    }else if(d.superAdmin.state !== 'connected'){
+      warn.style.display='block';
+      warn.textContent = `⚠ Super Admin (${d.superAdmin.name}) WhatsApp is not connected — alerts, notifications and reports are NOT being sent.`;
+    }else{
+      warn.style.display='none';
+    }
+
+    const meta = {
+      connected:    {c:'#10B981', t:'Connected'},
+      disconnected: {c:'#EF4444', t:'Disconnected'},
+      not_setup:    {c:'#F59E0B', t:'Not set up'}
+    };
+    document.getElementById('waStatusList').innerHTML = d.data.map(r=>{
+      const m = meta[r.state] || meta.disconnected;
+      const action = (r.state !== 'connected' && (r.isSelf || d.isSuperAdmin))
+        ? `<a href="/team-webhooks" class="action-btn-sm primary">📱 Connect</a>` : '';
+      return `
+      <div style="background:#fff;border:1.5px solid ${r.state==='connected'?'var(--border)':'#fca5a5'};border-left:5px solid ${m.c};border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div style="font-weight:700;color:var(--primary);font-size:0.9rem">${escHtml(r.name)}${r.isSuper?' 👑':''}${r.isSelf?' (you)':''}</div>
+          <div style="font-size:0.74rem;color:var(--text-soft)">${r.phone ? '+'+escHtml(r.phone) : r.number}</div>
+        </div>
+        <span style="font-weight:700;font-size:0.8rem;color:${m.c}">● ${m.t}</span>
+        ${action}
+      </div>`;
+    }).join('');
+  }catch(e){ console.warn('wa status load failed', e); }
+}
+setInterval(loadWaStatus, 60000);
+
+
 /* ═══════════════════════════════════
    ACTIVITY REPORT DELIVERY ALERTS (admin only)
 ═══════════════════════════════════ */
@@ -4483,6 +4542,7 @@ window.addEventListener('load',()=>{
     loadDashboardFollowups('today');
     flushCallQueue();
     loadReportAlerts();
+    loadWaStatus();
   },600);
 });
 </script>
