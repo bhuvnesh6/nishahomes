@@ -12198,10 +12198,7 @@ def _backfill_scores(use_llm, only_missing):
 
 
 @app.route("/api/admin/rescore-leads", methods=["POST"])
-def admin_rescore_leads():                else:
-                    doc["Created At"] = created_at_str   # set once
-                    collection.insert_one(doc)
-                    inserted += 1
+def admin_rescore_leads():
     """Admin: score every lead in the background.
     Body: {"use_llm": false, "only_missing": true}  (defaults: rules-only, only leads with no score yet)"""
     if session.get("role") != "admin":
