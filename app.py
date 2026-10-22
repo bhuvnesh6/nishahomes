@@ -9892,7 +9892,10 @@ def _wb_list(data, key):
 
 
 def _wb_is_connected(d):
-    return isinstance(d, dict) and (d.get("connected") is True or str(d.get("status", "")).lower() == "connected")
+    if not isinstance(d, dict):
+        return False
+    flag = d.get("connected") is True or str(d.get("status", "")).lower() == "connected"
+    return flag and bool(d.get("phoneNumber"))
 
 
 def _extract_qr(d):
@@ -10059,6 +10062,21 @@ def wa_status(number):
     state = _save_wa_state(wh, d)
     return jsonify({"success": True, "state": state, "phone": d.get("phoneNumber")}), 200
 
+@app.route("/api/wa/debug/<number>", methods=["GET"])
+def wa_debug(number):
+    """Shows the RAW Wirebase status + QR response for one member (admin only)."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    member = _wa_member_from_request(number)
+    wh = team_webhooks_collection.find_one({"employeeNumber": member.get("Employee number")}) if member else None
+    if not wh or not wh.get("instanceId"):
+        return jsonify({"success": True, "note": "no instance saved for this member"}), 200
+    iid = wh["instanceId"]
+    _, st, _ = wb_dev("GET", f"/instances/{iid}/status")
+    _, qr, _ = wb_dev("GET", f"/instances/{iid}/qr")
+    if isinstance(qr, dict):   # shorten long base64 so it is readable
+        qr = {k: (v[:60] + "…" if isinstance(v, str) and len(v) > 60 else v) for k, v in qr.items()}
+    return jsonify({"instanceId": iid, "status_raw": st, "qr_raw": qr}), 200
 
 @app.route("/api/wa/logout", methods=["POST"])
 def wa_logout():

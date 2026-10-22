@@ -559,9 +559,11 @@
     <div id="waStateWrap"><span class="wa-badge not_setup" id="waBadge">Checking…</span></div>
     <div id="waPhoneText" style="font-size:12px;color:var(--text-soft);margin-top:6px;"></div>
     <div id="waQrBox"></div>
-    <div class="modal-actions" style="justify-content:center;">
+        <div class="modal-actions" style="justify-content:center;flex-wrap:wrap;">
       <button class="btn btn-accent btn-sm" id="waConnectBtn" onclick="waConnect()">📱 Connect / Show QR</button>
+      <button class="btn btn-ghost btn-sm" onclick="waReconnect()">🔄 Reconnect</button>
       <button class="btn btn-danger-ghost btn-sm" id="waLogoutBtn" onclick="waLogout()">Disconnect</button>
+      <button class="btn btn-danger-ghost btn-sm" onclick="waDelete()">🗑 Delete</button>
       <button class="btn btn-ghost btn-sm" onclick="closeWaModal()">Close</button>
     </div>
   </div>
