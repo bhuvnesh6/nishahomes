@@ -782,7 +782,18 @@ function renderMemberList(filterText){
       </div>
       ${m.hasWebhook && m.conversationCount ? `<span class="conv-count">${m.conversationCount}</span>` : ""}
     `;
-    row.addEventListener("click", () => selectMember(m));
+        row.addEventListener("click", () => selectMember(m));
+
+    const waBtn = document.createElement("button");
+    waBtn.className = "icon-btn";
+    waBtn.title = "Connect WhatsApp (QR)";
+    waBtn.textContent = "📱";
+    waBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      activeMember = m;
+      openWaModal();
+    });
+    row.appendChild(waBtn);
     listEl.appendChild(row);
   });
 }
@@ -799,7 +810,7 @@ function selectMember(m){
   renderMemberList(document.getElementById("memberSearch").value);
   setScreen("conversations");
 
-  if (m.hasWebhook && m.token){
+  if (m.hasInstance){
     renderConversationsShell();
     loadConversations(true);
     clearInterval(convPollTimer);
@@ -813,15 +824,20 @@ function selectMember(m){
 /* ================= SETUP (GENERATE WEBHOOK) ================= */
 function renderSetupPanel(){
   const wrap = document.getElementById("conversationsWrap");
+  const oldChats = activeMember.hasWebhook && activeMember.token;
   wrap.innerHTML = `
     <div class="setup-panel">
       <div class="setup-icon">📱</div>
       <h3>WhatsApp not connected</h3>
-      <p>Connect <strong>${escapeHtml(activeMember.name)}</strong>'s WhatsApp by scanning a QR code.
-      Messages will then appear here automatically.</p>
+      <p>Connect <strong>${escapeHtml(activeMember.name)}</strong>'s WhatsApp by scanning a QR code.</p>
       <button class="btn btn-accent" onclick="openWaModal()">📱 Connect WhatsApp</button>
-    </div>
-  `;
+      ${oldChats ? `<button class="btn btn-ghost btn-sm" id="oldChatsBtn">View old chats →</button>` : ""}
+    </div>`;
+  const ob = document.getElementById("oldChatsBtn");
+  if (ob) ob.onclick = () => {
+    renderConversationsShell();
+    loadConversations(true);
+  };
 }
 
 async function generateWebhook(regenerate){

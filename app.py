@@ -9325,6 +9325,8 @@ def team_webhooks_members():
                 "active": m.get("Active", True),
                 "hasWebhook": bool(wh),
                 "waStatus": wh.get("waStatus") if wh else None,
+                "hasInstance": bool(wh and wh.get("instanceId")),                
+                
                 "token": wh.get("token") if wh else None,
                 "lastReceivedAt": None,
                 "conversationCount": 0,
@@ -10075,14 +10077,21 @@ def wa_logout():
 
 @app.route("/api/wa/dashboard-status", methods=["GET"])
 def wa_dashboard_status():
-    """Dashboard widget. Normal user -> only their own connection.
-    Super Admin -> every active admin/emp member (disconnected ones first)."""
+    """Only people SELECTED in Round Robin (and the Super Admin) see anything.
+    - Selected member      -> only their own connection
+    - Super Admin          -> own connection + every selected member
+    - Anyone else          -> nothing (section hidden)"""
     if session.get("role") not in ("admin", "emp"):
         return jsonify({"success": False, "message": "Staff only"}), 403
 
     my_num = session.get("employee_number")
+    selected = set(get_round_robin_config().get("employees") or [])
     sa = db["teamAssign"].find_one({"SuperAdmin": True}, {"Employee number": 1, "Employee name": 1})
-    is_super = bool(sa and sa.get("Employee number") == my_num)
+    sa_num = sa.get("Employee number") if sa else None
+    is_super = bool(sa and sa_num == my_num)
+
+    if not is_super and my_num not in selected:
+        return jsonify({"success": True, "show": False, "data": []}), 200
 
     whs = {w["employeeNumber"]: w for w in team_webhooks_collection.find()}
     live = {}
@@ -10109,12 +10118,14 @@ def wa_dashboard_status():
         return ("connected" if stored == "connected" else "disconnected"), wh.get("waPhone")
 
     if is_super:
-        members = list(db["teamAssign"].find(
-            {"roll": {"$in": ["admin", "emp"]}, "Active": {"$ne": False}},
-            {"Employee name": 1, "Employee number": 1, "roll": 1}))
+        wanted = set(selected)
+        wanted.add(sa_num)
     else:
-        m = db["teamAssign"].find_one({"Employee number": my_num}, {"Employee name": 1, "Employee number": 1, "roll": 1})
-        members = [m] if m else []
+        wanted = {my_num}
+
+    members = list(db["teamAssign"].find(
+        {"Employee number": {"$in": list(wanted)}, "Active": {"$ne": False}},
+        {"Employee name": 1, "Employee number": 1, "roll": 1}))
 
     rows = []
     for m in members:
@@ -10123,17 +10134,18 @@ def wa_dashboard_status():
         rows.append({
             "name": m.get("Employee name", "Unknown"), "number": num,
             "role": (m.get("roll") or "").lower(), "state": state, "phone": phone,
-            "isSelf": num == my_num, "isSuper": bool(sa and sa.get("Employee number") == num)
+            "isSelf": num == my_num, "isSuper": num == sa_num
         })
     order = {"disconnected": 0, "not_setup": 1, "connected": 2}
     rows.sort(key=lambda r: (order.get(r["state"], 3), r["name"].lower()))
 
     sa_info = None
     if sa:
-        s_state, _ = state_for(sa.get("Employee number"))
+        s_state, _ = state_for(sa_num)
         sa_info = {"name": sa.get("Employee name"), "state": s_state}
 
-    return jsonify({"success": True, "isSuperAdmin": is_super, "superAdmin": sa_info, "data": rows}), 200
+    return jsonify({"success": True, "show": True, "isSuperAdmin": is_super,
+                    "superAdmin": sa_info, "data": rows}), 200
 
 
 @app.route("/api/round-robin/super-admin", methods=["POST"])

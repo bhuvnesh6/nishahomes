@@ -4347,7 +4347,7 @@ async function loadWaStatus(){
   try{
     const res = await fetch(`${BASE}/wa/dashboard-status`, {credentials:'include'});
     const d = await res.json();
-    if(!d.success){ sec.style.display='none'; return; }
+    if(!d.success || !d.show){ sec.style.display='none'; return; }
     sec.style.display = 'block';
 
     const bad = d.data.filter(r => r.state !== 'connected').length;
@@ -4356,12 +4356,14 @@ async function loadWaStatus(){
       : 'Your WhatsApp';
 
     const warn = document.getElementById('waSuperWarn');
-    if(!d.superAdmin){
+    if(!d.isSuperAdmin){
+      warn.style.display='none';
+    }else if(!d.superAdmin){
       warn.style.display='block';
-      warn.textContent = '⚠ No Super Admin selected — alerts, notifications and reports cannot be sent. Choose one on the Round Robin page.';
+      warn.textContent = '⚠ No Super Admin selected — alerts, notifications and reports cannot be sent.';
     }else if(d.superAdmin.state !== 'connected'){
       warn.style.display='block';
-      warn.textContent = `⚠ Super Admin (${d.superAdmin.name}) WhatsApp is not connected — alerts, notifications and reports are NOT being sent.`;
+      warn.textContent = `⚠ Your WhatsApp (Super Admin) is not connected — alerts, notifications and reports are NOT being sent.`;
     }else{
       warn.style.display='none';
     }
