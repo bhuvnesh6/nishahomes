@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group Messages Webhook · Nisha Homes</title>
+<style>
+  :root{
+    --navy:#10131c; --orange:#ed8049; --gold:#c4a45c;
+    --bg:#f5f3ee; --card:#fff; --text:#111827; --muted:#6b7280; --line:#e1ded6;
+    --canvas-bg:#0d1017; --canvas-text:#d6e2ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0b0d13; --card:#151925; --text:#e8eaf0; --muted:#9aa3b5; --line:#262c3c; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+  header{background:var(--navy);color:#fff;padding:18px 24px;border-bottom:4px solid var(--gold);
+         display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;color:var(--gold);letter-spacing:.5px}
+  header small{color:#c8ccd6}
+  header a{color:#fff;text-decoration:none;font-size:14px;border:1px solid #3a4157;padding:6px 12px;border-radius:8px}
+  main{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card h2{margin:0 0 12px;font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .row{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+  .url{flex:1;min-width:240px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+       padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);
+       color:var(--text);word-break:break-all}
+  button{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:600;font-size:14px}
+  .btn-primary{background:var(--orange);color:#fff}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  .btn-danger{background:transparent;border:1px solid #dc2626;color:#dc2626}
+  button:active{transform:scale(.97)}
+  .hint{font-size:13px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar .left{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:14px}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.group{background:#dcfce7;color:#166534}
+  .pill.dm{background:#e0e7ff;color:#3730a3}
+  .dot{width:9px;height:9px;border-radius:50%;background:#9ca3af;display:inline-block;margin-right:6px}
+  .dot.live{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.2)}
+  .canvas{background:var(--canvas-bg);color:var(--canvas-text);border-radius:12px;padding:16px;
+          min-height:260px;max-height:520px;overflow:auto;border:1px solid #1f2637;
+          font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;
+          white-space:pre-wrap;word-break:break-word}
+  .canvas.empty{color:#6b7488;display:flex;align-items:center;justify-content:center;text-align:center}
+  .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:10px}
+  .history{display:grid;gap:8px;max-height:300px;overflow:auto}
+  .h-item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;
+          border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px}
+  .h-item:hover{border-color:var(--orange)}
+  .h-item.active{border-color:var(--orange);background:rgba(237,128,73,.08)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy);
+         color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  label.chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>NISHA HOMES · GROUP MESSAGES</h1>
+    <small>{{ employee_name }} · your personal webhook</small>
+  </div>
+  <a href="/admin">← Back to dashboard</a>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Your Webhook URL</h2>
+    <div class="row">
+      <div class="url" id="webhookUrl">Loading…</div>
+      <button class="btn-primary" id="copyUrlBtn">Copy URL</button>
+      <button class="btn-danger" id="regenBtn">Regenerate</button>
+    </div>
+    <div class="hint">
+      Paste this URL into your WhatsApp API's webhook setting. It is unique to your account and public
+      (no login needed for the sender). Regenerating kills the old URL immediately and clears its stored messages.
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="left">
+        <span><span class="dot" id="liveDot"></span><span id="liveText">Waiting…</span></span>
+        <label class="chk"><input type="checkbox" id="groupsOnly" checked> Groups only</label>
+        <label class="chk"><input type="checkbox" id="autoRefresh" checked> Auto-refresh (3s)</label>
+      </div>
+      <div class="row">
+        <button class="btn-ghost" id="refreshBtn">Refresh</button>
+        <button class="btn-primary" id="copyPayloadBtn">Copy response</button>
+      </div>
+    </div>
+
+    <div class="meta" id="meta"></div>
+    <div class="canvas empty" id="canvas">No webhook response received yet.<br>Send a message in a WhatsApp group and it will appear here.</div>
+  </section>
+
+  <section class="card">
+    <h2>Recent Responses</h2>
+    <div class="history" id="history"><div class="hint">Nothing yet.</div></div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let currentText = "";
+  let currentId = null;
+  let pinnedId = null;       // when the user clicks an older item, stop auto-overwriting
+  let timer = null;
+
+  function toast(msg){
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    setTimeout(()=>t.classList.remove("show"), 1800);
+  }
+
+  async function copyText(text){
+    if(!text){ toast("Nothing to copy"); return; }
+    try{
+      await navigator.clipboard.writeText(text);
+    }catch(e){
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); ta.remove();
+    }
+    toast("Copied ✓");
+  }
+
+  function pretty(jsonStr){
+    try{ return JSON.stringify(JSON.parse(jsonStr), null, 2); }
+    catch(e){ return jsonStr; }
+  }
+
+  function renderItem(item){
+    const canvas = $("canvas");
+    currentId = item.id;
+    currentText = pretty(item.payloadJson || "");
+    canvas.classList.remove("empty");
+    canvas.textContent = currentText;
+
+    const meta = $("meta");
+    meta.innerHTML = "";
+    const pill = document.createElement("span");
+    pill.className = "pill " + (item.isGroup ? "group" : "dm");
+    pill.textContent = item.isGroup ? "GROUP" : "NOT A GROUP";
+    meta.appendChild(pill);
+    const at = document.createElement("span");
+    at.textContent = item.at;
+    meta.appendChild(at);
+    if(item.event){
+      const ev = document.createElement("span"); ev.textContent = "event: " + item.event; meta.appendChild(ev);
+    }
+    if(item.groupId){
+      const g = document.createElement("span"); g.textContent = "group: " + item.groupId; meta.appendChild(g);
+    }
+  }
+
+  function renderEmpty(){
+    const canvas = $("canvas");
+    canvas.classList.add("empty");
+    canvas.innerHTML = "No webhook response received yet.<br>Send a message in a WhatsApp group and it will appear here.";
+    $("meta").innerHTML = "";
+    currentText = ""; currentId = null;
+  }
+
+  function renderHistory(list){
+    const box = $("history");
+    box.innerHTML = "";
+    if(!list.length){
+      const d = document.createElement("div"); d.className = "hint"; d.textContent = "Nothing yet."; box.appendChild(d);
+      return;
+    }
+    list.forEach(it=>{
+      const row = document.createElement("div");
+      row.className = "h-item" + (it.id === currentId ? " active" : "");
+      const left = document.createElement("span");
+      left.textContent = it.at + (it.event ? "  ·  " + it.event : "");
+      const pill = document.createElement("span");
+      pill.className = "pill " + (it.isGroup ? "group" : "dm");
+      pill.textContent = it.isGroup ? "GROUP" : "OTHER";
+      row.appendChild(left); row.appendChild(pill);
+      row.onclick = async ()=>{
+        pinnedId = it.id;
+        const r = await fetch("/api/groupdms/message/" + it.id, {credentials:"same-origin"});
+        const j = await r.json();
+        if(j.success){ renderItem(j.item); renderHistory(list); }
+      };
+      box.appendChild(row);
+    });
+  }
+
+  async function loadInfo(){
+    try{
+      const r = await fetch("/api/groupdms/info", {credentials:"same-origin"});
+      const j = await r.json();
+      $("webhookUrl").textContent = j.success ? j.webhookUrl : (j.message || "Could not load");
+    }catch(e){ $("webhookUrl").textContent = "Could not load"; }
+  }
+
+  async function loadLatest(){
+    try{
+      const go = $("groupsOnly").checked ? "1" : "0";
+      const r = await fetch("/api/groupdms/latest?groups_only=" + go, {credentials:"same-origin"});
+      const j = await r.json();
+      if(!j.success) return;
+
+      $("liveDot").classList.add("live");
+      $("liveText").textContent = "Connected";
+
+      if(!j.latest){ renderEmpty(); renderHistory([]); return; }
+
+      if(!pinnedId){
+        if(j.latest.id !== currentId){ renderItem(j.latest); }
+      }
+      renderHistory(j.history);
+    }catch(e){
+      $("liveDot").classList.remove("live");
+      $("liveText").textContent = "Offline";
+    }
+  }
+
+  function setTimer(){
+    clearInterval(timer);
+    if($("autoRefresh").checked){ timer = setInterval(loadLatest, 3000); }
+  }
+
+  $("copyUrlBtn").onclick = ()=> copyText($("webhookUrl").textContent);
+  $("copyPayloadBtn").onclick = ()=> copyText(currentText);
+  $("refreshBtn").onclick = ()=>{ pinnedId = null; loadLatest(); };
+  $("groupsOnly").onchange = ()=>{ pinnedId = null; currentId = null; loadLatest(); };
+  $("autoRefresh").onchange = setTimer;
+
+  $("regenBtn").onclick = async ()=>{
+    if(!confirm("Regenerate? The old URL stops working immediately and stored responses are cleared.")) return;
+    const r = await fetch("/api/groupdms/regenerate", {method:"POST", credentials:"same-origin"});
+    const j = await r.json();
+    if(j.success){
+      $("webhookUrl").textContent = j.webhookUrl;
+      pinnedId = null; renderEmpty(); renderHistory([]);
+      toast("New URL generated");
+    }
+  };
+
+  loadInfo();
+  loadLatest();
+  setTimer();
+})();
+</script>
+</body>
+</html>

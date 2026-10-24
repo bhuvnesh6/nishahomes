@@ -7666,6 +7666,235 @@ def webhook_viewer_page():
     return render_template("webhook_viewer.html")
 
 
+
+# =====================================================================
+# NEW: GROUP MESSAGES WEBHOOK  (one unique public URL per account)
+# - Every logged-in staff member gets their OWN token/URL (keyed by
+#   employee number). Paste that URL into the WhatsApp API's webhook field.
+# - Payloads are stored in Mongo (survive restarts, work across workers),
+#   last 50 kept per account.
+# - Page: /groupdms  (templates/groupdms.html)
+# =====================================================================
+group_webhooks_collection = db["groupWebhooks"]
+group_webhook_msgs_collection = db["groupWebhookMessages"]
+try:
+    group_webhooks_collection.create_index("token", unique=True)
+    group_webhooks_collection.create_index("employeeNumber", unique=True)
+    group_webhook_msgs_collection.create_index([("token", 1), ("receivedAt", -1)])
+except Exception as _gw_err:
+    print(f"[startup] group webhook index warning: {_gw_err}")
+
+GROUP_WEBHOOK_KEEP_LAST = 50
+GROUP_WEBHOOK_MAX_PAYLOAD_CHARS = 200_000
+
+
+def _group_webhook_url(token):
+    base = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com").rstrip("/")
+    return f"{base}/webhook/groups/{token}"
+
+
+def _get_or_create_group_webhook(emp_number, emp_name, regenerate=False):
+    now = datetime.utcnow()
+    existing = group_webhooks_collection.find_one({"employeeNumber": emp_number})
+
+    if existing and not regenerate:
+        return existing
+
+    token = secrets.token_urlsafe(24).replace("_", "").replace("-", "")[:32]
+
+    if existing:
+        # old URL dies immediately, its stored messages are dropped with it
+        group_webhook_msgs_collection.delete_many({"token": existing["token"]})
+        group_webhooks_collection.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"token": token, "employeeName": emp_name, "regeneratedAt": now,
+                      "lastReceivedAt": None}}
+        )
+    else:
+        group_webhooks_collection.insert_one({
+            "employeeNumber": emp_number, "employeeName": emp_name,
+            "token": token, "createdAt": now, "lastReceivedAt": None
+        })
+    return group_webhooks_collection.find_one({"employeeNumber": emp_number})
+
+
+def _detect_group_payload(body):
+    """Best-effort: works for Wirebase-style and common unofficial WhatsApp payloads."""
+    if not isinstance(body, dict):
+        return False, None
+
+    flat = dict(body)
+    for nested_key in ("data", "message", "payload", "key"):
+        nested = body.get(nested_key)
+        if isinstance(nested, dict):
+            for k, v in nested.items():
+                flat.setdefault(k, v)
+
+    group_id = flat.get("groupId") or flat.get("group_id")
+    is_group = flat.get("isGroup")
+    if isinstance(is_group, str):
+        is_group = is_group.strip().lower() in ("true", "1", "yes")
+
+    for k in ("remoteJid", "chatId", "chat_id", "from", "to", "jid"):
+        v = flat.get(k)
+        if isinstance(v, str) and v.endswith("@g.us"):
+            is_group = True
+            group_id = group_id or v
+            break
+
+    return bool(is_group or group_id), group_id
+
+
+@app.route("/webhook/groups/<token>", methods=["GET", "POST"])
+def group_webhook_receiver(token):
+    """PUBLIC endpoint (no login). Paste this URL into your WhatsApp API."""
+    wh = group_webhooks_collection.find_one({"token": token})
+    if not wh:
+        return jsonify({"success": False, "message": "Invalid webhook token"}), 404
+
+    if request.method == "GET":
+        challenge = request.args.get("hub.challenge")
+        if challenge:
+            return challenge, 200
+        return jsonify({"success": True, "message": "Group webhook is live"}), 200
+
+    try:
+        body = request.get_json(silent=True, force=True)
+        if body is None:
+            body = request.form.to_dict() or {}
+        if not body:
+            raw = (request.get_data(as_text=True) or "").strip()
+            body = {"raw": raw} if raw else {}
+
+        now = datetime.utcnow()
+        is_group, group_id = _detect_group_payload(body)
+
+        payload_json = json.dumps(body, default=str, ensure_ascii=False)
+        if len(payload_json) > GROUP_WEBHOOK_MAX_PAYLOAD_CHARS:
+            payload_json = payload_json[:GROUP_WEBHOOK_MAX_PAYLOAD_CHARS] + "\n... [truncated]"
+
+        group_webhook_msgs_collection.insert_one({
+            "token": token,
+            "employeeNumber": wh.get("employeeNumber"),
+            "receivedAt": now,
+            "isGroup": is_group,
+            "groupId": group_id,
+            "event": body.get("event") if isinstance(body, dict) else None,
+            "sourceIp": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "payloadJson": payload_json
+        })
+
+        group_webhooks_collection.update_one(
+            {"token": token}, {"$set": {"lastReceivedAt": now}}
+        )
+
+        # keep only the newest N per account
+        old = list(group_webhook_msgs_collection.find(
+            {"token": token}, {"_id": 1}
+        ).sort("receivedAt", -1).skip(GROUP_WEBHOOK_KEEP_LAST))
+        if old:
+            group_webhook_msgs_collection.delete_many({"_id": {"$in": [o["_id"] for o in old]}})
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False}), 200   # never make the sender retry-storm us
+
+    return jsonify({"success": True}), 200
+
+
+@app.route("/groupdms")
+def groupdms_page():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return redirect("/")
+    return render_template(
+        "groupdms.html",
+        employee_name=session.get("employee_name"),
+        employee_number=session.get("employee_number"),
+        role=session.get("role")
+    )
+
+
+@app.route("/api/groupdms/info", methods=["GET"])
+def groupdms_info():
+    """Returns (and creates on first call) THIS account's own webhook URL."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    wh = _get_or_create_group_webhook(
+        session.get("employee_number"), session.get("employee_name")
+    )
+    return jsonify({
+        "success": True,
+        "webhookUrl": _group_webhook_url(wh["token"]),
+        "lastReceivedAt": format_ist(wh.get("lastReceivedAt")) if isinstance(wh.get("lastReceivedAt"), datetime) else None
+    }), 200
+
+
+@app.route("/api/groupdms/regenerate", methods=["POST"])
+def groupdms_regenerate():
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    wh = _get_or_create_group_webhook(
+        session.get("employee_number"), session.get("employee_name"), regenerate=True
+    )
+    return jsonify({"success": True, "webhookUrl": _group_webhook_url(wh["token"])}), 200
+
+
+@app.route("/api/groupdms/latest", methods=["GET"])
+def groupdms_latest():
+    """Latest payload + a short history list for the logged-in account."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    wh = group_webhooks_collection.find_one({"employeeNumber": session.get("employee_number")})
+    if not wh:
+        return jsonify({"success": True, "latest": None, "history": []}), 200
+
+    q = {"token": wh["token"]}
+    if request.args.get("groups_only") == "1":
+        q["isGroup"] = True
+
+    docs = list(group_webhook_msgs_collection.find(q).sort("receivedAt", -1).limit(20))
+
+    def _item(d, full=False):
+        out = {
+            "id": str(d["_id"]),
+            "at": format_ist(d.get("receivedAt")),
+            "isGroup": bool(d.get("isGroup")),
+            "groupId": d.get("groupId"),
+            "event": d.get("event"),
+        }
+        if full:
+            out["payloadJson"] = d.get("payloadJson", "")
+        return out
+
+    return jsonify({
+        "success": True,
+        "latest": _item(docs[0], full=True) if docs else None,
+        "history": [_item(d) for d in docs]
+    }), 200
+
+
+@app.route("/api/groupdms/message/<msg_id>", methods=["GET"])
+def groupdms_message(msg_id):
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    wh = group_webhooks_collection.find_one({"employeeNumber": session.get("employee_number")})
+    if not wh:
+        return jsonify({"success": False, "message": "Not found"}), 404
+    try:
+        d = group_webhook_msgs_collection.find_one({"_id": ObjectId(msg_id), "token": wh["token"]})
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid id"}), 400
+    if not d:
+        return jsonify({"success": False, "message": "Not found"}), 404
+    return jsonify({"success": True, "item": {
+        "id": str(d["_id"]), "at": format_ist(d.get("receivedAt")),
+        "isGroup": bool(d.get("isGroup")), "groupId": d.get("groupId"),
+        "event": d.get("event"), "payloadJson": d.get("payloadJson", "")
+    }}), 200
+
+
 #whatsap ai
 
 # =====================================================================
