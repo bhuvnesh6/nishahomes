@@ -7684,7 +7684,11 @@ try:
 except Exception as _gw_err:
     print(f"[startup] group webhook index warning: {_gw_err}")
 
-GROUP_WEBHOOK_KEEP_LAST = 50
+GROUP_WEBHOOK_KEEP_LAST = 2000   # was 50 — the Inventory tool reads this history
+try:
+    group_webhook_msgs_collection.create_index([("token", 1), ("messageId", 1)])
+except Exception as _gw2_err:
+    print(f"[startup] group webhook messageId index warning: {_gw2_err}")
 GROUP_WEBHOOK_MAX_PAYLOAD_CHARS = 200_000
 
 
@@ -7716,6 +7720,31 @@ def _get_or_create_group_webhook(emp_number, emp_name, regenerate=False):
             "token": token, "createdAt": now, "lastReceivedAt": None
         })
     return group_webhooks_collection.find_one({"employeeNumber": emp_number})
+
+
+def _parse_group_event(body):
+    """Flattens a Wirebase group-message payload into the fields the Inventory tool needs."""
+    if not isinstance(body, dict):
+        return {}
+    sender = body.get("sender") or {}
+    group = body.get("group") or {}
+    media = body.get("media") or {}
+    mtype = (media.get("type") or "").lower()
+    media_url = media.get("url") if (media.get("url") and media.get("status") in (None, "stored")) else None
+    return {
+        "messageId": body.get("messageId"),
+        "senderName": sender.get("name") or body.get("pushName") or "",
+        "senderNumber": sender.get("number") or body.get("number") or "",
+        "groupName": group.get("name") or "",
+        "groupJid": group.get("id") or "",
+        "text": body.get("message") or media.get("caption") or "",
+        "messageType": body.get("messageType"),
+        "mediaType": mtype,
+        "mediaUrl": media_url,
+        "mediaMime": media.get("mimeType"),
+        "mediaFileName": media.get("fileName"),
+        "msgTs": _parse_wa_timestamp(body.get("timestamp"), None),
+    }
 
 
 def _detect_group_payload(body):
@@ -7768,6 +7797,13 @@ def group_webhook_receiver(token):
 
         now = datetime.utcnow()
         is_group, group_id = _detect_group_payload(body)
+        parsed = _parse_group_event(body)
+
+        # Wirebase can re-deliver the same message — store each messageId once
+        msg_id = parsed.get("messageId")
+        if msg_id and group_webhook_msgs_collection.find_one(
+                {"token": token, "messageId": msg_id}, {"_id": 1}):
+            return jsonify({"success": True, "duplicate": True}), 200
 
         payload_json = json.dumps(body, default=str, ensure_ascii=False)
         if len(payload_json) > GROUP_WEBHOOK_MAX_PAYLOAD_CHARS:
@@ -7781,7 +7817,9 @@ def group_webhook_receiver(token):
             "groupId": group_id,
             "event": body.get("event") if isinstance(body, dict) else None,
             "sourceIp": request.headers.get("X-Forwarded-For", request.remote_addr),
-            "payloadJson": payload_json
+            "payloadJson": payload_json,
+            **parsed,
+            "parsed": True
         })
 
         group_webhooks_collection.update_one(
@@ -7894,6 +7932,74 @@ def groupdms_message(msg_id):
         "event": d.get("event"), "payloadJson": d.get("payloadJson", "")
     }}), 200
 
+
+def _group_doc_to_feed_item(d):
+    if d.get("parsed"):
+        p = d
+    else:   # messages stored before this update — parse from the raw payload
+        try:
+            p = _parse_group_event(json.loads(d.get("payloadJson") or "{}"))
+        except Exception:
+            p = {}
+    dt = p.get("msgTs") or d.get("receivedAt")
+    ts_ms = calendar.timegm(dt.timetuple()) * 1000 if isinstance(dt, datetime) else 0
+    return {
+        "id": p.get("messageId") or str(d["_id"]),
+        "ts": ts_ms,
+        "sender": p.get("senderName") or "",
+        "senderNumber": p.get("senderNumber") or "",
+        "groupName": p.get("groupName") or "",
+        "groupId": p.get("groupJid") or d.get("groupId") or "",
+        "text": p.get("text") or "",
+        "messageType": p.get("messageType"),
+        "mediaType": p.get("mediaType") or "",
+        "mediaUrl": p.get("mediaUrl"),
+        "mediaMime": p.get("mediaMime"),
+        "fileName": p.get("mediaFileName"),
+    }
+
+
+@app.route("/api/groupdms/feed", methods=["GET"])
+def groupdms_feed():
+    """All stored webhook messages for THIS account, oldest -> newest,
+    flattened for the WhatsApp Inventory Intelligence tool."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    try:
+        wh = group_webhooks_collection.find_one({"employeeNumber": session.get("employee_number")})
+        if not wh:
+            return jsonify({"success": True, "count": 0, "data": [], "groups": []}), 200
+
+        q = {"token": wh["token"]}
+        if request.args.get("groups_only", "1") == "1":
+            q["isGroup"] = True
+        try:
+            limit = max(1, min(int(request.args.get("limit", 1000)), 2000))
+        except ValueError:
+            limit = 1000
+
+        docs = list(group_webhook_msgs_collection.find(q).sort("receivedAt", -1).limit(limit))
+        items = []
+        for d in docs:
+            it = _group_doc_to_feed_item(d)
+            if not it["text"] and not it["mediaUrl"]:
+                continue
+            items.append(it)
+        items.sort(key=lambda x: x["ts"])
+
+        groups = {}
+        for it in items:
+            g = it["groupName"] or it["groupId"] or "Unknown group"
+            groups[g] = groups.get(g, 0) + 1
+
+        return jsonify({
+            "success": True, "count": len(items), "data": items,
+            "groups": [{"name": k, "count": v} for k, v in sorted(groups.items())]
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
 
 #whatsap ai
 
@@ -11053,6 +11159,17 @@ def inventory_intel_publish():
             "dealerName": data.get("dealer_name", ""),
             "dealerPhone": data.get("dealer_phone", "")
         }
+
+        # Media comes straight from the group webhook (already hosted) — keep the URLs as-is
+        image_urls = [u for u in (data.get("image_urls") or []) if isinstance(u, str) and u.startswith("http")]
+        video_urls = [u for u in (data.get("video_urls") or []) if isinstance(u, str) and u.startswith("http")]
+        if image_urls or video_urls:
+            inventory_data["img"] = image_urls[0] if image_urls else None
+            inventory_data["bannerUrl"] = image_urls[0] if image_urls else None
+            inventory_data["mediaUrls"] = image_urls + video_urls
+            inventory_data["mediaStatus"] = "done"
+        inventory_data["sourceGroup"] = data.get("sourceGroup", "")
+        inventory_data["sourceMessageIds"] = data.get("msgIds") or []
 
         embed_and_attach(inventory_data)
         result = projects_collection.insert_one(inventory_data)

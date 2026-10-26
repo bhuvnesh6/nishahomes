@@ -81,6 +81,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .li-meta{font-size:13px;color:var(--muted);margin-top:3px}
 .li-foot{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
 .mini{font-size:11px;color:var(--muted)}
+.li-thumb{width:100%;height:150px;object-fit:cover;border-radius:10px;margin-bottom:10px;background:var(--bg)}
 
 .tabs{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom)}
 .tab{flex:1;padding:9px 2px 8px;text-align:center;color:var(--muted);font-size:10px;cursor:pointer;border:none;background:none}
@@ -103,9 +104,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .gal .m .doc{font-size:12px;color:var(--muted);text-align:center;padding:6px}
 .gal .m .type{position:absolute;top:4px;left:4px;font-size:9px;background:rgba(0,0,0,.6);padding:2px 5px;border-radius:5px;color:#fff}
 
-.msg{background:var(--bg);border-radius:10px;border:1px solid var(--line);padding:9px 11px;margin-bottom:7px;font-size:14px}
-.msg .who{font-size:12px;color:var(--accent2);font-weight:700}
+.msg{background:var(--bg);border-radius:10px;border:1px solid var(--line);padding:9px 11px;margin-bottom:7px;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.msg .who{font-size:12px;color:var(--accent2);font-weight:700;white-space:normal}
 .msg .when{font-size:11px;color:var(--muted);float:right}
+.msg img.th{display:block;max-width:100%;max-height:200px;border-radius:8px;margin-top:6px}
+.feedbox{max-height:460px;overflow:auto}
 
 .modal{position:fixed;inset:0;background:rgba(4,7,13,.85);z-index:60;display:none;align-items:center;justify-content:center;padding:16px}
 .modal.open{display:flex}
@@ -134,7 +137,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 @keyframes sp{to{transform:rotate(360deg)}}
 .divider{height:1px;background:var(--line);margin:14px 0}
 code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
-.kb{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--line)}
 </style>
 </head>
 <body>
@@ -154,55 +156,40 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 <!-- ============ IMPORT / HOME ============ -->
 <div class="view active" id="v-home">
   <div class="callout info">
-    <b>How this works.</b> Export a WhatsApp dealer group <b>without media</b> (Chat → Export → <i>Without Media</i>), then separately pick the group's photos/videos/PDFs from your phone. The tool matches them by time, groups messages into properties, and uses AI to build your inventory. Everything stays on your device except the text/images sent to your AI for extraction.
+    <b>How this works.</b> Dealer-group messages arrive live on your personal group webhook (see <a href="/groupdms">Group Messages</a>). Press <b>Start processing</b> — the tool loads every response, groups each dealer's posts into properties, and AI turns them into inventory. Photos and videos use the URLs already sent by the webhook.
   </div>
 
   <div class="card">
-    <div class="step">Step 1 · Chat Export</div>
-    <h2>📄 Select chat file</h2>
-    <p class="small">The <code>.txt</code> file from “Export chat → Without media”.</p>
-    <input type="file" id="chatInput" accept=".txt,text/plain" hidden>
-    <button class="btn" id="chatBtn" onclick="document.getElementById('chatInput').click()">＋ Select chat (.txt)</button>
-    <div id="chatStatus" class="hint"></div>
-  </div>
-
-  <div class="card">
-    <div class="step">Step 2 · WhatsApp Media</div>
-    <h2>🖼️ Select media files</h2>
-    <p class="small">Pick the photos, videos, PDFs, voice notes for this group. On Android use the file picker — multi-select many at once. You can add more later.</p>
-    <input type="file" id="mediaInput" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
-    <input type="file" id="folderInput" webkitdirectory hidden>
-    <div class="row">
-      <button class="btn" onclick="document.getElementById('mediaInput').click()">＋ Select files</button>
-      <button class="btn ghost" onclick="document.getElementById('folderInput').click()">📁 Select folder</button>
+    <div class="step">Step 1 · Webhook feed</div>
+    <h2>📡 Group messages</h2>
+    <p class="small" id="feedStatus">Loading…</p>
+    <label class="fld">Group</label>
+    <select id="grpFilter" onchange="renderFeed();refreshStartBtn()"><option value="ALL">All groups</option></select>
+    <div class="row" style="margin-top:12px">
+      <button class="btn ghost" onclick="refreshFeed()">🔄 Refresh feed</button>
+      <button class="btn ghost" onclick="location.href='/groupdms'">🔗 My webhook URL</button>
     </div>
-    <div id="mediaStatus" class="hint"></div>
-    <div class="callout" style="margin-top:12px">Android blocks any browser from opening WhatsApp's folders automatically — you must pick the files yourself here. Folder-select works on desktop Chrome and some Android builds; if it fails, use <b>Select files</b>.</div>
   </div>
 
   <div class="card">
-    <div class="step">Step 3 · AI</div>
+    <div class="step">Step 2 · AI</div>
     <h2>🤖 AI connection</h2>
     <p class="small" id="aiHomeStatus">✓ AI ready — powered by the Nisha Homes server.</p>
     <button class="btn ghost sm" onclick="go('setup')">Choose model →</button>
   </div>
 
   <div class="card">
-    <div class="step">Step 4 · Go</div>
+    <div class="step">Step 3 · Go</div>
     <h2>▶️ Process</h2>
     <div class="row" style="margin-bottom:10px">
-      <button class="btn primary" id="startBtn" onclick="startProcessing()" disabled>▶ Start processing</button>
+      <button class="btn primary" id="startBtn" onclick="startProcessing()">▶ Start processing</button>
     </div>
     <div class="row">
       <button class="btn" id="pauseBtn" onclick="pauseProcessing()" disabled>⏸ Pause</button>
       <button class="btn" id="resumeBtn" onclick="resumeProcessing()" disabled>⏵ Resume</button>
     </div>
     <div id="procMini" class="hint"></div>
-  </div>
-
-  <div class="card">
-    <h3>⚠️ What this browser tool honestly can't do</h3>
-    <p class="small" style="margin:6px 0 0">Auto-reading WhatsApp's private folders (Android forbids it), processing a whole 50 GB library in one pass on a phone (memory limits — work per group, in batches), and full server-grade video analysis (scene detection / transcription). Video keeps a thumbnail + reference and can be sent to a vision model, but not frame-by-frame processed. These need the native app — ask Bhuvnesh for the build spec.</p>
+    <p class="hint">Only messages not processed before are sent to AI, so you can press Start again whenever new posts arrive.</p>
   </div>
 </div>
 
@@ -218,10 +205,14 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
     <div class="stat-grid" id="dashStats"></div>
   </div>
   <div class="card">
+    <h3>📨 Webhook responses (<span id="feedCount">0</span>)</h3>
+    <div class="feedbox" id="feedList"></div>
+  </div>
+  <div class="card">
     <h3>Log</h3>
     <div id="dashLog" class="tiny" style="max-height:240px;overflow:auto;font-family:ui-monospace,monospace"></div>
   </div>
-  <button class="btn danger ghost" onclick="resetAll()">🗑 Clear all data & start over</button>
+  <button class="btn danger ghost" onclick="resetAll()">🗑 Clear local data & start over</button>
 </div>
 
 <!-- ============ INVENTORY ============ -->
@@ -236,7 +227,7 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 
 <!-- ============ NEEDS REVIEW ============ -->
 <div class="view" id="v-review">
-  <div class="card"><h2>🔎 Needs review</h2><p class="small">Uncertain media matches and low-confidence extractions. Confirm or reject — nothing is auto-attached below your threshold.</p></div>
+  <div class="card"><h2>🔎 Needs review</h2><p class="small">Low-confidence extractions and possible duplicates. Open one to verify, edit or archive it.</p></div>
   <div id="reviewList"></div>
 </div>
 
@@ -253,17 +244,12 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 <div class="view" id="v-export">
   <div class="card">
     <h2>⬇️ Export inventory</h2>
-    <p class="small">Structured export of every property record with full source counts.</p>
+    <p class="small">Structured export of every property record, including image URLs.</p>
     <div class="row" style="margin-top:8px">
       <button class="btn primary" onclick="exportCSV()">CSV</button>
       <button class="btn blue" onclick="exportXLSX()">Excel (.xlsx)</button>
       <button class="btn" onclick="exportJSON()">JSON</button>
     </div>
-    <p class="hint">Media itself isn't exported (files stay on your phone). Each property lists photo/video/doc counts so you can find them.</p>
-  </div>
-  <div class="card">
-    <h3>Give the full app to Bhuvnesh</h3>
-    <p class="small">The native-app features (folder access, 50 GB, full video) are in the separate build spec I prepared for him.</p>
   </div>
 </div>
 
@@ -274,7 +260,7 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
     <p class="small">AI runs through the Nisha Homes server using the account's own OpenRouter key — nothing to paste here.</p>
     <label class="fld">Vision / text model</label>
     <input type="text" id="orModel" placeholder="e.g. openai/gpt-4o-mini or google/gemini-2.0-flash">
-    <p class="hint">Any multimodal model on OpenRouter works. Cheaper models cost less per property; vision-capable models can read photos & brochures.</p>
+    <p class="hint">Any multimodal model on OpenRouter works. Vision-capable models can read the property photos from the webhook URLs.</p>
     <div class="row" style="margin-top:12px">
       <button class="btn primary" onclick="saveKey()">💾 Save model</button>
       <button class="btn ghost" onclick="testKey()">🔌 Test connection</button>
@@ -283,25 +269,15 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
   </div>
 
   <div class="card">
-    <h3>Correlation thresholds</h3>
-    <p class="small">How close in time a media file must be to a message to auto-attach.</p>
-    <label class="fld">Auto-attach window (minutes): <span id="winLbl"></span></label>
-    <input type="number" id="cfgWindow" min="1" max="240" value="15">
-    <label class="fld">Auto-attach confidence ≥ (%)</label>
-    <input type="number" id="cfgConf" min="40" max="99" value="75">
-    <label class="fld">Group gap — new property after silence (minutes)</label>
+    <h3>Grouping</h3>
+    <label class="fld">Group gap — a new property starts after this many minutes of silence from the same dealer</label>
     <input type="number" id="cfgGap" min="1" max="120" value="12">
-    <label class="fld">Date order in your chat export</label>
-    <select id="cfgDateOrder">
-      <option value="dmy">Day / Month / Year (India default)</option>
-      <option value="mdy">Month / Day / Year (US)</option>
-    </select>
     <button class="btn primary" style="margin-top:12px" onclick="saveCfg()">💾 Save settings</button>
   </div>
 
   <div class="card">
     <h3>Privacy</h3>
-    <p class="small"><b>Local:</b> chat, media files, the whole database, all thumbnails — stay in this browser. <b>Sent to AI:</b> only grouped message text and (optionally) matched images, when you press Process. Nothing uploads on its own.</p>
+    <p class="small"><b>Sent to AI:</b> grouped message text and up to 2 photo URLs per property, only when you press Start. Extracted properties are stored in this browser until you publish them to the CRM.</p>
   </div>
 </div>
 
@@ -323,25 +299,24 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px}
 
 <script>
 /* ============================================================
-   Nisha Homes — WhatsApp Inventory Intelligence
-   Single-file, offline-first. No build step. IndexedDB storage.
+   Nisha Homes — WhatsApp Inventory Intelligence (webhook edition)
+   Source = /api/groupdms/feed  (messages + media URLs from the group webhook)
    ============================================================ */
 
-/* ---------- tiny helpers ---------- */
 const $=(s)=>document.querySelector(s);
-const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function fmtSize(b){if(!b)return'0 B';const u=['B','KB','MB','GB'];let i=0;while(b>=1024&&i<3){b/=1024;i++;}return b.toFixed(b<10&&i>0?1:0)+' '+u[i];}
 function fmtDate(d){if(!d)return'';const x=new Date(d);return x.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})+' '+x.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});}
 function money(v){if(v==null||v==='')return'';const n=String(v);return n.match(/[₹cr lakh cr\.]/i)||/[a-z]/i.test(n)?n:'₹'+n;}
 
 /* ---------- state ---------- */
-let CFG={window:15,conf:75,gap:12,dateOrder:'dmy'};
-let CHAT={name:'',messages:[]};      // parsed messages
-let MEDIA=[];                         // indexed media (in-memory refs + meta)
+let CFG={gap:12};
+let FEED=[];                          // raw feed from the server
+let CHAT={name:'Webhook feed',messages:[]};   // accumulated messages (persisted)
+let MEDIA=[];                         // media records (url based, persisted)
 let PROPS=[];                         // extracted property records
-let DEALERS={};                       // dealerKey -> dealer
+let DEALERS={};
+let SEEN=new Set();                   // message ids already handled
 let PROC={running:false,paused:false,phase:'idle',done:0,total:0,queue:[]};
 let currentFilter='ALL';
 
@@ -362,25 +337,33 @@ function idbGet(store,key){return new Promise((res,rej)=>{const t=db.transaction
 function idbAll(store){return new Promise((res,rej)=>{const t=db.transaction(store,'readonly');const rq=t.objectStore(store).getAll();rq.onsuccess=()=>res(rq.result||[]);rq.onerror=e=>rej(e);});}
 function idbClear(store){return new Promise((res,rej)=>{const t=db.transaction(store,'readwrite');t.objectStore(store).clear();t.oncomplete=res;t.onerror=e=>rej(e);});}
 
+async function persistCore(){
+  try{
+    await idbSet('kv',CHAT,'chat');
+    await idbSet('kv',[...SEEN],'seen');
+    await new Promise(r=>{const t=db.transaction('media','readwrite');const st=t.objectStore('media');MEDIA.forEach(m=>st.put(m));t.oncomplete=r;t.onerror=r;});
+  }catch(e){}
+}
+
 /* ---------- boot ---------- */
 window.addEventListener('load',async()=>{
   try{await openDB();}catch(e){toast('Storage unavailable — running in memory only');}
-  // config
   const c=localStorage.getItem('nisha_cfg');if(c){try{CFG=Object.assign(CFG,JSON.parse(c));}catch(e){}}
-  $('#cfgWindow').value=CFG.window;$('#cfgConf').value=CFG.conf;$('#cfgGap').value=CFG.gap;$('#cfgDateOrder').value=CFG.dateOrder;
-  // key
+  $('#cfgGap').value=CFG.gap;
   const m=localStorage.getItem('nisha_or_model')||'';
   if(m)$('#orModel').value=m;
   updateAIStatus();
-  // restore data
   try{
     const savedProps=await idbAll('props');
     const savedMedia=await idbAll('media');
     const savedChat=await idbGet('kv','chat');
-    if(savedChat){CHAT=savedChat;$('#chatStatus').innerHTML='Restored: '+esc(CHAT.name)+' · '+CHAT.messages.length+' messages';markDone('#chatBtn');}
-    if(savedMedia&&savedMedia.length){MEDIA=savedMedia;$('#mediaStatus').innerHTML='Restored '+MEDIA.length+' media records (re-select files to view/analyse images).';}
-    if(savedProps&&savedProps.length){PROPS=savedProps;rebuildDealers();toast('Restored '+PROPS.length+' properties');}
+    const savedSeen=await idbGet('kv','seen');
+    if(savedChat&&savedChat.messages)CHAT=savedChat;
+    if(savedMedia&&savedMedia.length)MEDIA=savedMedia.filter(x=>x.url);
+    if(savedSeen)SEEN=new Set(savedSeen);
+    if(savedProps&&savedProps.length){PROPS=savedProps;rebuildDealers();}
   }catch(e){}
+  try{await loadFeed();}catch(e){$('#feedStatus').textContent='Could not load feed — '+e.message;}
   refreshStartBtn();renderAll();updateNet();
   setInterval(updateNet,8000);
 });
@@ -396,207 +379,119 @@ function go(v){
   if(v==='inv')renderInventory();
   if(v==='review')renderReview();
   if(v==='dealers')renderDealers();
-  if(v==='dash')renderDash();
+  if(v==='dash'){renderDash();renderFeed();}
 }
-function markDone(sel){const b=$(sel);if(b){b.classList.add('done');}}
 
 /* ============================================================
-   1. CHAT PARSER
+   1. WEBHOOK FEED
    ============================================================ */
-$('#chatInput').addEventListener('change',async e=>{
-  const f=e.target.files[0];if(!f)return;
-  $('#chatStatus').innerHTML='<span class="spin"></span> Reading…';
-  const text=await f.text();
-  const msgs=parseChat(text);
-  CHAT={name:f.name,messages:msgs};
-  try{await idbSet('kv',CHAT,'chat');}catch(e){}
-  const senders=new Set(msgs.filter(m=>m.sender).map(m=>m.sender)).size;
-  const withMedia=msgs.filter(m=>m.mediaOmitted).length;
-  $('#chatStatus').innerHTML=`✓ <b>${msgs.length}</b> messages · <b>${senders}</b> senders · <b>${withMedia}</b> media references`;
-  markDone('#chatBtn');refreshStartBtn();
-});
-
-function parseChat(text){
-  const lines=text.split(/\r?\n/);
-  // strip WhatsApp bidi/format marks
-  const clean=s=>s.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,'');
-  // Android:  18/09/2026, 21:34 - Sender: msg   |  9/18/26, 9:34 pm - Sender: msg
-  const reAndroid=/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([apAP]\.?[mM]\.?)?\s*[-\u2013]\s*(.*)$/;
-  // iOS: [18/09/2026, 21:34:12] Sender: msg
-  const reIOS=/^\[(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([apAP]\.?[mM]\.?)?\]\s*(.*)$/;
-  const out=[];let cur=null;let idx=0;
-  const media=/(<Media omitted>|image omitted|video omitted|audio omitted|document omitted|sticker omitted|GIF omitted|Contact card omitted|\u2039attached|\(file attached\))/i;
-
-  function buildTime(d,mo,y,h,mi,se,ap){
-    y=parseInt(y);if(y<100)y+=2000;
-    let day=parseInt(d),mon=parseInt(mo);
-    if(CFG.dateOrder==='mdy'){const t=day;day=mon;mon=t;}
-    // auto-correct impossible day/month
-    if(mon>12&&day<=12){const t=day;day=mon;mon=t;}
-    h=parseInt(h);mi=parseInt(mi);se=se?parseInt(se):0;
-    if(ap){const a=ap.toLowerCase().replace(/\./g,'');if(a==='pm'&&h<12)h+=12;if(a==='am'&&h===12)h=0;}
-    return new Date(y,mon-1,day,h,mi,se).getTime();
-  }
-  for(let raw of lines){
-    const line=clean(raw);
-    let m=reAndroid.exec(line)||reIOS.exec(line);
-    if(m){
-      if(cur)out.push(cur);
-      const [,d,mo,y,h,mi,se,ap,rest]=m;
-      const ts=buildTime(d,mo,y,h,mi,se,ap);
-      // "Sender: message"  vs system message (no sender)
-      let sender=null,body=rest;
-      const sm=rest.match(/^([^:]{1,60}?):\s([\s\S]*)$/);
-      if(sm && !/^https?$/i.test(sm[1])){sender=sm[1].trim();body=sm[2];}
-      cur={id:'m'+(idx++),ts,sender,text:body,raw:line,system:!sender,mediaOmitted:media.test(body)};
-    }else{
-      if(cur){cur.text+='\n'+line;cur.raw+='\n'+line;if(media.test(line))cur.mediaOmitted=true;}
-      // else: preamble junk, ignore
+async function loadFeed(){
+  let j;
+  try{
+    const r=await fetch('/api/groupdms/feed?groups_only=1&limit=2000',{credentials:'same-origin'});
+    j=await r.json();
+  }catch(e){throw new Error('feed request failed (are you logged in?)');}
+  if(!j.success)throw new Error(j.message||'feed error');
+  FEED=j.data||[];
+  populateGroups(j.groups||[]);
+  updateFeedStatus();
+  return FEED;
+}
+async function refreshFeed(){
+  $('#feedStatus').innerHTML='<span class="spin"></span> Loading…';
+  try{await loadFeed();renderFeed();refreshStartBtn();toast('Feed updated');}
+  catch(e){$('#feedStatus').textContent='Could not load feed — '+e.message;}
+}
+function populateGroups(groups){
+  const sel=$('#grpFilter');const cur=sel.value||'ALL';
+  sel.innerHTML='<option value="ALL">All groups</option>'+groups.map(g=>`<option value="${esc(g.name)}">${esc(g.name)} (${g.count})</option>`).join('');
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:'ALL';
+}
+function selectedGroup(){return $('#grpFilter').value||'ALL';}
+function inSelectedGroup(f){const s=selectedGroup();return s==='ALL'||(f.groupName||f.groupId||'Unknown group')===s;}
+function updateFeedStatus(){
+  const withMedia=FEED.filter(f=>f.mediaUrl).length;
+  const last=FEED.length?fmtDate(FEED[FEED.length-1].ts):'—';
+  const fresh=FEED.filter(f=>!SEEN.has(f.id)).length;
+  $('#feedStatus').innerHTML=FEED.length
+    ?`✓ <b>${FEED.length}</b> messages · <b>${withMedia}</b> with media · <b>${fresh}</b> not processed yet · last ${esc(last)}`
+    :'No group messages received yet. Send a message in a WhatsApp group connected to your webhook.';
+}
+function normType(t,mime){
+  t=(t||'').toLowerCase();mime=(mime||'').toLowerCase();
+  if(t==='image'||mime.startsWith('image/'))return'image';
+  if(t==='video'||mime.startsWith('video/'))return'video';
+  if(t==='audio'||mime.startsWith('audio/'))return'audio';
+  if(mime.includes('pdf'))return'pdf';
+  return'document';
+}
+function mergeFeed(){
+  const have=new Set(CHAT.messages.map(m=>m.id));
+  const haveMd=new Set(MEDIA.map(m=>m.id));
+  for(const f of FEED){
+    if(!have.has(f.id)){
+      CHAT.messages.push({id:f.id,ts:f.ts,sender:f.sender||f.senderNumber||'Unknown',senderNumber:f.senderNumber||'',
+        group:f.groupName||f.groupId||'Unknown group',text:f.text||'',mediaUrl:f.mediaUrl||'',mediaType:f.mediaUrl?normType(f.mediaType,f.mediaMime):''});
+      have.add(f.id);
+    }
+    if(f.mediaUrl){
+      const mid='md_'+f.id;
+      if(!haveMd.has(mid)){
+        MEDIA.push({id:mid,name:f.fileName||f.id,type:normType(f.mediaType,f.mediaMime),url:f.mediaUrl,ts:f.ts,msgId:f.id,conf:100,dup:false,propId:null});
+        haveMd.add(mid);
+      }
     }
   }
-  if(cur)out.push(cur);
-  return out.filter(m=>!isNaN(m.ts));
+  CHAT.messages.sort((a,b)=>a.ts-b.ts);
 }
-
-/* ============================================================
-   2. MEDIA INDEXING + HASHING + DEDUPE
-   ============================================================ */
-$('#mediaInput').addEventListener('change',e=>indexMedia(e.target.files));
-$('#folderInput').addEventListener('change',e=>indexMedia(e.target.files));
-
-async function sha256(buf){const h=await crypto.subtle.digest('SHA-256',buf);return[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}
-
-function mediaType(name,mime){
-  const ext=(name.split('.').pop()||'').toLowerCase();
-  if(/^(jpg|jpeg|png|webp|heic|heif|gif|bmp)$/.test(ext)||(mime||'').startsWith('image/'))return'image';
-  if(/^(mp4|mov|mkv|3gp|avi|webm)$/.test(ext)||(mime||'').startsWith('video/'))return'video';
-  if(/^(mp3|m4a|ogg|opus|aac|wav|amr)$/.test(ext)||(mime||'').startsWith('audio/'))return'audio';
-  if(ext==='pdf')return'pdf';
-  if(/^(doc|docx|xls|xlsx|ppt|pptx|txt|csv)$/.test(ext))return'document';
-  return'other';
-}
-// WhatsApp filename date: IMG-20260918-WA0032.jpg / VID_20260918_213412.mp4 / camera IMG_20260918_...
-function fileDate(name){
-  let m=name.match(/(20\d{2})(\d{2})(\d{2})[-_](?:WA(\d+)|(\d{2})(\d{2})(\d{2}))/);
-  if(m){const y=+m[1],mo=+m[2]-1,d=+m[3];
-    if(m[5]!=null)return{ts:new Date(y,mo,d,+m[5],+m[6],+m[7]).getTime(),seq:null,dateOnly:false};
-    return{ts:new Date(y,mo,d,0,0,0).getTime(),seq:m[4]?+m[4]:null,dateOnly:true};}
-  m=name.match(/(20\d{2})(\d{2})(\d{2})/);
-  if(m)return{ts:new Date(+m[1],+m[2]-1,+m[3]).getTime(),seq:null,dateOnly:true};
-  return null;
-}
-
-async function indexMedia(fileList){
-  const files=[...fileList];if(!files.length)return;
-  $('#mediaStatus').innerHTML='<span class="spin"></span> Indexing '+files.length+' files…';
-  const existing=new Set(MEDIA.map(m=>m.hash));
-  let added=0,dupes=0,skipped=0,i=0;
-  for(const f of files){
-    i++;
-    if(i%20===0)$('#mediaStatus').innerHTML=`<span class="spin"></span> Indexing ${i}/${files.length}…`;
-    const type=mediaType(f.name,f.type);
-    if(type==='other'){skipped++;continue;}
-    let hash;
-    try{
-      // hash only up to first 8MB for speed on large videos (enough to dedupe reliably alongside size)
-      const slice=f.size>8*1024*1024?f.slice(0,8*1024*1024):f;
-      hash=await sha256(await slice.arrayBuffer())+'_'+f.size;
-    }catch(err){skipped++;continue;}
-    const fd=fileDate(f.name);
-    const rec={
-      id:'md'+MEDIA.length+'_'+Math.random().toString(36).slice(2,7),
-      name:f.name,type,size:f.size,mime:f.type,
-      modified:f.lastModified,
-      nameTs:fd?fd.ts:null,seq:fd?fd.seq:null,
-      ts:(fd&&!fd.dateOnly)?fd.ts:f.lastModified,   // best timestamp
-      tsSource:(fd&&!fd.dateOnly)?'filename':'modified',
-      hash,file:f,dup:false,propId:null,conf:null
-    };
-    if(existing.has(hash)){rec.dup=true;dupes++;}
-    else{existing.add(hash);added++;}
-    // dimensions / duration (non-blocking best effort)
-    if(type==='image'){try{const d=await imgDims(f);rec.w=d.w;rec.h=d.h;}catch(e){}}
-    MEDIA.push(rec);
-  }
-  // persist meta (without file blob — blobs can't survive reload reliably at scale)
-  try{for(const r of MEDIA){const {file,...meta}=r;await idbSet('media',meta);}}catch(e){}
-  const uniq=MEDIA.filter(m=>!m.dup).length;
-  $('#mediaStatus').innerHTML=`✓ <b>${MEDIA.length}</b> indexed · <b>${uniq}</b> unique · <b>${dupes}</b> duplicates skipped${skipped?' · '+skipped+' unsupported':''}`;
-  markDone(document.querySelector('#v-home .row .btn'));
-  refreshStartBtn();
-}
-function imgDims(f){return new Promise((res,rej)=>{const u=URL.createObjectURL(f);const img=new Image();img.onload=()=>{res({w:img.naturalWidth,h:img.naturalHeight});URL.revokeObjectURL(u);};img.onerror=()=>{URL.revokeObjectURL(u);rej();};img.src=u;});}
-
-/* ============================================================
-   3. CORRELATION  (media <-> message, by timestamp)
-   ============================================================ */
-function correlate(){
-  const msgs=CHAT.messages;
-  const mediaMsgs=msgs.filter(m=>m.mediaOmitted);
-  const winMs=CFG.window*60000;
-  for(const md of MEDIA){
-    if(md.dup){md.propId=null;continue;}
-    // find nearest media-placeholder message in time; fall back to any message
-    let best=null,bestGap=Infinity;
-    const pool=mediaMsgs.length?mediaMsgs:msgs;
-    for(const m of pool){
-      const gap=Math.abs(m.ts-md.ts);
-      if(gap<bestGap){bestGap=gap;best=m;}
+function renderFeed(){
+  const box=$('#feedList');if(!box)return;
+  const list=FEED.filter(inSelectedGroup).slice().sort((a,b)=>b.ts-a.ts);
+  $('#feedCount').textContent=list.length;
+  if(!list.length){box.innerHTML='<div class="empty"><div class="big">📭</div>No responses yet.</div>';return;}
+  box.innerHTML=list.map(f=>{
+    const seen=SEEN.has(f.id);
+    let media='';
+    if(f.mediaUrl){
+      const t=normType(f.mediaType,f.mediaMime);
+      media=t==='image'
+        ?`<a href="${esc(f.mediaUrl)}" target="_blank" rel="noopener"><img class="th" src="${esc(f.mediaUrl)}" loading="lazy"></a>`
+        :`<div><a href="${esc(f.mediaUrl)}" target="_blank" rel="noopener">📎 ${esc(t)}</a></div>`;
     }
-    md.matchMsg=best?best.id:null;
-    md.matchGap=bestGap;
-    // confidence from proximity + timestamp source quality
-    let conf=0;
-    if(best){
-      const prox=Math.max(0,1-bestGap/winMs); // 1 at 0 gap, 0 at window edge
-      conf=Math.round((prox*100));
-      if(md.tsSource==='modified')conf=Math.round(conf*0.85); // mtime less trustworthy
-      if(bestGap>winMs)conf=Math.min(conf,55);
-    }
-    md.conf=conf;
-  }
+    return `<div class="msg"><span class="when">${fmtDate(f.ts)}</span><div class="who">${esc(f.sender||f.senderNumber||'—')} · <span class="tiny">${esc(f.groupName||'')}</span> <span class="chip ${seen?'verified':'new'}">${seen?'processed':'new'}</span></div>${esc(f.text||'')}${media}</div>`;
+  }).join('');
 }
 
 /* ============================================================
-   4. PROPERTY GROUPING
+   2. GROUPING  (per group + sender, so busy groups don't interleave)
    ============================================================ */
-const PROP_HINT=/(bhk|\bsq\.?\s?(ft|feet|yard|yds|meter|mtr)\b|\bsqft\b|\bsqyd\b|\bcr\b|\blakh\b|\blac\b|\bcrore\b|demand|price|rent|resale|sector|floor|kothi|villa|plot|apartment|builder floor|furnished|for sale|available|carpet|super area|maintenance)/i;
-function groupProperties(){
-  const msgs=CHAT.messages.filter(m=>m.sender);
+const PROP_HINT=/(bhk|\bsq\.?\s?(ft|feet|yard|yds|meter|mtr)\b|\bsqft\b|\bsqyd\b|\bcr\b|\blakh\b|\blac\b|\bcrore\b|demand|price|rent|resale|sector|floor|kothi|villa|plot|apartment|builder floor|furnished|for sale|available|carpet|super area|maintenance|property)/i;
+function groupProperties(msgs){
   const gapMs=CFG.gap*60000;
-  const groups=[];let g=null;
-  for(const m of msgs){
-    if(g && g.sender===m.sender && (m.ts-g.lastTs)<=gapMs){
-      g.msgs.push(m);g.lastTs=m.ts;
-    }else{
-      if(g)groups.push(g);
-      g={sender:m.sender,startTs:m.ts,lastTs:m.ts,msgs:[m]};
-    }
+  const open={},groups=[];
+  for(const m of msgs.slice().sort((a,b)=>a.ts-b.ts)){
+    const key=(m.group||'')+'|'+(m.senderNumber||m.sender);
+    let g=open[key];
+    if(g&&(m.ts-g.lastTs)<=gapMs){g.msgs.push(m);g.lastTs=m.ts;}
+    else{g={key,sender:m.sender,group:m.group,startTs:m.ts,lastTs:m.ts,msgs:[m]};open[key]=g;groups.push(g);}
   }
-  if(g)groups.push(g);
-  // keep only groups that look like a property
   return groups.filter(gr=>{
     const t=gr.msgs.map(x=>x.text).join(' ');
-    return PROP_HINT.test(t) && t.replace(/\s/g,'').length>12;
+    const hasVisual=gr.msgs.some(x=>x.mediaUrl&&(x.mediaType==='image'||x.mediaType==='video'||x.mediaType==='pdf'));
+    return (PROP_HINT.test(t)&&t.replace(/\s/g,'').length>12)||hasVisual;
   });
 }
 
 /* ============================================================
-   5. OPENROUTER EXTRACTION
+   3. AI EXTRACTION
    ============================================================ */
 function getModel(){return localStorage.getItem('nisha_or_model')||'openai/gpt-4o-mini';}
 
 async function callAI(messages,useVision,images){
-  const model=getModel();
   const r=await fetch('/api/ai/wa-extract',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      system:EXTRACT_SYS,
-      text:messages,
-      images:(useVision&&images&&images.length)?images:[],
-      model
-    })
+    body:JSON.stringify({system:EXTRACT_SYS,text:messages,images:(useVision&&images&&images.length)?images:[],model:getModel()})
   });
   const j=await r.json();
   if(!j.success)throw new Error(j.message||('AI request failed ('+r.status+')'));
@@ -607,38 +502,47 @@ async function callAI(messages,useVision,images){
 }
 
 const EXTRACT_SYS=`You are a real-estate data extractor for an Indian property consultancy.
-Read WhatsApp dealer messages (and images if given) about ONE property listing and return STRICT JSON only.
+Read WhatsApp dealer-group messages (and property photos if given) about ONE property listing and return STRICT JSON only. Several photos belong to the same listing. A photo caption like "New property" is NOT data — read details from the text or from the photos.
 Distinguish sources: "stated"=explicitly written by dealer; "detected"=read from an image/OCR; "inferred"=your reasonable interpretation; leave empty if unknown. NEVER invent phone numbers, RERA numbers, prices or areas.
 Return exactly this shape:
 {"is_property":true,"title":"short 4-6 word label","dealer_name":"","dealer_phone":"","property_type":"Apartment|Builder Floor|Villa|Kothi|Plot|Commercial|Farmhouse|Other","bhk":"","location":"","sector":"","project":"","city":"","area":"","area_unit":"sqft|sqyd|","price":"","price_type":"sale|rent|","furnishing":"","floor":"","facing":"","parking":"","amenities":[],"transaction":"sale|rent|lease|","summary":"1-2 sentence neutral summary","usp":"","field_sources":{"price":"stated|detected|inferred|unknown","area":"...","bhk":"...","location":"..."},"confidence":0-100,"tags":[]}
 If the messages are chit-chat / not a property, return {"is_property":false}.`;
 
 /* ============================================================
-   6. PROCESSING PIPELINE (resumable)
+   4. PROCESSING PIPELINE (resumable)
    ============================================================ */
 function log(s){const d=$('#dashLog');if(d){d.innerHTML+=`<div>${new Date().toLocaleTimeString('en-IN')} · ${esc(s)}</div>`;d.scrollTop=d.scrollHeight;}}
 function refreshStartBtn(){
-  const ready=CHAT.messages.length>0 && MEDIA.length>0;
-  $('#startBtn').disabled=!ready||PROC.running;
-  $('#procMini').innerHTML=ready?'Ready to process.':'Need: '+[!CHAT.messages.length?'chat':'',!MEDIA.length?'media':''].filter(Boolean).join(' + ');
+  $('#startBtn').disabled=PROC.running;
+  const pend=CHAT.messages.filter(m=>!SEEN.has(m.id)).length;
+  $('#procMini').innerHTML=PROC.running?'Processing…':`${FEED.length} messages in feed · ${Math.max(pend,FEED.filter(f=>!SEEN.has(f.id)).length)} not processed yet.`;
 }
 async function startProcessing(){
-  PROC.running=true;PROC.paused=false;PROC.done=0;
+  PROC.running=true;PROC.paused=false;PROC.done=0;PROC.queue=[];
   $('#startBtn').disabled=true;$('#pauseBtn').disabled=false;$('#resumeBtn').disabled=true;
   go('dash');
   $('#dashLog').innerHTML='';
-  log('Correlating '+MEDIA.length+' media to '+CHAT.messages.length+' messages…');
-  setPhase('Correlating media & messages',5);
-  correlate();
-  log('Grouping messages into properties…');
-  setPhase('Grouping properties',12);
-  const groups=groupProperties();
-  log('Found '+groups.length+' property candidates.');
-  // attach media to groups by time window
+  setPhase('Fetching webhook responses',3);
+  try{await loadFeed();}
+  catch(e){log('⚠️ '+e.message);setPhase('Could not load feed',0);PROC.running=false;$('#pauseBtn').disabled=true;refreshStartBtn();return;}
+  mergeFeed();
+  await persistCore();
+  renderFeed();
+  log('Fetched '+FEED.length+' webhook responses ('+FEED.filter(f=>f.mediaUrl).length+' with media).');
+
+  const pending=CHAT.messages.filter(m=>!SEEN.has(m.id)&&(selectedGroup()==='ALL'||m.group===selectedGroup()));
+  log(pending.length+' message(s) not processed yet.');
+  setPhase('Grouping into properties',12);
+  const groups=groupProperties(pending);
+  const grouped=new Set();groups.forEach(g=>g.msgs.forEach(m=>grouped.add(m.id)));
+  pending.forEach(m=>{if(!grouped.has(m.id))SEEN.add(m.id);});   // chit-chat: never look at it again
+  log('Found '+groups.length+' property candidate(s).');
   for(const gr of groups){
-    gr.media=MEDIA.filter(md=>!md.dup && md.ts>=gr.startTs-CFG.window*60000 && md.ts<=gr.lastTs+CFG.window*60000);
+    const ids=new Set(gr.msgs.map(m=>m.id));
+    gr.media=MEDIA.filter(md=>ids.has(md.msgId));
   }
   PROC.queue=groups;PROC.total=groups.length;
+  await persistCore();
   await runQueue();
 }
 async function runQueue(){
@@ -647,44 +551,40 @@ async function runQueue(){
     if(PROC.paused){log('Paused at '+i+'/'+groups.length);return;}
     const gr=groups[i];
     setPhase('AI extracting property '+(i+1)+' / '+groups.length,12+Math.round((i/groups.length)*80));
-    const text='WhatsApp messages from dealer "'+gr.sender+'":\n'+gr.msgs.map(m=>m.text).join('\n');
-    // pick up to 2 high-confidence images for vision
-    const imgs=gr.media.filter(m=>m.type==='image'&&m.conf>=CFG.conf).slice(0,2);
-    let imgUrls=[];
-    for(const im of imgs){try{imgUrls.push(await fileToDataURL(im.file,900));}catch(e){}}
+    const body=gr.msgs.map(m=>m.text).filter(Boolean).join('\n')||'(no caption text — read the details from the photo(s))';
+    const text='WhatsApp group "'+(gr.group||'')+'" — messages from dealer "'+gr.sender+'" ('+(gr.msgs[0].senderNumber||'')+'):\n'+body;
+    const imgUrls=gr.media.filter(m=>m.type==='image').slice(0,2).map(m=>m.url);
     let data;
     try{
       data=await callAI(text,imgUrls.length>0,imgUrls);
     }catch(err){
       log('⚠️ '+err.message);
-      // fallback: retry text-only once
-      try{data=await callAI(text,false,[]);}catch(e2){log('   skipped this candidate');PROC.done=i+1;continue;}
+      try{data=await callAI(text,false,[]);}catch(e2){log('   skipped (will retry next run)');PROC.done=i+1;continue;}
     }
     if(data&&data.is_property!==false){
       const rec=buildRecord(data,gr);
       PROPS.push(rec);
       try{await idbSet('props',rec);}catch(e){}
-      log('✓ '+(rec.title||rec.location||'Property')+'  ['+rec.status+']');
+      log('✓ '+(rec.title||rec.location||'Property')+'  ['+rec.status+']  ·  '+rec.counts.photos+' photo(s)');
     }else{
       log('· not a property, skipped');
     }
+    gr.msgs.forEach(m=>SEEN.add(m.id));
+    try{await idbSet('kv',[...SEEN],'seen');}catch(e){}
     PROC.done=i+1;
     updateStats();
-    await new Promise(r=>setTimeout(r,120)); // gentle pacing
+    await new Promise(r=>setTimeout(r,120));
   }
   finishProcessing();
 }
 function buildRecord(data,gr){
-  const id='NH-WA-'+String(PROPS.length+1).padStart(5,'0');
+  const maxN=PROPS.reduce((mx,p)=>Math.max(mx,parseInt(String(p.id).replace(/\D/g,''))||0),0);
+  const id='NH-WA-'+String(maxN+1).padStart(5,'0');
   const media=gr.media||[];
-  const hi=media.filter(m=>m.conf>=CFG.conf);
-  const lo=media.filter(m=>m.conf<CFG.conf&&m.conf>=40);
-  // attach
-  hi.forEach(m=>{m.propId=id;});
+  media.forEach(m=>{m.propId=id;});
   const conf=data.confidence||70;
-  let status='NEW';
-  if(conf<60||lo.length>0)status='NEEDS REVIEW';
-  const dphone=(data.dealer_phone||'').replace(/[^\d+]/g,'');
+  const status=conf<60?'NEEDS REVIEW':'NEW';
+  const dphone=(data.dealer_phone||'').replace(/[^\d+]/g,'')||String(gr.msgs[0].senderNumber||'');
   return {
     id,createdTs:Date.now(),
     title:data.title||data.location||'Property',
@@ -697,27 +597,24 @@ function buildRecord(data,gr){
     amenities:data.amenities||[],transaction:data.transaction||'',summary:data.summary||'',usp:data.usp||'',
     field_sources:data.field_sources||{},confidence:conf,tags:data.tags||[],
     published:false,publishedId:null,
-    status,sourceGroup:CHAT.name,sourceSender:gr.sender,startTs:gr.startTs,
+    status,sourceGroup:gr.group||'',sourceSender:gr.sender,startTs:gr.startTs,
     msgIds:gr.msgs.map(m=>m.id),
-    mediaIds:hi.map(m=>m.id),reviewMediaIds:lo.map(m=>m.id),
-    counts:{photos:hi.filter(m=>m.type==='image').length,videos:hi.filter(m=>m.type==='video').length,docs:hi.filter(m=>m.type==='pdf'||m.type==='document').length,audio:hi.filter(m=>m.type==='audio').length}
+    mediaIds:media.map(m=>m.id),reviewMediaIds:[],
+    imageUrls:media.filter(m=>m.type==='image').map(m=>m.url),
+    videoUrls:media.filter(m=>m.type==='video').map(m=>m.url),
+    counts:{photos:media.filter(m=>m.type==='image').length,videos:media.filter(m=>m.type==='video').length,docs:media.filter(m=>m.type==='pdf'||m.type==='document').length,audio:media.filter(m=>m.type==='audio').length}
   };
 }
-function fileToDataURL(f,maxW){return new Promise((res,rej)=>{
-  if(!f)return rej('no file');
-  if(f.type&&!f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);return;}
-  const u=URL.createObjectURL(f);const img=new Image();
-  img.onload=()=>{const sc=Math.min(1,maxW/img.naturalWidth);const c=document.createElement('canvas');c.width=img.naturalWidth*sc;c.height=img.naturalHeight*sc;c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.8));};
-  img.onerror=()=>{URL.revokeObjectURL(u);rej('img fail');};img.src=u;
-});}
 function setPhase(t,pct){PROC.phase=t;$('#dashPhase').textContent=t;$('#dashBar').style.width=pct+'%';$('#dashPct').textContent=pct+'%';}
 function updateStats(){renderDash();renderReviewBadge();}
-function finishProcessing(){
+async function finishProcessing(){
   setPhase('Detecting duplicate properties',95);
   detectDupes();
   rebuildDealers();
   setPhase('Done ✓ '+PROPS.length+' properties',100);
-  PROC.running=false;$('#pauseBtn').disabled=true;$('#resumeBtn').disabled=true;refreshStartBtn();
+  PROC.running=false;$('#pauseBtn').disabled=true;$('#resumeBtn').disabled=true;
+  await persistCore();
+  refreshStartBtn();updateFeedStatus();
   log('Finished. '+PROPS.length+' properties in inventory.');
   toast('Done — '+PROPS.length+' properties');
   renderAll();
@@ -757,26 +654,26 @@ function rebuildDealers(){
 }
 
 /* ============================================================
-   7. RENDERING
+   5. RENDERING
    ============================================================ */
-function renderAll(){renderInventory();renderReview();renderDealers();renderDash();renderReviewBadge();updateAIStatus();}
+function renderAll(){renderInventory();renderReview();renderDealers();renderDash();renderFeed();renderReviewBadge();updateAIStatus();}
 
 function renderDash(){
   const st=$('#dashStats');if(!st)return;
   const rev=PROPS.filter(p=>p.status==='NEEDS REVIEW').length;
   const dup=PROPS.filter(p=>p.dupes&&p.dupes.length).length;
-  const uniqMedia=MEDIA.filter(m=>!m.dup).length;
-  const matched=MEDIA.filter(m=>m.propId).length;
+  const groups=new Set(FEED.map(f=>f.groupName||f.groupId)).size;
+  const unproc=FEED.filter(f=>!SEEN.has(f.id)).length;
   const cards=[
-    ['Messages',CHAT.messages.length,''],['Media',MEDIA.length,'blue'],['Unique media',uniqMedia,''],['Matched',matched,'green'],
+    ['Responses',FEED.length||CHAT.messages.length,''],['Groups',groups,''],['With media',MEDIA.length,'blue'],['Not processed',unproc,'amber'],
     ['Properties',PROPS.length,'green'],['Needs review',rev,'amber'],['Possible dupes',dup,'red'],['Dealers',Object.keys(DEALERS).length,'']
   ];
   st.innerHTML=cards.map(([l,n,c])=>`<div class="stat ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
-  if(!PROC.running&&PROC.phase==='idle')setPhase('Idle — import & press Start',0);
+  if(!PROC.running&&PROC.phase==='idle')setPhase('Idle — press Start on the Import tab',0);
 }
 
 function renderReviewBadge(){
-  const rev=PROPS.filter(p=>p.status==='NEEDS REVIEW').length + MEDIA.filter(m=>!m.dup&&!m.propId&&m.conf>=40&&m.conf<CFG.conf).length;
+  const rev=PROPS.filter(p=>p.status==='NEEDS REVIEW').length;
   const w=$('#revBadgeWrap');w.innerHTML=rev?`<span class="badge">${rev}</span>`:'';
 }
 
@@ -785,7 +682,6 @@ function statusClass(s){return {'NEW':'new','VERIFIED':'verified','NEEDS REVIEW'
 function renderInventory(){
   const box=$('#invList');if(!box)return;
   const q=(($('#invSearch')||{}).value||'').toLowerCase().trim();
-  // filters
   const fbox=$('#invFilters');
   const cats=['ALL','NEW','NEEDS REVIEW','VERIFIED','DUPLICATE','ARCHIVED','With media','With video'];
   fbox.innerHTML=cats.map(c=>`<div class="f ${currentFilter===c?'on':''}" onclick="setFilter('${c}')">${c}</div>`).join('');
@@ -794,17 +690,20 @@ function renderInventory(){
   else if(currentFilter==='With video')list=list.filter(p=>p.counts&&p.counts.videos);
   else if(currentFilter!=='ALL')list=list.filter(p=>p.status===currentFilter);
   if(q)list=list.filter(p=>JSON.stringify(p).toLowerCase().includes(q));
-  if(!list.length){box.innerHTML=`<div class="empty"><div class="big">🏢</div>${PROPS.length?'No properties match.':'No properties yet. Import a chat + media and press Start.'}</div>`;return;}
+  if(!list.length){box.innerHTML=`<div class="empty"><div class="big">🏢</div>${PROPS.length?'No properties match.':'No properties yet. Press Start processing on the Import tab.'}</div>`;return;}
   box.innerHTML=list.map(p=>{
     const meta=[p.bhk,p.property_type,p.location||p.sector,p.area?p.area+' '+(p.area_unit||''):''].filter(Boolean).join(' · ');
     const mc=p.counts||{};
     const badges=[mc.photos?'📷'+mc.photos:'',mc.videos?'🎬'+mc.videos:'',mc.docs?'📄'+mc.docs:'',mc.audio?'🎙'+mc.audio:''].filter(Boolean).join('  ');
+    const thumb=(p.imageUrls&&p.imageUrls[0])?`<img class="li-thumb" src="${esc(p.imageUrls[0])}" loading="lazy">`:'';
     return `<div class="list-item" onclick="openProp('${p.id}')">
+      ${thumb}
       <div class="li-top"><div class="li-title">${esc(p.title)}</div><div class="li-price">${esc(money(p.price))}</div></div>
       <div class="li-meta">${esc(meta)}</div>
       <div class="li-foot">
         <span class="chip ${statusClass(p.status)}">${p.status}</span>
         <span class="mini">👤 ${esc(p.dealer_name||'—')}</span>
+        ${p.sourceGroup?`<span class="mini">👥 ${esc(p.sourceGroup)}</span>`:''}
         ${badges?`<span class="mini">${badges}</span>`:''}
         ${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} dup?</span>`:''}
         ${p.published?`<span class="chip verified">✓ Published</span>`:''}
@@ -824,7 +723,6 @@ function openProp(id){
   ];
   const msgs=CHAT.messages.filter(m=>p.msgIds.includes(m.id));
   const media=MEDIA.filter(m=>p.mediaIds.includes(m.id));
-  const revMedia=MEDIA.filter(m=>p.reviewMediaIds&&p.reviewMediaIds.includes(m.id));
   const dupes=(p.dupes||[]).map(d=>{const dp=PROPS.find(x=>x.id===d.id);return dp?`<div class="list-item" onclick="openProp('${dp.id}')"><div class="li-top"><div class="li-title">${esc(dp.title)}</div><div class="li-price">${esc(money(dp.price))}</div></div><div class="li-meta">${esc([dp.bhk,dp.location].filter(Boolean).join(' · '))} · <b>${d.sim}% similar</b></div></div>`:'';}).join('');
   const box=$('#modalBox');
   box.innerHTML=`<span class="x" onclick="closeModal()">✕</span>
@@ -841,20 +739,18 @@ function openProp(id){
     <h3 style="margin-top:14px">Dealer</h3>
     <div class="field"><span class="k">Name</span><span class="v">${esc(p.dealer_name||'—')}</span></div>
     <div class="field"><span class="k">Phone</span><span class="v">${p.dealer_phone?`<a href="tel:${esc(p.dealer_phone)}">${esc(p.dealer_phone)}</a>`:'—'}</span></div>
-    <div class="field"><span class="k">Source group</span><span class="v">${esc(p.sourceGroup||'—')}</span></div>
+    <div class="field"><span class="k">WhatsApp group</span><span class="v">${esc(p.sourceGroup||'—')}</span></div>
 
     <h3 style="margin-top:14px">Property data</h3>
     ${fields.filter(f=>f[1]).map(f=>`<div class="field"><span class="k">${f[0]}</span><span class="v">${esc(f[1])} ${f[2]||''}</span></div>`).join('')}
     ${(p.amenities&&p.amenities.length)?`<div style="margin-top:8px">${p.amenities.map(a=>`<span class="chip">${esc(a)}</span>`).join('')}</div>`:''}
 
     ${media.length?`<h3 style="margin-top:14px">Media (${media.length})</h3><div class="gal">${media.map(m=>mediaCell(m)).join('')}</div>`:''}
-    ${revMedia.length?`<h3 style="margin-top:14px">Possible media — needs review</h3><div class="gal">${revMedia.map(m=>mediaCell(m,p.id)).join('')}</div>`:''}
-    ${(media.length===0&&MEDIA.length>0)?`<p class="tiny" style="margin-top:10px">No media auto-matched. Re-open with files selected to view images, or lower the confidence threshold in Setup.</p>`:''}
 
     ${dupes?`<h3 style="margin-top:14px">Possible duplicates</h3>${dupes}`:''}
 
     <h3 style="margin-top:14px">Original WhatsApp messages (${msgs.length})</h3>
-    ${msgs.map(m=>`<div class="msg"><span class="when">${fmtDate(m.ts)}</span><div class="who">${esc(m.sender||'—')}</div>${esc(m.text)}</div>`).join('')}
+    ${msgs.map(m=>`<div class="msg"><span class="when">${fmtDate(m.ts)}</span><div class="who">${esc(m.sender||'—')}</div>${esc(m.text)}${m.mediaUrl&&m.mediaType==='image'?`<img class="th" src="${esc(m.mediaUrl)}" loading="lazy">`:''}</div>`).join('')}
 
     <div class="divider"></div>
     <h3>Actions</h3>
@@ -880,7 +776,7 @@ async function publishToCRM(id){
     const r=await fetch('/api/inventory-intel/publish',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(p)
+      body:JSON.stringify(Object.assign({},p,{image_urls:p.imageUrls||[],video_urls:p.videoUrls||[]}))
     });
     const j=await r.json();
     if(j.success){
@@ -893,33 +789,27 @@ async function publishToCRM(id){
     }
   }catch(e){toast('Network error publishing');}
 }
-function mediaCell(m,reviewForProp){
-  const t=m.type;
-  let inner='';
-  if(m.file&&t==='image'){const u=URL.createObjectURL(m.file);inner=`<img src="${u}" loading="lazy">`;}
-  else if(m.file&&t==='video'){const u=URL.createObjectURL(m.file);inner=`<video src="${u}" muted></video>`;}
-  else{inner=`<div class="doc">${t==='pdf'?'📄 PDF':t==='audio'?'🎙 Audio':t==='video'?'🎬 Video':t==='document'?'📄 Doc':'📎'}<br><span class="tiny">${esc(m.name.slice(0,22))}</span></div>`;}
-  const rev=reviewForProp?`<div style="position:absolute;bottom:0;left:0;right:0;display:flex"><button class="btn sm" style="border-radius:0;flex:1;padding:5px;font-size:11px" onclick="event.stopPropagation();confirmMedia('${m.id}','${reviewForProp}')">✓</button><button class="btn sm danger" style="border-radius:0;flex:1;padding:5px;font-size:11px" onclick="event.stopPropagation();rejectMedia('${m.id}','${reviewForProp}')">✕</button></div>`:'';
-  return `<div class="m" onclick="viewMedia('${m.id}')"><span class="type">${m.conf!=null?m.conf+'%':t}</span>${inner}${rev}</div>`;
+function mediaCell(m){
+  const t=m.type;let inner='';
+  if(m.url&&t==='image')inner=`<img src="${esc(m.url)}" loading="lazy">`;
+  else if(m.url&&t==='video')inner=`<video src="${esc(m.url)}" muted preload="metadata"></video>`;
+  else inner=`<div class="doc">${t==='pdf'?'📄 PDF':t==='audio'?'🎙 Audio':t==='video'?'🎬 Video':t==='document'?'📄 Doc':'📎'}<br><span class="tiny">${esc((m.name||'').slice(0,22))}</span></div>`;
+  return `<div class="m" onclick="viewMedia('${m.id}')"><span class="type">${t}</span>${inner}</div>`;
 }
 function viewMedia(id){
-  const m=MEDIA.find(x=>x.id===id);if(!m||!m.file){toast('Re-select files to view this media');return;}
-  const b=$('#mediaBox');const u=URL.createObjectURL(m.file);
+  const m=MEDIA.find(x=>x.id===id);if(!m||!m.url){toast('No media URL');return;}
+  const b=$('#mediaBox');const u=esc(m.url);
   if(m.type==='image')b.innerHTML=`<span class="x" style="color:#fff;padding:8px" onclick="closeMedia()">✕</span><img src="${u}">`;
   else if(m.type==='video')b.innerHTML=`<span class="x" style="color:#fff;padding:8px" onclick="closeMedia()">✕</span><video src="${u}" controls autoplay></video>`;
   else if(m.type==='audio')b.innerHTML=`<div style="padding:24px;background:var(--panel)"><span class="x" onclick="closeMedia()">✕</span><h3>${esc(m.name)}</h3><audio src="${u}" controls autoplay style="width:100%"></audio></div>`;
-  else{const a=document.createElement('a');a.href=u;a.download=m.name;a.click();return;}
+  else{window.open(m.url,'_blank','noopener');return;}
   $('#mediaModal').classList.add('open');
 }
-function closeMedia(){$('#mediaModal').classList.remove('open');}
+function closeMedia(){$('#mediaModal').classList.remove('open');$('#mediaBox').innerHTML='';}
 function closeModal(){$('#modal').classList.remove('open');}
 
-function confirmMedia(mid,pid){const m=MEDIA.find(x=>x.id===mid),p=PROPS.find(x=>x.id===pid);if(!m||!p)return;m.propId=pid;m.conf=100;p.mediaIds.push(mid);p.reviewMediaIds=p.reviewMediaIds.filter(x=>x!==mid);recountMedia(p);idbSet('props',p);openProp(pid);renderReviewBadge();toast('Attached');}
-function rejectMedia(mid,pid){const p=PROPS.find(x=>x.id===pid);if(!p)return;p.reviewMediaIds=p.reviewMediaIds.filter(x=>x!==mid);idbSet('props',p);openProp(pid);renderReviewBadge();}
-function recountMedia(p){const media=MEDIA.filter(m=>p.mediaIds.includes(m.id));p.counts={photos:media.filter(m=>m.type==='image').length,videos:media.filter(m=>m.type==='video').length,docs:media.filter(m=>m.type==='pdf'||m.type==='document').length,audio:media.filter(m=>m.type==='audio').length};}
-
 function setStatus(id,s){const p=PROPS.find(x=>x.id===id);if(!p)return;p.status=s;idbSet('props',p);toast('Status: '+s);openProp(id);renderInventory();renderReviewBadge();}
-function deleteProp(id){if(!confirm('Delete this property record? (Media files on your phone are untouched.)'))return;PROPS=PROPS.filter(p=>p.id!==id);try{const t=db.transaction('props','readwrite');t.objectStore('props').delete(id);}catch(e){}closeModal();rebuildDealers();renderAll();toast('Deleted');}
+function deleteProp(id){if(!confirm('Delete this property record from this browser?'))return;PROPS=PROPS.filter(p=>p.id!==id);try{const t=db.transaction('props','readwrite');t.objectStore('props').delete(id);}catch(e){}closeModal();rebuildDealers();renderAll();toast('Deleted');}
 function editProp(id){
   const p=PROPS.find(x=>x.id===id);if(!p)return;
   const flds=['title','dealer_name','dealer_phone','property_type','bhk','location','sector','project','city','area','area_unit','price','furnishing','floor','facing','parking'];
@@ -938,17 +828,10 @@ function saveEdit(id){
 function renderReview(){
   const box=$('#reviewList');if(!box)return;
   const props=PROPS.filter(p=>p.status==='NEEDS REVIEW');
-  const orphanMedia=MEDIA.filter(m=>!m.dup&&!m.propId&&m.conf>=40&&m.conf<CFG.conf);
-  let html='';
-  if(props.length){html+='<div class="card"><h3>Properties needing review ('+props.length+')</h3></div>';
-    html+=props.map(p=>`<div class="list-item" onclick="openProp('${p.id}')">
+  const html=props.map(p=>`<div class="list-item" onclick="openProp('${p.id}')">
       <div class="li-top"><div class="li-title">${esc(p.title)}</div><div class="li-price">${esc(money(p.price))}</div></div>
       <div class="li-meta">${esc([p.bhk,p.location].filter(Boolean).join(' · '))}</div>
-      <div class="li-foot"><span class="chip review">${p.confidence}% confidence</span>${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} possible dup</span>`:''}${p.reviewMediaIds&&p.reviewMediaIds.length?`<span class="chip">${p.reviewMediaIds.length} media?</span>`:''}</div></div>`).join('');
-  }
-  if(orphanMedia.length){
-    html+='<div class="card" style="margin-top:14px"><h3>Unmatched media ('+orphanMedia.length+')</h3><p class="small">Below your auto-attach threshold. Open a property and use its review section to attach, or lower the threshold in Setup.</p></div>';
-  }
+      <div class="li-foot"><span class="chip review">${p.confidence}% confidence</span>${p.dupes&&p.dupes.length?`<span class="chip dup">${p.dupes.length} possible dup</span>`:''}</div></div>`).join('');
   box.innerHTML=html||`<div class="empty"><div class="big">✅</div>Nothing needs review.</div>`;
 }
 
@@ -978,13 +861,13 @@ function openDealer(key){
 }
 
 /* ============================================================
-   8. SETUP / CONFIG
+   6. SETUP / CONFIG
    ============================================================ */
 function saveKey(){
   const m=$('#orModel').value.trim();
   if(m)localStorage.setItem('nisha_or_model',m);
   $('#keyStatus').innerHTML='✓ Model saved.';
-  updateAIStatus();refreshStartBtn();toast('AI settings saved');
+  updateAIStatus();toast('AI settings saved');
 }
 async function testKey(){
   $('#keyStatus').innerHTML='<span class="spin"></span> Testing…';
@@ -999,12 +882,12 @@ function updateAIStatus(){
   $('#aiHomeStatus').innerHTML=`✓ Connected · model <b>${esc(getModel())}</b> (server key)`;
 }
 function saveCfg(){
-  CFG.window=+$('#cfgWindow').value||15;CFG.conf=+$('#cfgConf').value||75;CFG.gap=+$('#cfgGap').value||12;CFG.dateOrder=$('#cfgDateOrder').value;
-  localStorage.setItem('nisha_cfg',JSON.stringify(CFG));toast('Settings saved');refreshStartBtn();
+  CFG.gap=+$('#cfgGap').value||12;
+  localStorage.setItem('nisha_cfg',JSON.stringify(CFG));toast('Settings saved');
 }
 
 /* ============================================================
-   9. EXPORT
+   7. EXPORT
    ============================================================ */
 function exportRows(){
   return PROPS.map(p=>({
@@ -1013,9 +896,10 @@ function exportRows(){
     'Area':p.area,'Unit':p.area_unit,'Price':p.price,'Deal':p.transaction||p.price_type,
     'Furnishing':p.furnishing,'Floor':p.floor,'Facing':p.facing,'Parking':p.parking,
     'Amenities':(p.amenities||[]).join('; '),'Tags':(p.tags||[]).join('; '),
-    'Status':p.status,'Confidence':p.confidence,'Source Group':p.sourceGroup,
+    'Status':p.status,'Confidence':p.confidence,'WhatsApp Group':p.sourceGroup,
     'Source Date':p.startTs?new Date(p.startTs).toLocaleString('en-IN'):'',
-    'Photos':p.counts?p.counts.photos:0,'Videos':p.counts?p.counts.videos:0,'Docs':p.counts?p.counts.docs:0,'Audio':p.counts?p.counts.audio:0,
+    'Photos':p.counts?p.counts.photos:0,'Videos':p.counts?p.counts.videos:0,'Docs':p.counts?p.counts.docs:0,
+    'Image URLs':(p.imageUrls||[]).join(' | '),
     'Possible Dupes':p.dupes?p.dupes.length:0,'Summary':p.summary
   }));
 }
@@ -1043,14 +927,14 @@ function doXLSX(){
 }
 
 /* ============================================================
-   10. RESET
+   8. RESET  (local only — webhook history on the server is untouched)
    ============================================================ */
 async function resetAll(){
-  if(!confirm('Clear the chat, media index and all extracted properties from this browser? Your original files on the phone are NOT touched.'))return;
+  if(!confirm('Clear extracted properties and processing history from this browser? Webhook messages on the server are NOT deleted, so the next Start will process them again.'))return;
   try{await idbClear('props');await idbClear('media');await idbClear('kv');}catch(e){}
-  CHAT={name:'',messages:[]};MEDIA=[];PROPS=[];DEALERS={};PROC={running:false,paused:false,phase:'idle',done:0,total:0,queue:[]};
-  $('#chatStatus').innerHTML='';$('#mediaStatus').innerHTML='';$('#chatBtn').classList.remove('done');
-  renderAll();refreshStartBtn();toast('Cleared');go('home');
+  CHAT={name:'Webhook feed',messages:[]};MEDIA=[];PROPS=[];DEALERS={};SEEN=new Set();
+  PROC={running:false,paused:false,phase:'idle',done:0,total:0,queue:[]};
+  updateFeedStatus();renderAll();refreshStartBtn();toast('Cleared');go('home');
 }
 </script>
 </body>
