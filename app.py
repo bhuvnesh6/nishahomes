@@ -586,10 +586,17 @@ def parse_created_at_str(s):
 # =============================
 # AI PROPERTY AUTOFILL (Sanjivani LLM)
 # =============================
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-LLM_CHAT_URL = "https://llm.sanjivanitechno.com/v1/chat/completions"
+# ---- CHAT / TEXT GENERATION now runs on OpenRouter ----
+# LLM_API_KEY keeps its old name on purpose: every existing guard
+# (`if not LLM_API_KEY`, MISTRAL_API_KEY2/3, FOLLOWUP_MISTRAL_KEY ...) now
+# automatically points at the OpenRouter key.
+LLM_API_KEY = os.getenv("OPENROUTER_API_KEY")
+LLM_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+LLM_CHAT_MODEL = os.getenv("OPENROUTER_CHAT_MODEL", "openai/gpt-4o-mini")
+
+# ---- EMBEDDINGS stay on the old endpoint (so existing vectors + Atlas index keep working) ----
+EMBED_API_KEY = os.getenv("LLM_API_KEY")   # the OLD key, now used for embeddings only
 LLM_EMBED_URL = "https://llm.sanjivanitechno.com/v1/embeddings"
-LLM_CHAT_MODEL = "gpt-oss:120b"
 LLM_EMBED_MODEL = "bge-small-en-v1.5"
 
 # Kept for backward compatibility with code below that still references
@@ -613,12 +620,15 @@ def _extract_json_from_llm(raw_content):
 
 def call_llm_chat(system_prompt, user_content, temperature=0.3, timeout=60, model=None):
     """
-    Shared chat-completion caller for the Sanjivani LLM endpoint
-    (OpenAI-compatible /v1/chat/completions). Returns the raw text content
-    of the model's reply. Raises on HTTP errors.
+    Shared chat-completion caller — now backed by OpenRouter
+    (OpenAI-compatible /api/v1/chat/completions). Used by the WhatsApp AI
+    agent, AI lead scoring, follow-up messages, intent classification,
+    inventory autofill and AI-call requirement extraction.
+    Returns the raw text content of the model's reply. Raises on HTTP errors.
+    Retries once on rate-limit (429) / 5xx from OpenRouter.
     """
     if not LLM_API_KEY:
-        raise RuntimeError("LLM_API_KEY not configured in .env")
+        raise RuntimeError("OPENROUTER_API_KEY not configured in .env")
 
     payload = {
         "model": model or LLM_CHAT_MODEL,
@@ -628,16 +638,22 @@ def call_llm_chat(system_prompt, user_content, temperature=0.3, timeout=60, mode
         ],
         "temperature": temperature
     }
+    headers = {
+        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://nishahomes.com",
+        "X-Title": "Nisha Homes CRM"
+    }
 
-    resp = requests.post(
-        LLM_CHAT_URL,
-        headers={
-            "Authorization": f"Bearer {LLM_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json=payload,
-        timeout=timeout
-    )
+    resp = None
+    for attempt in (1, 2):
+        resp = requests.post(LLM_CHAT_URL, headers=headers, json=payload, timeout=timeout)
+        if resp.status_code in (429, 500, 502, 503, 504) and attempt == 1:
+            print(f"[llm] OpenRouter returned {resp.status_code}, retrying once...")
+            time.sleep(2)
+            continue
+        break
+
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
@@ -6118,17 +6134,18 @@ MISTRAL_EMBED_URL = LLM_EMBED_URL  # alias kept so any other reference still wor
 VECTOR_INDEX_NAME = "ProjectsSearch"  # must match your Atlas Search index name exactly
 
 def get_embedding(text: str):
-    """Returns an embedding vector for the given text using the Sanjivani LLM embeddings endpoint, or None on failure."""
+    """Returns an embedding vector for the given text using the Sanjivani embeddings endpoint
+    (kept so existing stored vectors / the Atlas vector index stay valid), or None on failure."""
     if not text or not text.strip():
         return None
-    if not LLM_API_KEY:
-        print("[embed] LLM_API_KEY not configured")
+    if not EMBED_API_KEY:
+        print("[embed] LLM_API_KEY (embeddings key) not configured")
         return None
     try:
         resp = requests.post(
             LLM_EMBED_URL,
             headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Authorization": f"Bearer {EMBED_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={"model": LLM_EMBED_MODEL, "input": text[:8000]},
