@@ -7363,6 +7363,8 @@ def process_single_followup(ctx):
 # BATCH RUNNER — gathers eligible leads, sends in a paced/rate-limited way
 # ---------------------------------------------------------------------
 def run_followup_scan_and_send():
+    if not LEGACY_FOLLOWUPS_ENABLED:
+        return
     while True:
         if not is_within_business_hours():
             print("[followup] outside business hours (10am-7pm IST) — pausing until next window")
@@ -7454,10 +7456,15 @@ def followup_scheduler_loop():
 _followup_thread_started = False
  
  
+LEGACY_FOLLOWUPS_ENABLED = False   # old automatic follow-ups are OFF (90-day engine replaces them)
+
 def start_followup_scheduler():
     """Starts the background follow-up thread exactly once per process,
     and avoids a double-start under Flask's debug-mode reloader."""
     global _followup_thread_started
+    if not LEGACY_FOLLOWUPS_ENABLED:
+        print("[followup] legacy follow-up scheduler is DISABLED")
+        return
     if _followup_thread_started:
         return
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
@@ -7477,7 +7484,7 @@ def followups_page():
     if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
         return redirect("/")
     return render_template(
-        "followups.html",
+        "followup_engine.html",
         employee_name=session.get("employee_name"),
         employee_number=session.get("employee_number"),
         role=session.get("role"),
@@ -9255,6 +9262,12 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         phone = normalize_phone_91(phone)
 
+        try:
+            if globals().get("fu90_on_inbound"):
+                fu90_on_inbound(phone, user_text)
+        except Exception as _fu_err:
+            print(f"[fu90] inbound hook failed: {_fu_err}")
+
         # ---- OPT-OUT: stop / spam complaint / wrong number -> delete everything, reply nothing ----
         if is_followup_optout_message(user_text):
             purge_optout_number(phone, user_text, "whatsapp-ai")
@@ -9896,6 +9909,11 @@ def team_webhook_receiver(token):
             # inbound customer messages aren't a "caller" action.
             # NEW: customer said "stop / do not spam" -> stop their follow-ups
             if direction == "in":
+                try:
+                    if globals().get("fu90_on_inbound"):
+                        fu90_on_inbound(number, message_text)
+                except Exception as _fu_err:
+                    print(f"[fu90] inbound hook failed: {_fu_err}")
                 _lvl = detect_optout_level(message_text)
                 if _lvl == "hard" or (_lvl == "soft" and OPTOUT_PURGE_NOT_INTERESTED):
                     purge_optout_number(number, message_text, "team-webhook")
@@ -12976,6 +12994,9 @@ def admin_rescore_leads():
     ).start()
     return jsonify({"success": True, "message": "Scoring started in background - check server logs"}), 200
 
+
+import followup90
+followup90.register(globals())   # 90-day follow-up engine (routes + scheduler)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

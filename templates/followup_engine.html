@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>90-Day Follow-Up Engine · Nisha Homes</title>
+<style>
+:root{--bg:#f5f3ee;--card:#fff;--ink:#111827;--mut:#6b7280;--line:#e1ded6;--navy:#10131c;--gold:#c4a45c;--org:#ed8049;--blue:#2563eb;--grn:#15803d;--red:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#14161c;--card:#1d2029;--ink:#eceef3;--mut:#9aa1b0;--line:#2e3340}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:3px solid var(--gold)}
+header h1{margin:0;font-size:17px;color:var(--gold)}header a{color:#cbd0dc;text-decoration:none;font-size:13px}
+.tabs{display:flex;gap:6px;margin-left:auto}.tab,.chip,button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 12px;border-radius:8px}
+.tab.on,.chip.on{background:var(--org);color:#fff;border-color:var(--org)}button.pri{background:var(--org);color:#fff;border-color:var(--org)}button.dng{color:var(--red)}button:disabled{opacity:.5}
+main{padding:14px 18px}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.mut{color:var(--mut)}
+#canvasWrap{position:relative;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);height:calc(100vh - 190px);min-height:420px;background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px}
+#canvas{position:relative}#canvas svg{position:absolute;left:0;top:0;pointer-events:none}
+.node{position:absolute;width:230px;height:132px;background:var(--card);border:1px solid var(--line);border-top:5px solid var(--blue);border-radius:10px;padding:7px 9px;cursor:pointer;overflow:hidden;box-shadow:0 1px 3px #0002}
+.node:hover,.node.sel{outline:2px solid var(--org)}.node.PROP,.node.PROP2{border-top-color:var(--gold)}.node.CHECKIN,.node.SNAPSHOT{border-top-color:var(--grn)}.node.off{opacity:.45}
+.node b{font-size:12px}.node .a{float:right;font-size:11px;color:var(--mut)}.node p{margin:4px 0 0;font-size:12px;color:var(--mut);max-height:66px;overflow:hidden}
+.node .m{position:absolute;left:9px;bottom:6px;font-size:11px;color:var(--mut)}.node img{position:absolute;right:8px;bottom:6px;width:34px;height:34px;object-fit:cover;border-radius:5px}
+#panel{position:fixed;right:0;top:0;bottom:0;width:410px;max-width:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:-4px 0 14px #0003;padding:14px;overflow:auto;transform:translateX(105%);transition:.2s;z-index:20}
+#panel.open{transform:none}#panel label{display:block;margin:10px 0 3px;font-weight:600;font-size:12px}
+textarea,input,select{width:100%;font:inherit;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}textarea{min-height:110px;resize:vertical}
+.bubble{background:#dcf8c6;color:#111;border-radius:10px;padding:8px 10px;white-space:pre-wrap;font-size:13px;margin-top:6px}.bubble img{width:100%;border-radius:6px;margin-bottom:6px}
+.legend{font-size:12px;color:var(--mut);background:var(--bg);padding:6px 8px;border-radius:8px;margin-top:4px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden}th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}th{background:var(--navy);color:#fff}
+.st{padding:2px 8px;border-radius:99px;font-size:11px;background:var(--line)}.st.ACTIVE_SEQUENCE{background:#dcfce7;color:#166534}.st.PAUSED{background:#fef9c3;color:#854d0e}.st.STOPPED{background:#fee2e2;color:#991b1b}.st.HUMAN_HANDOFF{background:#dbeafe;color:#1e40af}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}.kpi b{font-size:22px;display:block}
+.modal{position:fixed;inset:0;background:#0007;z-index:30;display:none;align-items:center;justify-content:center}.modal.open{display:flex}.box{background:var(--card);border-radius:12px;padding:14px;width:min(900px,94vw);max-height:86vh;overflow:auto}
+.pick{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid transparent}.pick:hover{border-color:var(--org)}
+.sw{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:9px 16px;border-radius:10px;display:none;z-index:50}
+</style>
+</head>
+<body>
+<header>
+  <h1>NISHA HOMES · 90-Day Follow-Up Engine</h1>
+  <a href="/admin">← Dashboard</a>
+  <div class="tabs">
+    <button class="tab on" data-t="journey">Journey canvas</button>
+    <button class="tab" data-t="customers">Customers</button>
+    <button class="tab" data-t="settings">Engine &amp; stats</button>
+  </div>
+</header>
+<main>
+  <!-- ============ JOURNEY ============ -->
+  <section id="t-journey">
+    <div class="bar" id="segBar"></div>
+    <div class="bar mut" id="segInfo"></div>
+    <div id="canvasWrap"><div id="canvas"><svg id="wires"></svg></div></div>
+  </section>
+
+  <!-- ============ CUSTOMERS ============ -->
+  <section id="t-customers" hidden>
+    <div class="bar">
+      <input id="cq" placeholder="Search name / phone" style="max-width:220px">
+      <select id="cs" style="max-width:170px"><option value="">All states</option><option>ACTIVE_SEQUENCE</option><option>PAUSED</option><option>HUMAN_HANDOFF</option><option>QUARTERLY_NURTURE</option><option>STOPPED</option><option>NURTURE_DONE</option></select>
+      <select id="cg" style="max-width:150px"><option value="">All journeys</option><option value="buyer">Buyer</option><option value="tenant">Tenant</option><option value="seller">Seller</option><option value="investor">Investor</option></select>
+      <button class="pri" onclick="loadCust()">Load</button><span class="mut" id="ccount"></span>
+    </div>
+    <div style="overflow:auto"><table><thead><tr><th>Customer</th><th>Journey</th><th>State</th><th>Sent</th><th>Next send</th><th>Last sent</th><th>Score</th><th></th></tr></thead><tbody id="ctb"></tbody></table></div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="t-settings" hidden>
+    <div class="bar">
+      <div class="sw"><b>Engine</b><label><input type="checkbox" id="s_enabled" style="width:auto"> ON (sends to customers)</label></div>
+      <button class="pri" onclick="saveSettings()">Save settings</button>
+      <button onclick="runNow()">Run a scan now</button>
+      <span class="mut" id="winInfo"></span>
+    </div>
+    <div class="grid" id="kpis" style="margin:10px 0 16px"></div>
+    <div class="grid">
+      <div><label>Minimum AI score (high-quality leads only)<input type="number" id="s_min_score" min="1" max="100"></label></div>
+      <div><label>Daily send cap<input type="number" id="s_daily_cap"></label></div>
+      <div><label>Max sends per scan (5 min)<input type="number" id="s_per_scan"></label></div>
+      <div><label>New leads enrolled per day<input type="number" id="s_enroll_per_day"></label></div>
+      <div><label>Gap between sends – min sec<input type="number" id="s_gap_min"></label></div>
+      <div><label>Gap between sends – max sec<input type="number" id="s_gap_max"></label></div>
+      <div><label>TEST: 1 journey day = N minutes (0 = real)<input type="number" id="s_test_day_minutes"></label></div>
+      <div><label>TEST: ignore sending window<select id="s_ignore_window"><option value="0">No</option><option value="1">Yes</option></select></label></div>
+    </div>
+    <p class="mut">Sending window: 10:30–13:00 and 17:30–20:00 IST, Monday–Saturday. Max 3 messages per customer in any 7 days. Any customer reply pauses the journey; it resumes after 72 hours of silence.</p>
+  </section>
+</main>
+
+<!-- ============ NODE EDITOR ============ -->
+<aside id="panel">
+  <div style="display:flex;justify-content:space-between;align-items:center"><b id="pTitle"></b><button onclick="closePanel()">✕</button></div>
+  <div class="mut" id="pSub"></div>
+  <label>Message <span class="mut">(exact text from the guide — editable)</span></label>
+  <textarea id="f_message" oninput="preview()"></textarea>
+  <div class="legend" id="legend"></div>
+  <label>Footer <span class="mut">(replaces the buttons, since Wirebase has no buttons)</span></label>
+  <textarea id="f_footer" style="min-height:60px" oninput="preview()"></textarea>
+  <div id="altBox" hidden><label>Day-90 alternative message (when no verified listing)</label><textarea id="f_alt" style="min-height:80px"></textarea></div>
+  <label>Media (sent with the message, from Inventory – never the banner)</label>
+  <select id="f_mode" onchange="preview()"><option value="auto">Auto – inventory photo (property messages: that listing’s photo)</option><option value="custom">Custom – choose a photo</option><option value="none">No media (text only)</option></select>
+  <div style="display:flex;gap:6px;margin-top:6px"><input id="f_url" placeholder="https://…" oninput="preview()"><button onclick="openPicker()">Pick from inventory</button></div>
+  <label>Day of journey <input type="number" id="f_day" min="1" max="90"></label>
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="f_enabled" style="width:auto"> This step is enabled</label>
+  <label>Preview</label><div id="pv"></div>
+  <div style="display:flex;gap:8px;margin-top:14px"><button class="pri" onclick="saveNode()">Save</button><button class="dng" onclick="resetSeg()">Reset this journey to guide</button></div>
+</aside>
+
+<div class="modal" id="picker"><div class="box">
+  <div class="bar"><b>Inventory photos</b><input id="pq" placeholder="Search property / location" style="max-width:260px" oninput="loadPool()"><button onclick="closePicker()">Close</button><span class="mut" id="pcount"></span></div>
+  <div class="grid" id="pgrid"></div>
+</div></div>
+<div class="modal" id="logm"><div class="box"><div class="bar"><b id="logT"></b><button onclick="document.getElementById('logm').classList.remove('open')">Close</button></div><div id="logB"></div></div></div>
+<div id="toast"></div>
+
+<script>
+const ROLE = {{ role|tojson }};
+const NW=230, NH=132, GX=64, GY=78, COLS=5, PAD=30;
+let J = {}, SEGS = {}, seg = 'buyer', cur = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const toast = m => { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2600); };
+async function api(url, method = 'GET', body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({})); if (!r.ok && !d.message) d.message = 'Error ' + r.status; return d;
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+  ['journey','customers','settings'].forEach(t => $('t-' + t).hidden = t !== b.dataset.t);
+  if (b.dataset.t === 'customers') loadCust(); if (b.dataset.t === 'settings') loadSettings();
+});
+
+/* ---------- journey canvas ---------- */
+async function loadJourneys() {
+  const d = await api('/api/fu90/journeys'); if (!d.success) return toast(d.message);
+  J = d.journeys; SEGS = d.segments; drawSegBar(); draw();
+}
+function drawSegBar() {
+  $('segBar').innerHTML = Object.entries(SEGS).map(([k, v]) => `<button class="chip ${k === seg ? 'on' : ''}" onclick="setSeg('${k}')">${v}</button>`).join('') +
+    `<button class="chip ${seg === 'spare' ? 'on' : ''}" onclick="setSeg('spare')">Spare pool (fallback posters)</button>`;
+}
+function setSeg(k) { seg = k; closePanel(); drawSegBar(); draw(); }
+function pos(i) { const r = Math.floor(i / COLS); let c = i % COLS; if (r % 2) c = COLS - 1 - c; return { x: PAD + c * (NW + GX), y: PAD + r * (NH + GY), r }; }
+function draw() {
+  const nodes = J[seg] || [], cv = $('canvas'), svg = $('wires'), spare = seg === 'spare';
+  cv.querySelectorAll('.node').forEach(n => n.remove());
+  const rows = Math.ceil(nodes.length / COLS);
+  const W = PAD * 2 + COLS * NW + (COLS - 1) * GX, H = PAD * 2 + rows * NH + (rows - 1) * GY;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px'; svg.setAttribute('width', W); svg.setAttribute('height', H);
+  let wires = '<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c4a45c"/></marker></defs>';
+  nodes.forEach((n, i) => {
+    const p = pos(i), d = document.createElement('div');
+    d.className = `node ${n.kind} ${n.enabled === false ? 'off' : ''} ${cur && cur.i === i ? 'sel' : ''}`;
+    d.style.left = p.x + 'px'; d.style.top = p.y + 'px';
+    const mm = n.media_mode === 'custom' ? '🖼 custom photo' : n.media_mode === 'none' ? '🚫 no media' : '🖼 inventory photo';
+    d.innerHTML = `<b>${spare ? 'Spare' : 'Day ' + n.day + ' · T' + n.touch}</b><span class="a">${esc(n.asset)}</span><p>${esc(n.message.replace(/\n/g, ' '))}</p><span class="m">${mm}</span>` +
+      (n.media_mode === 'custom' && n.media_url ? `<img src="${esc(n.media_url)}">` : '');
+    d.onclick = () => openNode(i); cv.appendChild(d);
+    if (!spare && i < nodes.length - 1) {
+      const q = pos(i + 1), gap = nodes[i + 1].day - n.day; let path, lx, ly;
+      if (p.r === q.r) { const right = p.r % 2 === 0; const x1 = right ? p.x + NW : p.x, x2 = right ? q.x : q.x + NW, y = p.y + NH / 2; path = `M${x1} ${y}L${x2} ${y}`; lx = (x1 + x2) / 2; ly = y - 8; }
+      else { const x = p.x + NW / 2; path = `M${x} ${p.y + NH}L${x} ${q.y}`; lx = x + 22; ly = (p.y + NH + q.y) / 2; }
+      wires += `<path d="${path}" stroke="#c4a45c" stroke-width="2.5" fill="none" marker-end="url(#ar)"/><text x="${lx}" y="${ly}" text-anchor="middle" font-size="11" fill="#9aa1b0">+${gap}d</text>`;
+    }
+  });
+  svg.innerHTML = wires;
+  const by = k => nodes.filter(n => n.kind === k).length;
+  $('segInfo').textContent = spare ? `${nodes.length} spare posters — used (in order) when a property slot has no verified match.`
+    : `${nodes.length} messages over 90 days · ${nodes.filter(n => /PROP/.test(n.kind)).length} property slots · blue = education · gold = property · green = check-in/snapshot. Click a node to edit its message, media or day.`;
+}
+
+/* ---------- node editor ---------- */
+const SAMPLE = { 1: 'Rajesh', 2: '3BHK in Vasant Kunj', 3: '3BHK · 1450 sqft', 4: '₹1.2 Cr', 5: 'Ready to move', 6: 'https://crm.nishahomes.com/view/xxxxxx' };
+function openNode(i) {
+  const n = J[seg][i]; cur = { i }; draw();
+  $('pTitle').textContent = (seg === 'spare' ? 'Spare poster ' : 'Day ' + n.day + ' · Touch ' + n.touch + ' · ') + n.asset;
+  $('pSub').textContent = n.template + ' · ' + n.kind;
+  $('f_message').value = n.message; $('f_footer').value = n.footer || ''; $('f_mode').value = n.media_mode || 'auto';
+  $('f_url').value = n.media_url || ''; $('f_day').value = n.day || ''; $('f_day').parentElement.hidden = seg === 'spare';
+  $('f_enabled').checked = n.enabled !== false;
+  $('altBox').hidden = !n.alt; $('f_alt').value = n.alt ? n.alt.message : '';
+  $('legend').innerHTML = ({ PROP: '{{1}} name · {{2}} location · {{3}} BHK · area · {{4}} price · {{5}} status · {{6}} listing link (lines with empty {{5}}/{{6}} are skipped)',
+    PROP2: '{{1}} name · {{2}} option 1 · {{3}} option 2', SNAPSHOT: '{{1}} name · {{2}} locality', CHECKIN: '{{1}} name' }[n.kind]) ||
+    (n.asset === 'MKT-01' ? '{{1}} name · {{2}} locality' : '{{1}} name · {{2}} requirement (e.g. “3BHK in Vasant Kunj”)');
+  $('panel').classList.add('open'); preview();
+  if (ROLE !== 'admin') { document.querySelectorAll('#panel textarea,#panel input,#panel select').forEach(x => x.disabled = true); }
+}
+function closePanel() { $('panel').classList.remove('open'); cur = null; draw(); }
+function fill(t) { return (t || '').split('\n').map(l => { const ks = [...l.matchAll(/\{\{(\d)\}\}/g)].map(m => m[1]); if (ks.some(k => k > 4 && false)) return ''; return l.replace(/\{\{(\d)\}\}/g, (_, k) => SAMPLE[k]); }).join('\n'); }
+function preview() {
+  const m = $('f_mode').value, u = $('f_url').value.trim();
+  const img = m === 'custom' && u ? `<img src="${esc(u)}">` : m === 'auto' ? '<div class="mut" style="font-size:12px;margin-bottom:5px">🖼 Inventory photo goes here</div>' : '';
+  $('pv').innerHTML = `<div class="bubble">${img}${esc(fill($('f_message').value))}${$('f_footer').value ? '\n\n' + esc(fill($('f_footer').value)) : ''}</div>`;
+}
+async function saveNode() {
+  const n = J[seg][cur.i];
+  const fields = { message: $('f_message').value, footer: $('f_footer').value, media_mode: $('f_mode').value, media_url: $('f_url').value.trim(), enabled: $('f_enabled').checked };
+  if (seg !== 'spare') fields.day = +$('f_day').value;
+  if (n.alt) fields.alt_message = $('f_alt').value;
+  const d = await api('/api/fu90/node', 'POST', { segment: seg, touch: n.touch, asset: n.asset, fields });
+  if (!d.success) return toast(d.message || 'Could not save');
+  toast('Saved ✔'); await loadJourneys(); openNode(cur.i);
+}
+async function resetSeg() {
+  if (!confirm('Reset "' + seg + '" journey to the original guide text? Your edits to it will be lost.')) return;
+  const d = await api('/api/fu90/journey/reset/' + seg, 'POST'); toast(d.success ? 'Reset ✔' : d.message); closePanel(); loadJourneys();
+}
+
+/* ---------- inventory picker ---------- */
+function openPicker() { $('picker').classList.add('open'); loadPool(); }
+function closePicker() { $('picker').classList.remove('open'); }
+async function loadPool() {
+  const d = await api('/api/fu90/media-pool?q=' + encodeURIComponent($('pq').value));
+  $('pcount').textContent = d.total + ' photos';
+  $('pgrid').innerHTML = (d.data || []).map(i => `<div><img class="pick" loading="lazy" src="${esc(i.url)}" title="${esc(i.name)}" onclick="pickMedia('${esc(i.url)}')"><div class="mut" style="font-size:11px">${esc(i.name)}</div></div>`).join('');
+}
+function pickMedia(u) { $('f_mode').value = 'custom'; $('f_url').value = u; closePicker(); preview(); }
+
+/* ---------- customers ---------- */
+async function loadCust() {
+  const q = new URLSearchParams({ q: $('cq').value, state: $('cs').value, segment: $('cg').value });
+  const d = await api('/api/fu90/customers?' + q); if (!d.success) return toast(d.message);
+  $('ccount').textContent = d.count + ' shown';
+  $('ctb').innerHTML = d.data.map(c => `<tr><td><b>${esc(c.name)}</b><br><span class="mut">${esc(c.phone)}</span></td><td>${esc(SEGS[c.segment] || c.segment)}</td>
+    <td><span class="st ${c.state}">${c.state}</span>${c.reason ? `<br><span class="mut">${esc(c.reason)}</span>` : ''}</td><td>${c.touch}/14 <span class="mut">(${c.sends} sent)</span></td><td>${esc(c.next)}</td><td>${esc(c.last)}</td><td>${c.score ?? '-'}</td>
+    <td style="white-space:nowrap"><button onclick="showLog('${c.id}','${esc(c.name)}')">Log</button>
+    <button onclick="act('${c.id}','${c.state === 'PAUSED' || c.state === 'STOPPED' || c.state === 'HUMAN_HANDOFF' ? 'resume' : 'pause'}')">${c.state === 'ACTIVE_SEQUENCE' || c.state === 'QUARTERLY_NURTURE' ? 'Pause' : 'Resume'}</button>
+    <button onclick="act('${c.id}','skip')">Skip step</button><button class="dng" onclick="act('${c.id}','stop')">Stop</button></td></tr>`).join('') || '<tr><td colspan="8" class="mut">No customers yet — turn the engine ON in “Engine & stats”.</td></tr>';
+}
+async function act(id, a) { const d = await api(`/api/fu90/customer/${id}/action`, 'POST', { action: a }); toast(d.success ? 'Done ✔' : d.message); loadCust(); }
+async function showLog(id, name) {
+  const d = await api(`/api/fu90/customer/${id}/log`); $('logT').textContent = 'Messages sent to ' + name; $('logm').classList.add('open');
+  $('logB').innerHTML = (d.data || []).map(r => `<div style="border-bottom:1px solid var(--line);padding:8px 0"><b>T${r.touch ?? '-'} · Day ${r.day ?? '-'} · ${esc(r.asset || '')}</b> <span class="st">${r.status}</span> ${r.fallback ? '<span class="st">' + r.fallback + '</span>' : ''} ${r.replied ? '↩ replied' : ''}
+    <span class="mut" style="float:right">${esc(r.at)}</span><div class="bubble">${esc(r.text || r.error || '')}</div>${r.media ? `<a href="${esc(r.media)}" target="_blank" class="mut">media</a>` : ''}</div>`).join('') || '<p class="mut">Nothing sent yet.</p>';
+}
+
+/* ---------- settings + stats ---------- */
+const KEYS = ['min_score', 'daily_cap', 'per_scan', 'enroll_per_day', 'gap_min', 'gap_max', 'test_day_minutes'];
+async function loadSettings() {
+  const [s, st] = await Promise.all([api('/api/fu90/settings'), api('/api/fu90/stats')]);
+  if (s.success) { $('s_enabled').checked = !!s.settings.enabled; KEYS.forEach(k => $('s_' + k).value = s.settings[k]); $('s_ignore_window').value = s.settings.ignore_window ? '1' : '0'; }
+  if (st.success) {
+    const S = st.states, k = (l, v) => `<div class="kpi"><span class="mut">${l}</span><b>${v}</b></div>`;
+    $('winInfo').textContent = st.inWindow ? '● inside sending window now' : '○ outside sending window now';
+    $('kpis').innerHTML = k('Sent today', st.sentToday) + k('Sent in total', st.sentTotal) + k('Active journeys', S.ACTIVE_SEQUENCE || 0) + k('Paused (replied)', S.PAUSED || 0) +
+      k('Human handoff', S.HUMAN_HANDOFF || 0) + k('Quarterly nurture', S.QUARTERLY_NURTURE || 0) + k('Stopped', S.STOPPED || 0) + k('Reply rate (72h)', st.replyRate + '%') +
+      k('Opt-outs', st.optOuts) + k('Fallbacks (no match)', st.fallbacks) + k('Failed sends', st.failed) + k('Inventory photos', st.mediaPool);
+  }
+}
+async function saveSettings() {
+  const b = { enabled: $('s_enabled').checked, ignore_window: $('s_ignore_window').value === '1' }; KEYS.forEach(k => b[k] = +$('s_' + k).value);
+  const d = await api('/api/fu90/settings', 'POST', b); toast(d.success ? 'Settings saved ✔' : d.message); loadSettings();
+}
+async function runNow() { const d = await api('/api/fu90/run', 'POST'); toast(d.message || 'Started'); }
+
+loadJourneys();
+</script>
+</body>
+</html>
