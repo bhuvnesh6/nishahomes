@@ -7017,10 +7017,11 @@ FOLLOWUP_MIN_GAP_MINUTES = 5        # don't message if the customer texted in th
 FOLLOWUP_MAX_GAP_DAYS = 7           # don't message if it's been over a week since they last texted
 FOLLOWUP_MAX_ATTEMPTS = 3           # no automatic followups after the 3rd — becomes "manual required"
  
-FOLLOWUP_HOURLY_LIMIT = 35          # leads processed per batch
- 
-FOLLOWUP_SEND_WAIT_MIN_MINUTES = 1  # random wait between individual sends: 1-3 min,
-FOLLOWUP_SEND_WAIT_MAX_MINUTES = 3  # can land on a decimal (1.2, 2.6, ...), not just whole minutes
+FOLLOWUP_DAILY_LIMIT = 30           # max follow-ups sent per IST day; the rest wait for the next day
+FOLLOWUP_HOURLY_LIMIT = FOLLOWUP_DAILY_LIMIT   # kept as an alias so nothing else breaks
+
+FOLLOWUP_SEND_WAIT_MIN_MINUTES = 10  # random wait between individual sends: 10-15 min,
+FOLLOWUP_SEND_WAIT_MAX_MINUTES = 15  # can land on a decimal (10.4, 13.7, ...)
  
 FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES = 10   # after a 35-message batch, cool down 7-10 min
 FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES = 20  # before starting on any leads left over
@@ -7362,46 +7363,69 @@ def process_single_followup(ctx):
 # ---------------------------------------------------------------------
 # BATCH RUNNER — gathers eligible leads, sends in a paced/rate-limited way
 # ---------------------------------------------------------------------
+def followup_sent_today():
+    """How many follow-ups were successfully sent today (IST day). Used for the daily cap."""
+    start_utc, _, _ = get_ist_day_range_utc()
+    return followup_logs_collection.count_documents({"status": "sent", "createdAt": {"$gte": start_utc}})
+
+
+def renew_followup_lock(ttl_seconds):
+    """Keeps the scheduler lock alive during a long, slow run (10-15 min gaps
+    make one run last hours) so another worker can't start a second run."""
+    owner = f"{socket.gethostname()}-{os.getpid()}"
+    try:
+        system_locks_collection.update_one(
+            {"_id": "followup_scheduler", "lockedBy": owner},
+            {"$set": {"lockedUntil": datetime.utcnow() + timedelta(seconds=ttl_seconds)}}
+        )
+    except Exception as e:
+        print(f"[followup] lock renew failed: {e}")
+
+
 def run_followup_scan_and_send():
     if not LEGACY_FOLLOWUPS_ENABLED:
         return
-    while True:
+
+    if not is_within_business_hours():
+        print("[followup] outside business hours — pausing until next window")
+        return
+
+    remaining = FOLLOWUP_DAILY_LIMIT - followup_sent_today()
+    if remaining <= 0:
+        print(f"[followup] daily limit ({FOLLOWUP_DAILY_LIMIT}) already reached — rest goes out tomorrow")
+        return
+
+    eligible = get_eligible_followup_leads()
+    if not eligible:
+        print("[followup] no eligible leads this scan")
+        return
+
+    batch = eligible[:remaining]
+    print(f"[followup] sending {len(batch)} follow-up(s) today "
+          f"({len(eligible)} eligible, {remaining} left of the {FOLLOWUP_DAILY_LIMIT}/day limit)")
+
+    for i, ctx in enumerate(batch):
+        renew_followup_lock(FOLLOWUP_RESCAN_INTERVAL_SEC)
+
         if not is_within_business_hours():
-            print("[followup] outside business hours (10am-7pm IST) — pausing until next window")
+            print("[followup] business hours ended mid-batch — remaining leads wait for the next window")
             return
- 
-        eligible = get_eligible_followup_leads()
-        if not eligible:
-            print("[followup] no eligible leads this scan")
+        if followup_sent_today() >= FOLLOWUP_DAILY_LIMIT:
+            print(f"[followup] daily limit ({FOLLOWUP_DAILY_LIMIT}) reached — rest goes out tomorrow")
             return
- 
-        batch = eligible[:FOLLOWUP_HOURLY_LIMIT]
-        print(f"[followup] processing batch of {len(batch)} lead(s) (of {len(eligible)} eligible)")
- 
-        for ctx in batch:
-            if not is_within_business_hours():
-                print("[followup] business hours ended mid-batch — pausing until next window")
-                return
-            try:
-                process_single_followup(ctx)
-            except Exception:
-                import traceback
-                traceback.print_exc()
- 
+
+        try:
+            process_single_followup(ctx)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+        if i < len(batch) - 1:   # no need to wait after the last one
             wait_minutes = round(random.uniform(FOLLOWUP_SEND_WAIT_MIN_MINUTES, FOLLOWUP_SEND_WAIT_MAX_MINUTES), 1)
             print(f"[followup] waiting {wait_minutes} min before the next send")
             time.sleep(wait_minutes * 60)
- 
-        if len(eligible) <= FOLLOWUP_HOURLY_LIMIT:
-            return  # everyone eligible this scan has now been handled
- 
-        if not is_within_business_hours():
-            print("[followup] business hours ended before next batch — pausing until next window")
-            return
- 
-        cooldown_minutes = round(random.uniform(FOLLOWUP_BATCH_COOLDOWN_MIN_MINUTES, FOLLOWUP_BATCH_COOLDOWN_MAX_MINUTES), 1)
-        print(f"[followup] batch cap ({FOLLOWUP_HOURLY_LIMIT}) reached — cooling down {cooldown_minutes} min")
-        time.sleep(cooldown_minutes * 60)
+
+    print(f"[followup] batch finished — {followup_sent_today()}/{FOLLOWUP_DAILY_LIMIT} sent today")
  
  
 # ---------------------------------------------------------------------
@@ -10462,6 +10486,35 @@ def wa_logout():
     team_webhooks_collection.update_one({"_id": wh["_id"]}, {"$set": {"waStatus": "logged_out", "waPhone": None}})
     return jsonify({"success": True}), 200
 
+
+@app.route("/api/wa/delete", methods=["POST"])
+def wa_delete():
+    """Deletes a member's Wirebase instance and clears it from the CRM so they can
+    scan a fresh QR. Admin can delete anyone's; staff only their own."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+
+    member = _wa_member_from_request((request.json or {}).get("number"))
+    if not member:
+        return jsonify({"success": False, "message": "Team member not found"}), 404
+
+    if session.get("role") != "admin" and member.get("Employee number") != session.get("employee_number"):
+        return jsonify({"success": False, "message": "You can only delete your own connection"}), 403
+
+    wh = team_webhooks_collection.find_one({"employeeNumber": member.get("Employee number")})
+    if not wh or not wh.get("instanceId"):
+        return jsonify({"success": True, "message": "Nothing to delete"}), 200
+
+    ok, d, st = wb_dev("DELETE", f"/instances/{wh['instanceId']}")
+    if not ok and st != 404:      # 404 = already gone on Wirebase, still clean up locally
+        return jsonify({"success": False, "message": f"Wirebase error: {_wb_err(d)}"}), 502
+
+    team_webhooks_collection.update_one(
+        {"_id": wh["_id"]},
+        {"$unset": {"instanceId": "", "instanceName": "", "webhookSecret": "",
+                    "waStatus": "", "waPhone": "", "waStatusAt": ""}}
+    )
+    return jsonify({"success": True}), 200
 
 @app.route("/api/wa/dashboard-status", methods=["GET"])
 def wa_dashboard_status():

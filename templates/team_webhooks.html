@@ -663,6 +663,48 @@ async function waLogout(){
   showToast(d.success ? "Disconnected" : (d.message || "Failed"));
   waRefreshStatus();
 }
+
+async function waReconnect(){
+  if (!activeMember) return;
+  try{
+    const st = await (await fetch(`/api/wa/status/${activeMember.number}`)).json();
+    if (st.success && st.state === "connected"){
+      if (!confirm("This number is connected. Disconnect it and show a fresh QR?")) return;
+      await fetch("/api/wa/logout", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ number: activeMember.number })
+      });
+    }
+    await waConnect();
+  }catch(e){ showToast("Error: " + e.message); }
+}
+
+async function waDelete(){
+  if (!activeMember) return;
+  if (!confirm(`Delete the WhatsApp instance for ${activeMember.name}? They will need to scan a new QR to connect again.`)) return;
+  try{
+    const res = await fetch("/api/wa/delete", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ number: activeMember.number })
+    });
+    const d = await res.json();
+    if (!d.success){ showToast(d.message || "Delete failed"); return; }
+
+    showToast("WhatsApp instance deleted");
+    waWantQr = false;
+    document.getElementById("waQrBox").innerHTML = "";
+    document.getElementById("waPhoneText").textContent = "";
+    waSetBadge("not_setup");
+
+    await loadMembers();
+    const refreshed = members.find(x => x.number === activeMember.number);
+    if (refreshed){
+      activeMember = refreshed;
+      renderMemberList(document.getElementById("memberSearch").value);
+      if (currentScreen !== "members") selectMember(refreshed);   // shows "WhatsApp not connected" panel
+    }
+  }catch(e){ showToast("Error: " + e.message); }
+}
 </script>
 
 <div class="toast" id="toast"></div>
