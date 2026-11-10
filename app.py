@@ -7480,7 +7480,7 @@ def followup_scheduler_loop():
 _followup_thread_started = False
  
  
-LEGACY_FOLLOWUPS_ENABLED = False   # old automatic follow-ups are OFF (90-day engine replaces them)
+LEGACY_FOLLOWUPS_ENABLED = True   # legacy engine ON (sends via wp.send_whatsapp_message, max 30/day)
 
 def start_followup_scheduler():
     """Starts the background follow-up thread exactly once per process,
@@ -8061,9 +8061,9 @@ def groupdms_feed():
 # =====================================================================
 
 # ---- Config ----
-BIZAUTOMATION_API_URL = "https://app.bizautomation.io/api/v2/whatsapp-business/messages"
-BIZAUTOMATION_API_KEY = os.getenv("BIZAUTOMATION_API_KEY")
-DEFAULT_WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
+BIZAUTOMATION_API_URL = (os.getenv("BIZAUTOMATION_API_URL") or "https://app.bizautomation.io/api/v2/whatsapp-business/messages").strip()
+BIZAUTOMATION_API_KEY = (os.getenv("BIZAUTOMATION_API_KEY") or "").strip()
+DEFAULT_WA_PHONE_NUMBER_ID = (os.getenv("WA_PHONE_NUMBER_ID") or "").strip()
 
 # All three "keys" now point at the same new provider key.
 MISTRAL_API_KEY3 = LLM_API_KEY
@@ -8391,28 +8391,156 @@ Our team will personally connect with you very soon.
 # ---------------------------------------------------------------------
 # WHATSAPP SEND HELPERS (bizautomation.io)
 # ---------------------------------------------------------------------
+wa_send_logs_collection = db["waSendLogs"]
+try:
+    wa_send_logs_collection.create_index("at", expireAfterSeconds=30 * 24 * 3600)
+except Exception as _wl_err:
+    print(f"[startup] waSendLogs index warning: {_wl_err}")
+
+_last_wa_phone_no_id = None
+
+
+def get_wa_phone_no_id(explicit=None):
+    """phoneNoId priority: value from the webhook -> .env -> last one we saw."""
+    if explicit:
+        return str(explicit).strip()
+    if DEFAULT_WA_PHONE_NUMBER_ID:
+        return DEFAULT_WA_PHONE_NUMBER_ID
+    try:
+        doc = settings_collection.find_one({"_id": "wa_phone_no_id"})
+        if doc and doc.get("value"):
+            return str(doc["value"]).strip()
+    except Exception as e:
+        print(f"[wa-send] phoneNoId lookup failed: {e}")
+    return ""
+
+
+def remember_wa_phone_no_id(pid):
+    """Learns the phoneNoId from every inbound webhook so sends never go out with an empty one."""
+    global _last_wa_phone_no_id
+    if not pid or str(pid) == _last_wa_phone_no_id:
+        return
+    try:
+        settings_collection.update_one(
+            {"_id": "wa_phone_no_id"},
+            {"$set": {"value": str(pid).strip(), "updatedAt": datetime.utcnow()}},
+            upsert=True
+        )
+        _last_wa_phone_no_id = str(pid)
+    except Exception as e:
+        print(f"[wa-send] could not remember phoneNoId: {e}")
+
+
+def wa_session_open(phone91, hours=24):
+    """True if the customer messaged us within the last `hours` (free-text is allowed).
+    Outside this window WhatsApp only accepts approved TEMPLATE messages."""
+    try:
+        last = wa_chat_collection.find_one({"phone": phone91, "role": "user"}, sort=[("at", -1)])
+        if last and isinstance(last.get("at"), datetime):
+            return (datetime.utcnow() - last["at"]) <= timedelta(hours=hours)
+    except Exception as e:
+        print(f"[wa-send] session check failed: {e}")
+    return False
+
+
+def _log_wa_send(payload, ok, status_code, body):
+    try:
+        wa_send_logs_collection.insert_one({
+            "to": payload.get("to"), "type": payload.get("type"),
+            "phoneNoId": payload.get("phoneNoId"),
+            "ok": ok, "httpStatus": status_code,
+            "response": str(body)[:1000], "at": datetime.utcnow()
+        })
+    except Exception as e:
+        print(f"[wa-send] log write failed: {e}")
+    if not ok:
+        print(f"[wa-send] FAILED to={payload.get('to')} http={status_code} body={str(body)[:500]}")
+
+
+def _bizauto_send(payload):
+    """Single place that talks to the WhatsApp Business API. Raises with the REAL error body."""
+    if not BIZAUTOMATION_API_KEY:
+        raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
+    if not payload.get("phoneNoId"):
+        _log_wa_send(payload, False, None, "phoneNoId is empty")
+        raise RuntimeError("phoneNoId is empty - set WA_PHONE_NUMBER_ID in .env "
+                           "(or receive one inbound message so it is learned automatically)")
+    try:
+        resp = requests.post(
+            BIZAUTOMATION_API_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {BIZAUTOMATION_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            timeout=20
+        )
+    except requests.RequestException as e:
+        _log_wa_send(payload, False, None, f"network error: {e}")
+        raise
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {"raw": (resp.text or "")[:500]}
+
+    soft_fail = isinstance(body, dict) and (
+        body.get("success") is False or str(body.get("status", "")).lower() in ("error", "failed")
+    )
+    ok = resp.ok and not soft_fail
+    _log_wa_send(payload, ok, resp.status_code, body)
+
+    if not resp.ok:
+        raise requests.exceptions.HTTPError(
+            f"WhatsApp API HTTP {resp.status_code}: {str(body)[:500]}", response=resp)
+    if soft_fail:
+        raise RuntimeError(f"WhatsApp API rejected the message: {str(body)[:500]}")
+    return body
+
+
 def send_whatsapp_text(to_phone, text, phone_no_id=None):
     if is_number_blocked(to_phone):
         raise RuntimeError("Number is blocked / opted out - message not sent")
-    if not BIZAUTOMATION_API_KEY:
-        raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
-    payload = {
-        "to": to_phone,
-        "phoneNoId": phone_no_id or DEFAULT_WA_PHONE_NUMBER_ID,
+    to = normalize_phone_91(to_phone)
+    if not to:
+        raise RuntimeError(f"Invalid destination number: {to_phone!r}")
+    text = str(text or "").strip()
+    if not text:
+        raise RuntimeError("Empty message text - nothing to send")
+    return _bizauto_send({
+        "to": to,
+        "phoneNoId": get_wa_phone_no_id(phone_no_id),
         "type": "text",
-        "text": text
-    }
-    resp = requests.post(
-        BIZAUTOMATION_API_URL,
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {BIZAUTOMATION_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        timeout=20
-    )
-    resp.raise_for_status()
-    return resp.json()
+        "text": text[:4096]
+    })
+
+
+@app.route("/api/admin/wa-send-test", methods=["POST"])
+def admin_wa_send_test():
+    """Admin: send one test text and see the RAW API result.
+    Browser console: fetch('/api/admin/wa-send-test',{method:'POST',headers:{'Content-Type':'application/json'},
+                      body:JSON.stringify({to:'91XXXXXXXXXX'})}).then(r=>r.json()).then(console.log)"""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    data = request.json or {}
+    to = data.get("to")
+    if not phone_last10(to):
+        return jsonify({"success": False, "message": "Valid 'to' number required"}), 400
+    try:
+        result = send_whatsapp_text(to, data.get("text") or "Test message from Nisha Homes CRM ✅")
+        return jsonify({"success": True, "phoneNoIdUsed": get_wa_phone_no_id(), "apiResponse": result}), 200
+    except Exception as e:
+        return jsonify({"success": False, "phoneNoIdUsed": get_wa_phone_no_id(), "error": str(e)}), 200
+
+
+@app.route("/api/admin/wa-send-logs", methods=["GET"])
+def admin_wa_send_logs():
+    """Admin: last 50 WhatsApp send attempts. Add ?failed=1 for failures only."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    q = {"ok": False} if request.args.get("failed") == "1" else {}
+    docs = list(wa_send_logs_collection.find(q).sort("at", -1).limit(50))
+    return jsonify({"success": True, "count": len(docs), "data": [serialize_doc(d) for d in docs]}), 200
 
 
 # ---------------------------------------------------------------------
@@ -8421,26 +8549,16 @@ def send_whatsapp_text(to_phone, text, phone_no_id=None):
 def send_whatsapp_image(to_phone, image_url, caption="", phone_no_id=None):
     if is_number_blocked(to_phone):
         raise RuntimeError("Number is blocked / opted out - message not sent")
-    if not BIZAUTOMATION_API_KEY:
-        raise RuntimeError("BIZAUTOMATION_API_KEY not configured in .env")
-    payload = {
-        "to": to_phone,
-        "phoneNoId": phone_no_id or DEFAULT_WA_PHONE_NUMBER_ID,
+    to = normalize_phone_91(to_phone)
+    if not to:
+        raise RuntimeError(f"Invalid destination number: {to_phone!r}")
+    return _bizauto_send({
+        "to": to,
+        "phoneNoId": get_wa_phone_no_id(phone_no_id),
         "type": "image",
         "url": image_url,
-        "caption": caption
-    }
-    resp = requests.post(
-        BIZAUTOMATION_API_URL,
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {BIZAUTOMATION_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        timeout=20
-    )
-    resp.raise_for_status()
-    return resp.json()
+        "caption": (caption or "")[:1024]
+    })
 
 def build_property_caption(prop):
     """
@@ -9039,6 +9157,8 @@ def call_wa_agent_final(lead_doc, chat_history, search_results, user_text, locat
 # ---------------------------------------------------------------------
 def apply_ai_result_to_lead(coll_name, lead_id, ai_result):
     collected = ai_result.get("collected_data") or {}
+    if not isinstance(collected, dict):
+        collected = {}
     set_fields = {"AIreply": ai_result.get("message", ""), "lastAIProcessedAt": datetime.utcnow()}
 
     if collected.get("location"):
@@ -9285,6 +9405,8 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
             return
 
         phone = normalize_phone_91(phone)
+        remember_wa_phone_no_id(recipient_phone_id)
+        print(f"[wa-ai] inbound from {phone}: {str(user_text)[:80]!r} (phoneNoId={recipient_phone_id!r})")
 
         try:
             if globals().get("fu90_on_inbound"):
@@ -9294,6 +9416,7 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         # ---- OPT-OUT: stop / spam complaint / wrong number -> delete everything, reply nothing ----
         if is_followup_optout_message(user_text):
+            print(f"[wa-ai] OPT-OUT ({detect_optout_level(user_text)}) from {phone} - purged, NO reply sent: {user_text!r}")
             purge_optout_number(phone, user_text, "whatsapp-ai")
             return
 
@@ -9401,9 +9524,25 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
                 "media": "no", "imgfield": "", "call": "no", "handover": "yes"
             }
 
-        apply_ai_result_to_lead(coll_name, lead_id, ai_result)
-        save_chat_message(lead_id, phone, "assistant", ai_result.get("message", ""))
-        schedule_ai_score(coll_name, lead_id, delay=1)   # NEW
+        # message must be a non-empty string or the WhatsApp API rejects it
+        msg_out = ai_result.get("message")
+        if not isinstance(msg_out, str) or not msg_out.strip():
+            msg_out = "Thanks for reaching out! Our team will get back to you shortly."
+        ai_result["message"] = msg_out
+
+        # bookkeeping only — if any of these crash, the customer must STILL get the reply
+        try:
+            apply_ai_result_to_lead(coll_name, lead_id, ai_result)
+        except Exception as apply_err:
+            print(f"[wa-ai] apply_ai_result_to_lead failed (reply still sent): {apply_err}")
+        try:
+            save_chat_message(lead_id, phone, "assistant", ai_result.get("message", ""))
+        except Exception as chat_err:
+            print(f"[wa-ai] save_chat_message failed (reply still sent): {chat_err}")
+        try:
+            schedule_ai_score(coll_name, lead_id, delay=1)
+        except Exception as score_err:
+            print(f"[wa-ai] schedule_ai_score failed (reply still sent): {score_err}")
 
         sending_media = ai_result.get("media") == "yes" and bool(ai_result.get("imgfield"))
 
@@ -9486,9 +9625,14 @@ def nishahomes_ai_webhook():
             msg_type = data_node.get("messageType")
             sender_phone = data_node.get("senderPhoneNumber")
             sender_name = data_node.get("senderName")
-            recipient_phone_id = data_node.get("recipientPhoneNumberId")
+            recipient_phone_id = (data_node.get("recipientPhoneNumberId")
+                                  or data_node.get("phoneNumberId")
+                                  or data_node.get("phoneNoId"))
             content = data_node.get("content") or {}
-            text = (content.get("text") or "").strip() if msg_type == "text" else ""
+            raw_text = content.get("text") if msg_type == "text" else ""
+            if isinstance(raw_text, dict):
+                raw_text = raw_text.get("body") or ""
+            text = str(raw_text or "").strip()
 
             if sender_phone and msg_type == "text" and text:
                 threading.Thread(
@@ -9497,6 +9641,11 @@ def nishahomes_ai_webhook():
                     daemon=True,
                     name="wa-ai-handler"
                 ).start()
+            else:
+                print(f"[wa-webhook] message ignored (type={msg_type!r}, has_sender={bool(sender_phone)}, has_text={bool(text)})")
+        else:
+            # delivery-status events often carry the real failure reason (e.g. outside 24h window)
+            print(f"[wa-webhook] non-message event ignored: event={event!r} body={json.dumps(body, default=str)[:400]}")
 
     except Exception:
         import traceback
