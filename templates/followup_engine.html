@@ -31,6 +31,8 @@ table{width:100%;border-collapse:collapse;background:var(--card);border-radius:1
 .pick{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid transparent}.pick:hover{border-color:var(--org)}
 .sw{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:9px 16px;border-radius:10px;display:none;z-index:50}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.ubox{margin-top:6px;padding:10px;border:1px dashed var(--line);border-radius:8px}
 </style>
 </head>
 <body>
@@ -95,9 +97,23 @@ table{width:100%;border-collapse:collapse;background:var(--card);border-radius:1
   <label>Footer <span class="mut">(replaces the buttons, since Wirebase has no buttons)</span></label>
   <textarea id="f_footer" style="min-height:60px" oninput="preview()"></textarea>
   <div id="altBox" hidden><label>Day-90 alternative message (when no verified listing)</label><textarea id="f_alt" style="min-height:80px"></textarea></div>
-  <label>Media (sent with the message, from Inventory – never the banner)</label>
-  <select id="f_mode" onchange="preview()"><option value="auto">Auto – inventory photo (property messages: that listing’s photo)</option><option value="custom">Custom – choose a photo</option><option value="none">No media (text only)</option></select>
-  <div style="display:flex;gap:6px;margin-top:6px"><input id="f_url" placeholder="https://…" oninput="preview()"><button onclick="openPicker()">Pick from inventory</button></div>
+  <label>Media (sent with the message – never the banner)</label>
+  <select id="f_mode" onchange="preview()">
+    <option value="auto">Auto – random inventory photo (property messages: that listing’s photo)</option>
+    <option value="custom">Manual – pick a photo from inventory</option>
+    <option value="upload">Upload – photo from my computer</option>
+    <option value="none">No media (text only)</option>
+  </select>
+  <div id="invBox" class="row" hidden><input id="f_url" placeholder="https://…" oninput="preview()"><button onclick="openPicker()">Pick from inventory</button></div>
+  <div id="upBox" class="ubox" hidden>
+    <input type="file" id="f_file" accept="image/*">
+    <div class="row">
+      <button class="pri" id="upBtn" onclick="uploadMedia()">Upload &amp; use</button>
+      <button onclick="openUploads()">My uploads</button>
+      <button class="dng" id="upDel" onclick="deleteCurrentFile()">Delete this file</button>
+    </div>
+    <div class="mut" id="upInfo" style="margin-top:6px"></div>
+  </div>
   <label>Day of journey <input type="number" id="f_day" min="1" max="90"></label>
   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="f_enabled" style="width:auto"> This step is enabled</label>
   <label>Preview</label><div id="pv"></div>
@@ -107,6 +123,10 @@ table{width:100%;border-collapse:collapse;background:var(--card);border-radius:1
 <div class="modal" id="picker"><div class="box">
   <div class="bar"><b>Inventory photos</b><input id="pq" placeholder="Search property / location" style="max-width:260px" oninput="loadPool()"><button onclick="closePicker()">Close</button><span class="mut" id="pcount"></span></div>
   <div class="grid" id="pgrid"></div>
+</div></div>
+<div class="modal" id="upl"><div class="box">
+  <div class="bar"><b>My uploaded photos</b><button onclick="closeUploads()">Close</button><span class="mut" id="ucount"></span></div>
+  <div class="grid" id="ugrid"></div>
 </div></div>
 <div class="modal" id="logm"><div class="box"><div class="bar"><b id="logT"></b><button onclick="document.getElementById('logm').classList.remove('open')">Close</button></div><div id="logB"></div></div></div>
 <div id="toast"></div>
@@ -152,9 +172,10 @@ function draw() {
     const p = pos(i), d = document.createElement('div');
     d.className = `node ${n.kind} ${n.enabled === false ? 'off' : ''} ${cur && cur.i === i ? 'sel' : ''}`;
     d.style.left = p.x + 'px'; d.style.top = p.y + 'px';
-    const mm = n.media_mode === 'custom' ? '🖼 custom photo' : n.media_mode === 'none' ? '🚫 no media' : '🖼 inventory photo';
+    const mm = n.media_mode === 'custom' ? '🖼 inventory pick' : n.media_mode === 'upload' ? '📤 my upload' : n.media_mode === 'none' ? '🚫 no media' : '🖼 auto photo';
+    const th = n.media_mode === 'custom' && n.media_url ? n.media_url : (n.media_mode === 'upload' && n.media_file ? '/fu90-media/' + n.media_file : '');
     d.innerHTML = `<b>${spare ? 'Spare' : 'Day ' + n.day + ' · T' + n.touch}</b><span class="a">${esc(n.asset)}</span><p>${esc(n.message.replace(/\n/g, ' '))}</p><span class="m">${mm}</span>` +
-      (n.media_mode === 'custom' && n.media_url ? `<img src="${esc(n.media_url)}">` : '');
+      (th ? `<img src="${esc(th)}">` : '');
     d.onclick = () => openNode(i); cv.appendChild(d);
     if (!spare && i < nodes.length - 1) {
       const q = pos(i + 1), gap = nodes[i + 1].day - n.day; let path, lx, ly;
@@ -176,7 +197,9 @@ function openNode(i) {
   $('pTitle').textContent = (seg === 'spare' ? 'Spare poster ' : 'Day ' + n.day + ' · Touch ' + n.touch + ' · ') + n.asset;
   $('pSub').textContent = n.template + ' · ' + n.kind;
   $('f_message').value = n.message; $('f_footer').value = n.footer || ''; $('f_mode').value = n.media_mode || 'auto';
-  $('f_url').value = n.media_url || ''; $('f_day').value = n.day || ''; $('f_day').parentElement.hidden = seg === 'spare';
+  upl = n.media_mode === 'upload' ? { url: n.media_url || '', file: n.media_file || '' } : { url: '', file: '' };
+  $('f_file').value = '';
+  $('f_url').value = n.media_mode === 'custom' ? (n.media_url || '') : ''; $('f_day').value = n.day || ''; $('f_day').parentElement.hidden = seg === 'spare';
   $('f_enabled').checked = n.enabled !== false;
   $('altBox').hidden = !n.alt; $('f_alt').value = n.alt ? n.alt.message : '';
   $('legend').innerHTML = ({ PROP: '{{1}} name · {{2}} location · {{3}} BHK · area · {{4}} price · {{5}} status · {{6}} listing link (lines with empty {{5}}/{{6}} are skipped)',
@@ -187,14 +210,25 @@ function openNode(i) {
 }
 function closePanel() { $('panel').classList.remove('open'); cur = null; draw(); }
 function fill(t) { return (t || '').split('\n').map(l => { const ks = [...l.matchAll(/\{\{(\d)\}\}/g)].map(m => m[1]); if (ks.some(k => k > 4 && false)) return ''; return l.replace(/\{\{(\d)\}\}/g, (_, k) => SAMPLE[k]); }).join('\n'); }
+let upl = { url: '', file: '' };   // photo uploaded for the step currently open
 function preview() {
   const m = $('f_mode').value, u = $('f_url').value.trim();
-  const img = m === 'custom' && u ? `<img src="${esc(u)}">` : m === 'auto' ? '<div class="mut" style="font-size:12px;margin-bottom:5px">🖼 Inventory photo goes here</div>' : '';
+  $('invBox').hidden = m !== 'custom'; $('upBox').hidden = m !== 'upload';
+  $('upInfo').textContent = upl.file ? 'Current upload: ' + upl.file : 'No file uploaded for this step yet.';
+  $('upDel').disabled = !upl.file;
+  let img = '';
+  if (m === 'custom') img = u ? `<img src="${esc(u)}">` : '<div class="mut" style="font-size:12px;margin-bottom:5px">⚠ No inventory photo chosen yet</div>';
+  else if (m === 'upload') img = upl.file ? `<img src="/fu90-media/${esc(upl.file)}">` : '<div class="mut" style="font-size:12px;margin-bottom:5px">⚠ No photo uploaded yet</div>';
+  else if (m === 'auto') img = '<div class="mut" style="font-size:12px;margin-bottom:5px">🖼 Inventory photo goes here</div>';
   $('pv').innerHTML = `<div class="bubble">${img}${esc(fill($('f_message').value))}${$('f_footer').value ? '\n\n' + esc(fill($('f_footer').value)) : ''}</div>`;
 }
 async function saveNode() {
   const n = J[seg][cur.i];
-  const fields = { message: $('f_message').value, footer: $('f_footer').value, media_mode: $('f_mode').value, media_url: $('f_url').value.trim(), enabled: $('f_enabled').checked };
+  const mode = $('f_mode').value;
+  const fields = { message: $('f_message').value, footer: $('f_footer').value, media_mode: mode,
+    media_url: mode === 'upload' ? upl.url : (mode === 'custom' ? $('f_url').value.trim() : ''),
+    media_file: mode === 'upload' ? upl.file : '',
+    enabled: $('f_enabled').checked };
   if (seg !== 'spare') fields.day = +$('f_day').value;
   if (n.alt) fields.alt_message = $('f_alt').value;
   const d = await api('/api/fu90/node', 'POST', { segment: seg, touch: n.touch, asset: n.asset, fields });
@@ -215,6 +249,41 @@ async function loadPool() {
   $('pgrid').innerHTML = (d.data || []).map(i => `<div><img class="pick" loading="lazy" src="${esc(i.url)}" title="${esc(i.name)}" onclick="pickMedia('${esc(i.url)}')"><div class="mut" style="font-size:11px">${esc(i.name)}</div></div>`).join('');
 }
 function pickMedia(u) { $('f_mode').value = 'custom'; $('f_url').value = u; closePicker(); preview(); }
+
+/* ---------- upload from my computer ---------- */
+async function uploadMedia() {
+  const f = $('f_file').files[0]; if (!f) return toast('Choose an image first');
+  const fd = new FormData(); fd.append('file', f);
+  $('upBtn').disabled = true;
+  try {
+    const r = await fetch('/api/fu90/media/upload', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!d.success) return toast(d.message || 'Upload failed');
+    upl = { url: d.url, file: d.file }; $('f_file').value = ''; preview();
+    await saveNode();            // auto-save this step with the new photo
+  } finally { $('upBtn').disabled = false; }
+}
+function openUploads() { $('upl').classList.add('open'); loadUploads(); }
+function closeUploads() { $('upl').classList.remove('open'); }
+async function loadUploads() {
+  const d = await api('/api/fu90/media/uploads'); const rows = d.data || [];
+  $('ucount').textContent = rows.length + ' files';
+  $('ugrid').innerHTML = rows.map(i => `<div><img class="pick" loading="lazy" src="/fu90-media/${esc(i.file)}" title="Use this photo" onclick="useUpload('${esc(i.file)}','${esc(i.url)}')">
+    <div class="mut" style="font-size:11px">${i.used ? 'used in ' + i.used + ' step(s)' : 'not used anywhere'} · ${esc(i.at)}</div>
+    <button class="dng" style="padding:2px 8px;font-size:12px" onclick="delUpload('${esc(i.file)}')">Delete</button></div>`).join('') || '<p class="mut">Nothing uploaded yet.</p>';
+}
+function useUpload(file, url) { upl = { url, file }; $('f_mode').value = 'upload'; closeUploads(); preview(); toast('Selected – press Save to apply'); }
+async function delUpload(file) {
+  if (!confirm('Delete this photo permanently? Every step using it goes back to Auto.')) return;
+  const d = await api('/api/fu90/media/delete', 'POST', { file });
+  if (!d.success) return toast(d.message || 'Could not delete');
+  if (upl.file === file) { upl = { url: '', file: '' }; if ($('f_mode').value === 'upload') $('f_mode').value = 'auto'; }
+  toast('Deleted ✔' + (d.reset ? ' · ' + d.reset + ' step(s) reset to Auto' : ''));
+  await loadJourneys();
+  if ($('upl').classList.contains('open')) loadUploads();
+  if (cur) preview();
+}
+function deleteCurrentFile() { if (upl.file) delUpload(upl.file); }
 
 /* ---------- customers ---------- */
 async function loadCust() {

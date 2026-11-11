@@ -14,9 +14,9 @@ Mongo collections created:
   followup90_journeys   - editable journeys (4 segments x 14 nodes) + spare pool
   settings  _id="followup90" - engine on/off, quality score, caps
 """
-import os, re, json, time, random, threading, socket
+import os, re, io, json, time, random, secrets, threading, socket
 from datetime import datetime, timedelta
-from flask import request, session, jsonify
+from flask import request, session, jsonify, send_from_directory
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
@@ -33,6 +33,27 @@ ACTIVE_STATES = ("ACTIVE_SEQUENCE", "QUARTERLY_NURTURE")
 IST = timedelta(hours=5, minutes=30)
 SEED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "followup90_seed.json")
 OWNER = f"{socket.gethostname()}-{os.getpid()}"
+
+# ---- Uploaded follow-up media (photos uploaded from the admin's computer) ----
+FU_MEDIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "followup_media")
+os.makedirs(FU_MEDIA_DIR, exist_ok=True)
+FU_MEDIA_MAX_BYTES = 10 * 1024 * 1024            # 10 MB upload limit
+_MEDIA_RE = re.compile(r"^[0-9a-f]{20}\.jpg$")   # only files WE generated (blocks path tricks)
+
+
+def _media_base():
+    return os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com").rstrip("/")
+
+
+def _media_usage():
+    """{filename: number of journey steps currently using it}"""
+    use = {}
+    for j in jr_c.find({}, {"nodes.media_file": 1}):
+        for n in j.get("nodes", []):
+            f = n.get("media_file")
+            if f:
+                use[f] = use.get(f, 0) + 1
+    return use
 
 # Guardrail (guide D6): a message containing any of these is never sent / never saved.
 BANNED = re.compile(
@@ -375,6 +396,12 @@ def resolve(cu, node, req, v0, seg):
     media, mode = None, cur.get("media_mode", "auto")
     if mode == "custom" and cur.get("media_url"):
         media = cur["media_url"]
+    elif mode == "upload":
+        fn = cur.get("media_file") or ""
+        if cur.get("media_url") and _MEDIA_RE.match(fn) and os.path.exists(os.path.join(FU_MEDIA_DIR, fn)):
+            media = cur["media_url"]
+        else:   # uploaded file went missing -> behave like Auto instead of sending a broken image
+            media = listing_media(ps[0]["uniqueId"], cu) if ps else pick_pool_media(cu)
     elif mode == "auto":
         media = listing_media(ps[0]["uniqueId"], cu) if ps else pick_pool_media(cu)
     return {"asset": cur["asset"], "template": cur.get("template", ""), "kind": cur.get("kind", "EDU"),
@@ -641,10 +668,10 @@ def _routes():
         seg, f = d.get("segment"), d.get("fields") or {}
         match = {"nodes.asset": d.get("asset")} if seg == "spare" else {"nodes.touch": int(d.get("touch", 0))}
         sets = {}
-        for k in ("message", "footer", "media_url"):
+        for k in ("message", "footer", "media_url", "media_file"):
             if k in f:
                 sets[f"nodes.$.{k}"] = str(f[k] or "")
-        if f.get("media_mode") in ("auto", "custom", "none"):
+        if f.get("media_mode") in ("auto", "custom", "upload", "none"):
             sets["nodes.$.media_mode"] = f["media_mode"]
         if "enabled" in f:
             sets["nodes.$.enabled"] = bool(f["enabled"])
@@ -655,8 +682,15 @@ def _routes():
         for k, val in sets.items():
             if k.endswith(("message", "footer")) and BANNED.search(val):
                 return jsonify({"success": False, "message": f"Banned phrase found: “{BANNED.search(val).group(0)}” (guide rule 5)"}), 400
-        if "nodes.$.media_mode" in sets and sets["nodes.$.media_mode"] == "custom" and not sets.get("nodes.$.media_url"):
-            return jsonify({"success": False, "message": "Custom media needs a URL"}), 400
+        mm = sets.get("nodes.$.media_mode")
+        if mm == "custom" and not sets.get("nodes.$.media_url"):
+            return jsonify({"success": False, "message": "Manual media needs a photo – pick one from inventory"}), 400
+        if mm == "upload":
+            fn = sets.get("nodes.$.media_file", "")
+            if not _MEDIA_RE.match(fn) or not os.path.exists(os.path.join(FU_MEDIA_DIR, fn)) or not sets.get("nodes.$.media_url"):
+                return jsonify({"success": False, "message": "Upload a photo first"}), 400
+        elif "nodes.$.media_file" in sets:
+            sets["nodes.$.media_file"] = ""      # file reference only kept in Upload mode
         r = jr_c.update_one({"_id": seg, **match}, {"$set": sets})
         return jsonify({"success": r.matched_count == 1})
 
@@ -773,6 +807,82 @@ def _routes():
         if e: return e
         threading.Thread(target=run_scan, daemon=True, name="fu90-manual").start()
         return jsonify({"success": True, "message": "Scan started (respects ON/OFF switch and sending window)"})
+
+    # ---------------- uploaded media (followup_media folder) ----------------
+    @app.route("/fu90-media/<filename>")
+    def fu90_media_file(filename):
+        # PUBLIC on purpose - Wirebase must be able to download the photo
+        if not _MEDIA_RE.match(filename):
+            return "Not found", 404
+        return send_from_directory(FU_MEDIA_DIR, filename)
+
+    @app.route("/api/fu90/media/upload", methods=["POST"])
+    def fu90_media_upload():
+        e = _deny(True)
+        if e: return e
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return jsonify({"success": False, "message": "No file selected"}), 400
+        raw = f.read()
+        if len(raw) > FU_MEDIA_MAX_BYTES:
+            return jsonify({"success": False, "message": "Image too large (max 10 MB)"}), 400
+        try:
+            from PIL import Image
+            im = Image.open(io.BytesIO(raw))
+            im.load()
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            else:
+                im = im.convert("RGB")
+            im.thumbnail((1600, 1600))
+            name = secrets.token_hex(10) + ".jpg"
+            im.save(os.path.join(FU_MEDIA_DIR, name), "JPEG", quality=88)
+        except Exception as ex:
+            print(f"[fu90] media upload rejected: {ex}")
+            return jsonify({"success": False, "message": "That file is not a valid image (use JPG / PNG / WEBP)"}), 400
+        return jsonify({"success": True, "file": name, "url": f"{_media_base()}/fu90-media/{name}"})
+
+    @app.route("/api/fu90/media/uploads")
+    def fu90_media_uploads():
+        e = _deny()
+        if e: return e
+        use = _media_usage()
+        items = []
+        for fn in os.listdir(FU_MEDIA_DIR):
+            if not _MEDIA_RE.match(fn):
+                continue
+            p = os.path.join(FU_MEDIA_DIR, fn)
+            mt = os.path.getmtime(p)
+            items.append({"file": fn, "url": f"{_media_base()}/fu90-media/{fn}", "mtime": mt,
+                          "at": format_ist(datetime.utcfromtimestamp(mt)), "used": use.get(fn, 0)})
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+        return jsonify({"success": True, "data": items})
+
+    @app.route("/api/fu90/media/delete", methods=["POST"])
+    def fu90_media_delete():
+        e = _deny(True)
+        if e: return e
+        fn = str((request.json or {}).get("file") or "")
+        if not _MEDIA_RE.match(fn):
+            return jsonify({"success": False, "message": "Invalid file"}), 400
+        reset = 0
+        for j in jr_c.find({"nodes.media_file": fn}):
+            nodes = j["nodes"]
+            for n in nodes:
+                if n.get("media_file") == fn:
+                    n["media_mode"], n["media_url"], n["media_file"] = "auto", "", ""
+                    reset += 1
+            jr_c.update_one({"_id": j["_id"]}, {"$set": {"nodes": nodes}})
+        try:
+            os.remove(os.path.join(FU_MEDIA_DIR, fn))
+        except FileNotFoundError:
+            pass
+        except Exception as ex:
+            return jsonify({"success": False, "message": f"Could not delete: {ex}"}), 500
+        return jsonify({"success": True, "reset": reset})
 
 
 _started = False
