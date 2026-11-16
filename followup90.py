@@ -60,17 +60,20 @@ BANNED = re.compile(
     r"still looking|any update|have you decided|last chance|hurry|limited|only \d+ left|"
     r"prices will rise|guaranteed|assured returns|jaldi karein|sirf kuch hi bache", re.I)
 
+FU_DAILY_LIMIT = 30            # HARD LIMIT: max follow-ups sent per IST day (can't be raised from the page)
+
 DEFAULT_CFG = {
     "enabled": False,          # master switch - OFF until you turn it on from the page
     "min_score": 35,           # preferred leads: AIScore >= this (or High / Very High interest)
-    "daily_target": 30,        # engine keeps pipeline filled so at least this many go out per day
-    "daily_cap": 80,           # max messages per day (all customers)
-    "per_scan": 20,            # max messages per 5-minute scan
+    "daily_target": FU_DAILY_LIMIT,
+    "daily_cap": FU_DAILY_LIMIT,
+    "per_scan": FU_DAILY_LIMIT,
     "enroll_per_day": 60,      # max NEW leads put into the journey per day
     "fallback_enroll": True,   # if not enough high-score leads, also take any non-cold lead (set False to disable)
-    "gap_min": 25, "gap_max": 70,   # random seconds between two sends (anti-ban)
+    "gap_min_minutes": 10,     # random wait between two sends: 10 - 15 MINUTES (decimals like 11.7 happen automatically)
+    "gap_max_minutes": 15,
     "test_day_minutes": 0,     # TEST: 1 journey day = N minutes (0 = real days)
-    "ignore_window": False,    # TEST: ignore 10:30-13:00 / 17:30-20:00 Mon-Sat window
+    "ignore_window": False,    # TEST: ignore the sending window
 }
 
 
@@ -80,7 +83,12 @@ def _now():
 
 def cfg():
     d = settings_collection.find_one({"_id": "followup90"}) or {}
-    return {**DEFAULT_CFG, **{k: v for k, v in d.items() if k != "_id"}}
+    out = {**DEFAULT_CFG, **{k: v for k, v in d.items() if k != "_id"}}
+    # 30/day is enforced here, even if an older value is saved in Mongo
+    out["daily_cap"] = FU_DAILY_LIMIT
+    out["daily_target"] = FU_DAILY_LIMIT
+    out["per_scan"] = FU_DAILY_LIMIT
+    return out
 
 
 def day_len(c):
@@ -103,7 +111,7 @@ def in_window(c):
     if t.weekday() == 6:      # Sunday
         return False
     m = t.hour * 60 + t.minute
-    return 630 <= m < 780 or 1050 <= m < 1200     # 10:30-13:00 and 17:30-20:00
+    return 600 <= m < 1200     # 10:00 AM - 8:00 PM IST, Mon-Sat (30 msgs x ~12.5 min = ~6.3 hrs)
 
 
 # ----------------------------------------------------------------- journeys
@@ -626,6 +634,35 @@ def housekeeping(c):
             _set(cu, state="ACTIVE_SEQUENCE", stop_reason="", next_touch_at=t)
 
 
+# ----------------------------------------------------------------- pacing (10-15 min between sends)
+def set_next_pace(c):
+    """After every successful send: pick a random 10-15 min wait (stored in Mongo, so it
+    survives restarts and works across gunicorn workers)."""
+    lo = float(c["gap_min_minutes"])
+    hi = max(lo, float(c["gap_max_minutes"]))
+    mins = round(random.uniform(lo, hi), 1)
+    settings_collection.update_one(
+        {"_id": "followup90_pace"},
+        {"$set": {"next_send_at": _now() + timedelta(minutes=mins)}}, upsert=True)
+    print(f"[fu90] next follow-up in {mins} min")
+    return mins
+
+
+def wait_for_pace(c):
+    """Sleeps until the random gap has passed. Returns False if the engine was switched
+    off / the sending window closed while waiting (then we just stop this scan)."""
+    while True:
+        nxt = (settings_collection.find_one({"_id": "followup90_pace"}) or {}).get("next_send_at")
+        if not isinstance(nxt, datetime):
+            return True
+        left = (nxt - _now()).total_seconds()
+        if left <= 0:
+            return True
+        if not in_window(c) or not cfg()["enabled"]:
+            return False
+        _lock(1500)                       # keep the scheduler lock alive while waiting
+        time.sleep(min(left, 30))
+
 def run_scan():
     c = cfg()
     housekeeping(c)
@@ -633,10 +670,18 @@ def run_scan():
         return {"ran": False}
     if not _lock(1500):
         return {"ran": False, "reason": "locked"}
-    enrolled = enroll_new(c)
+
     day_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0) - IST
-    sent_today = log_c.count_documents({"status": "sent", "sent_at": {"$gte": day_start}})
-    room = min(c["per_scan"], c["daily_cap"] - sent_today)
+
+    def sent_today_count():
+        return log_c.count_documents({"status": "sent", "sent_at": {"$gte": day_start}})
+
+    if sent_today_count() >= c["daily_cap"]:
+        print(f"[fu90] daily limit ({c['daily_cap']}) reached - rest goes out tomorrow")
+        return {"ran": True, "enrolled": 0, "sent": 0}
+
+    enrolled = enroll_new(c)
+    room = c["daily_cap"] - sent_today_count()
     sent = 0
     fails_in_row = 0
     if room > 0:
@@ -645,7 +690,12 @@ def run_scan():
         for d in due:
             if sent >= room or not in_window(c):
                 break
+            if not wait_for_pace(c):              # random 10-15 min gap since the last send
+                break
             _lock(1500)
+            if sent_today_count() >= c["daily_cap"]:
+                print(f"[fu90] daily limit ({c['daily_cap']}) reached")
+                break
             try:
                 res = send_next(d["_id"], c)
             except Exception:
@@ -663,8 +713,8 @@ def run_scan():
             fails_in_row = 0
             if res == "sent":
                 sent += 1
-                time.sleep(random.uniform(c["gap_min"], c["gap_max"]))
-    print(f"[fu90] scan done: enrolled={enrolled} sent={sent}")
+                set_next_pace(c)                  # start the next random 10-15 min countdown
+    print(f"[fu90] scan done: enrolled={enrolled} sent={sent} (today total {sent_today_count()}/{c['daily_cap']})")
     return {"ran": True, "enrolled": enrolled, "sent": sent}
 
 

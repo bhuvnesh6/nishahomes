@@ -74,17 +74,17 @@ table{width:100%;border-collapse:collapse;background:var(--card);border-radius:1
     </div>
     <div class="grid" id="kpis" style="margin:10px 0 16px"></div>
     <div class="grid">
-      <div><label>Daily target (aim to send at least)<input type="number" id="s_daily_target"></label></div>
+      <div><label>Daily target (fixed at 30)<input type="number" id="s_daily_target" disabled></label></div>
       <div><label>Preferred minimum AI score<input type="number" id="s_min_score" min="1" max="100"></label></div>
-      <div><label>Daily send cap<input type="number" id="s_daily_cap"></label></div>
-      <div><label>Max sends per scan (5 min)<input type="number" id="s_per_scan"></label></div>
+      <div><label>Daily send cap (fixed at 30)<input type="number" id="s_daily_cap" disabled></label></div>
+      <div><label>Max sends per scan (fixed)<input type="number" id="s_per_scan" disabled></label></div>
       <div><label>New leads enrolled per day<input type="number" id="s_enroll_per_day"></label></div>
-      <div><label>Gap between sends – min sec<input type="number" id="s_gap_min"></label></div>
-      <div><label>Gap between sends – max sec<input type="number" id="s_gap_max"></label></div>
+      <div><label>Gap between sends – min (minutes)<input type="number" id="s_gap_min_minutes" min="0"></label></div>
+      <div><label>Gap between sends – max (minutes)<input type="number" id="s_gap_max_minutes" min="0"></label></div>
       <div><label>TEST: 1 journey day = N minutes (0 = real)<input type="number" id="s_test_day_minutes"></label></div>
       <div><label>TEST: ignore sending window<select id="s_ignore_window"><option value="0">No</option><option value="1">Yes</option></select></label></div>
     </div>
-    <p class="mut">Sending window: 10:30–13:00 and 17:30–20:00 IST, Monday–Saturday. Max 3 messages per customer in any 7 days. Any customer reply pauses the journey; it resumes after 72 hours of silence.</p>
+    <p class="mut">Sending window: 10:00–20:00 IST, Monday–Saturday. Maximum 30 follow-ups per day, with a random 10–15 minute gap between each one. Max 3 messages per customer in any 7 days. Any customer reply pauses the journey; it resumes after 72 hours of silence.</p>
   </section>
 </main>
 
@@ -305,7 +305,7 @@ async function showLog(id, name) {
 }
 
 /* ---------- settings + stats ---------- */
-const KEYS = ['daily_target', 'min_score', 'daily_cap', 'per_scan', 'enroll_per_day', 'gap_min', 'gap_max', 'test_day_minutes'];
+const KEYS = ['daily_target', 'min_score', 'daily_cap', 'per_scan', 'enroll_per_day', 'gap_min_minutes', 'gap_max_minutes', 'test_day_minutes'];
 async function loadSettings() {
   const [s, st] = await Promise.all([api('/api/fu90/settings'), api('/api/fu90/stats')]);
   if (s.success) { $('s_enabled').checked = !!s.settings.enabled; KEYS.forEach(k => $('s_' + k).value = s.settings[k]); $('s_ignore_window').value = s.settings.ignore_window ? '1' : '0'; }
