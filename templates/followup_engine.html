@@ -74,7 +74,8 @@ table{width:100%;border-collapse:collapse;background:var(--card);border-radius:1
     </div>
     <div class="grid" id="kpis" style="margin:10px 0 16px"></div>
     <div class="grid">
-      <div><label>Minimum AI score (high-quality leads only)<input type="number" id="s_min_score" min="1" max="100"></label></div>
+      <div><label>Daily target (aim to send at least)<input type="number" id="s_daily_target"></label></div>
+      <div><label>Preferred minimum AI score<input type="number" id="s_min_score" min="1" max="100"></label></div>
       <div><label>Daily send cap<input type="number" id="s_daily_cap"></label></div>
       <div><label>Max sends per scan (5 min)<input type="number" id="s_per_scan"></label></div>
       <div><label>New leads enrolled per day<input type="number" id="s_enroll_per_day"></label></div>
@@ -304,7 +305,7 @@ async function showLog(id, name) {
 }
 
 /* ---------- settings + stats ---------- */
-const KEYS = ['min_score', 'daily_cap', 'per_scan', 'enroll_per_day', 'gap_min', 'gap_max', 'test_day_minutes'];
+const KEYS = ['daily_target', 'min_score', 'daily_cap', 'per_scan', 'enroll_per_day', 'gap_min', 'gap_max', 'test_day_minutes'];
 async function loadSettings() {
   const [s, st] = await Promise.all([api('/api/fu90/settings'), api('/api/fu90/stats')]);
   if (s.success) { $('s_enabled').checked = !!s.settings.enabled; KEYS.forEach(k => $('s_' + k).value = s.settings[k]); $('s_ignore_window').value = s.settings.ignore_window ? '1' : '0'; }

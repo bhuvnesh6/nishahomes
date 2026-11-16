@@ -25,7 +25,7 @@ NEEDED = [
     "wb_send_via_super_admin", "send_wirebase_image", "phone_last10", "is_number_blocked",
     "run_property_vector_search", "get_ist_now", "format_ist", "parse_price_to_number",
     "_format_price_display", "_classify_media_urls", "JULY_2026_START", "_is_lost_lead",
-    "detect_optout_level", "find_lead_by_any_phone",
+    "detect_optout_level", "find_lead_by_any_phone", "dai_collection",
 ]
 
 SEGMENTS = {"buyer": "Buyer", "tenant": "Tenant (Rent)", "seller": "Seller", "investor": "Investor"}
@@ -62,10 +62,12 @@ BANNED = re.compile(
 
 DEFAULT_CFG = {
     "enabled": False,          # master switch - OFF until you turn it on from the page
-    "min_score": 60,           # only leads with AIScore >= this (or High / Very High interest)
-    "daily_cap": 60,           # max messages per day (all customers)
-    "per_scan": 12,            # max messages per 5-minute scan
-    "enroll_per_day": 40,      # max NEW leads put into the journey per day
+    "min_score": 35,           # preferred leads: AIScore >= this (or High / Very High interest)
+    "daily_target": 30,        # engine keeps pipeline filled so at least this many go out per day
+    "daily_cap": 80,           # max messages per day (all customers)
+    "per_scan": 20,            # max messages per 5-minute scan
+    "enroll_per_day": 60,      # max NEW leads put into the journey per day
+    "fallback_enroll": True,   # if not enough high-score leads, also take any non-cold lead (set False to disable)
     "gap_min": 25, "gap_max": 70,   # random seconds between two sends (anti-ban)
     "test_day_minutes": 0,     # TEST: 1 journey day = N minutes (0 = real days)
     "ignore_window": False,    # TEST: ignore 10:30-13:00 / 17:30-20:00 Mon-Sat window
@@ -164,8 +166,31 @@ def seg_for(coll, lead, ed):
     return "investor" if re.search(r"invest|rental income|\broi\b|returns", blob, re.I) else "buyer"
 
 
-def quality_ok(lead, ed, c):
-    """HIGH-QUALITY ONLY: High / Very High interest, or AI score >= min_score. Never cold / lost / opted-out."""
+def ai_disabled(phone91, lead_id=None):
+    """True if this lead is in the DAI (Disable-AI) list."""
+    try:
+        q = [{"Phone Number": phone91}]
+        if lead_id:
+            q.append({"leadId": str(lead_id)})
+        return dai_collection.find_one({"$or": q}, {"_id": 1}) is not None
+    except Exception as e:
+        print(f"[fu90] DAI check failed: {e}")
+        return False
+
+
+def must_skip(lead, phone91):
+    """Reason string if this lead must NEVER get a follow-up (stop / AI disabled), else None."""
+    if lead.get("followup_optout"):
+        return "OPTED_OUT"
+    if detect_optout_level(lead.get("Lastusermgs")):
+        return "CUSTOMER_STOP"
+    if ai_disabled(phone91, lead.get("_id")):
+        return "AI_DISABLED"
+    return None
+
+
+def quality_ok(lead, ed, c, relaxed=False):
+    """Never cold / lost / opted-out. Strict = High interest or score >= min_score. Relaxed = everyone else who is not cold/lost."""
     if lead.get("followup_optout") or (ed and _is_lost_lead(ed)):
         return False
     lvl = (ed.get("Interest Level") or "").strip().lower()
@@ -173,18 +198,22 @@ def quality_ok(lead, ed, c):
         return False
     if lvl in ("very high", "high"):
         return True
+    if relaxed:
+        return True
     s = lead.get("AIScore")
     return isinstance(s, (int, float)) and s >= c["min_score"]
 
 
-def enroll(coll, lead, ed=None, force=False, c=None):
+def enroll(coll, lead, ed=None, force=False, c=None, relaxed=False):
     c = c or cfg()
     ed = ed or {}
     p10 = phone_last10(lead.get("Phone Number"))
     if not p10 or is_number_blocked(p10):
         return None
+    if must_skip(lead, "91" + p10):          # STOP said / AI disabled -> never enroll
+        return None
     seg = seg_for(coll, lead, ed)
-    if not seg or (not force and not quality_ok(lead, ed, c)):
+    if not seg or (not force and not quality_ok(lead, ed, c, relaxed)):
         return None
     t = _now()
     nxt, li = t, None
@@ -205,39 +234,59 @@ def enroll(coll, lead, ed=None, force=False, c=None):
         return None
 
 
-def enroll_new(c):
-    ist = get_ist_now()
-    day_start = ist.replace(hour=0, minute=0, second=0, microsecond=0) - IST
-    room = c["enroll_per_day"] - cust_c.count_documents({"created_at": {"$gte": day_start}})
-    if room <= 0:
-        return 0
-    known = {d["phone10"] for d in cust_c.find({}, {"phone10": 1})}
+def _enroll_pass(c, relaxed, known, want):
     n = 0
+    if want <= 0:
+        return 0
     for coll in ("Leads", "RentalLeads", "sellingLeads"):
-        q = {"AIScore": {"$gte": c["min_score"]}, "DateObj": {"$gte": JULY_2026_START},
-             "followup_optout": {"$ne": True}}
-        for lead in db[coll].find(q).sort("AIScore", -1).limit(300):
-            if n >= room:
+        q = {"DateObj": {"$gte": JULY_2026_START}, "followup_optout": {"$ne": True}}
+        if relaxed:
+            order = [("DateObj", -1)]                 # newest leads first
+        else:
+            q["AIScore"] = {"$gte": c["min_score"]}
+            order = [("AIScore", -1)]
+        for lead in db[coll].find(q).sort(order).limit(1500):
+            if n >= want:
                 return n
             p10 = phone_last10(lead.get("Phone Number"))
             if not p10 or p10 in known:
                 continue
             ed = db["endData"].find_one({"Number": "91" + p10}) or {}
-            if enroll(coll, lead, ed, c=c):
+            if enroll(coll, lead, ed, c=c, relaxed=relaxed):
                 n += 1
                 known.add(p10)
-    for e in db["endData"].find({"Interest Level": {"$in": ["Very High", "High"]}}, {"Number": 1}).limit(300):
-        if n >= room:
-            break
-        p10 = phone_last10(e.get("Number"))
-        if not p10 or p10 in known:
-            continue
-        coll, lead = find_lead_by_any_phone(p10)
-        if lead and coll != "agentLeads":
-            ed = db["endData"].find_one({"Number": "91" + p10}) or {}
-            if enroll(coll, lead, ed, c=c):
-                n += 1
-                known.add(p10)
+    if not relaxed:
+        for e in db["endData"].find({"Interest Level": {"$in": ["Very High", "High"]}}, {"Number": 1}).limit(500):
+            if n >= want:
+                break
+            p10 = phone_last10(e.get("Number"))
+            if not p10 or p10 in known:
+                continue
+            coll, lead = find_lead_by_any_phone(p10)
+            if lead and coll != "agentLeads":
+                ed = db["endData"].find_one({"Number": "91" + p10}) or {}
+                if enroll(coll, lead, ed, c=c):
+                    n += 1
+                    known.add(p10)
+    return n
+
+
+def enroll_new(c):
+    """Keeps the pipeline filled so at least daily_target messages can go out today."""
+    t = _now()
+    day_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0) - IST
+    sent_today = log_c.count_documents({"status": "sent", "sent_at": {"$gte": day_start}})
+    due_now = cust_c.count_documents({"state": {"$in": list(ACTIVE_STATES)}, "opt_out": {"$ne": True},
+                                      "next_touch_at": {"$lte": t}})
+    need = c["daily_target"] + 10 - sent_today - due_now      # +10 buffer: some due leads get skipped
+    room = c["enroll_per_day"] - cust_c.count_documents({"created_at": {"$gte": day_start}})
+    want = min(need, room)
+    if want <= 0:
+        return 0
+    known = {d["phone10"] for d in cust_c.find({}, {"phone10": 1})}
+    n = _enroll_pass(c, False, known, want)                   # 1st: high quality
+    if n < want and c.get("fallback_enroll", True):
+        n += _enroll_pass(c, True, known, want - n)           # 2nd: fill the rest (never cold/lost/stop/AI-disabled)
     return n
 
 
@@ -442,6 +491,15 @@ def send_next(cid, c):
     if not lead or lead.get("followup_optout") or is_number_blocked(cu["phone10"]):
         _set(cu, state="STOPPED", opt_out=True, stop_reason="LEAD_GONE_OR_OPTED_OUT")
         return "skip"
+    why = must_skip(lead, cu["phone91"])
+    if why == "AI_DISABLED":                       # AI turned off for this lead -> skip (auto-resumes if AI re-enabled)
+        _set(cu, state="STOPPED", stop_reason="AI_DISABLED")
+        return "skip"
+    if why:                                        # customer said stop / not interested
+        _set(cu, state="STOPPED", opt_out=True, stop_reason=why)
+        db[cu["collection"]].update_one({"_id": lead["_id"]},
+                                        {"$set": {"followup_optout": True, "followupStatus": "opted_out"}})
+        return "skip"
     ed = db["endData"].find_one({"Number": cu["phone91"]}) or {}
     seg = seg_for(cu["collection"], lead, ed)
     if not seg:
@@ -457,7 +515,7 @@ def send_next(cid, c):
     if isinstance(lu, datetime) and (not li or lu > li):
         li = lu
         _set(cu, last_inbound_at=lu)
-    if li and (not lo or li > lo):
+    if li and (not lo or li > lo) and (t - li) < 3 * day_len(c):   # only pause if the reply is RECENT (<72h)
         _set(cu, state="PAUSED")
         return "skip"
     # rule 7: max 3 automated messages in any 7 days
@@ -507,11 +565,11 @@ def send_next(cid, c):
             return "abort"
         fails = cu.get("fail_count", 0) + 1
         _log(cu, r, "failed", str(err)[:300], touch, day)
-        if fails >= 2:
-            _set(cu, state="STOPPED", fail_count=fails, flagged=True, stop_reason="DELIVERY_FAILED_2X")
+        if fails >= 4:
+            _set(cu, state="STOPPED", fail_count=fails, flagged=True, stop_reason="DELIVERY_FAILED_4X")
         else:
             _set(cu, fail_count=fails, next_touch_at=t + max(timedelta(hours=2), day_len(c) / 12))
-        return "skip"
+        return "fail"
 
     _log(cu, r, "sent", None, touch, day)
     upd = {"$set": {"touch_no": touch, "last_outbound_at": t, "fail_count": 0, "updated_at": t},
@@ -556,13 +614,16 @@ def _lock(ttl):
 
 
 def housekeeping(c):
-    """72 h of silence after a customer reply -> journey resumes (guide rule 2)."""
+    """72 h of silence after a customer reply -> journey resumes. AI re-enabled -> resumes."""
     t = _now()
     need = 3 * day_len(c)
     for cu in cust_c.find({"state": "PAUSED"}):
         li = cu.get("last_inbound_at")
         if li and t - li >= need:
             _set(cu, state="ACTIVE_SEQUENCE", next_touch_at=t)
+    for cu in cust_c.find({"state": "STOPPED", "stop_reason": "AI_DISABLED"}):
+        if not ai_disabled(cu["phone91"], cu.get("lead_id")):
+            _set(cu, state="ACTIVE_SEQUENCE", stop_reason="", next_touch_at=t)
 
 
 def run_scan():
@@ -577,6 +638,7 @@ def run_scan():
     sent_today = log_c.count_documents({"status": "sent", "sent_at": {"$gte": day_start}})
     room = min(c["per_scan"], c["daily_cap"] - sent_today)
     sent = 0
+    fails_in_row = 0
     if room > 0:
         due = list(cust_c.find({"state": {"$in": list(ACTIVE_STATES)}, "opt_out": {"$ne": True},
                                 "next_touch_at": {"$lte": _now()}}).sort("next_touch_at", 1).limit(room * 4))
@@ -592,6 +654,13 @@ def run_scan():
                 continue
             if res == "abort":
                 break
+            if res == "fail":
+                fails_in_row += 1
+                if fails_in_row >= 3:
+                    print("[fu90] 3 sends failed in a row - WhatsApp looks down, stopping this scan")
+                    break
+                continue
+            fails_in_row = 0
             if res == "sent":
                 sent += 1
                 time.sleep(random.uniform(c["gap_min"], c["gap_max"]))

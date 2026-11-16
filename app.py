@@ -7260,6 +7260,8 @@ def get_eligible_followup_leads(limit=None):
             if not phone.startswith("91"):
                 phone = "91" + phone
  
+            if is_ai_disabled_for_phone(phone) or detect_optout_level(lead.get("Lastusermgs")):
+                continue
             candidates.append({
                 "leadId": lead["_id"],
                 "collection": coll_name,
@@ -7480,7 +7482,7 @@ def followup_scheduler_loop():
 _followup_thread_started = False
  
  
-LEGACY_FOLLOWUPS_ENABLED = True   # legacy engine ON (sends via wp.send_whatsapp_message, max 30/day)
+LEGACY_FOLLOWUPS_ENABLED = False   # legacy engine ON (sends via wp.send_whatsapp_message, max 30/day)
 
 def start_followup_scheduler():
     """Starts the background follow-up thread exactly once per process,
