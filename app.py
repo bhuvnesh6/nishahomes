@@ -11592,129 +11592,295 @@ def _activity_level_color(count, target):
     return REPORT_BLACK
 
 
-def build_activity_report_image(emp_name, summary, slot_title, ist_now):
-    """Returns PNG bytes of the activity report card."""
-    W, pad = 1080, 48
-    header_h, strip_h = 220, 120
-    row_h, gap = 112, 14
-    total_h, footer_h = 120, 110
-    n = len(ACTIVITY_TYPES)
-    H = header_h + strip_h + n * (row_h + gap) + total_h + footer_h
+# ---------------------------------------------------------------------
+# TEAM COMPARISON DASHBOARD (one image, same for everyone)
+# ---------------------------------------------------------------------
+ACTIVITY_REPORT_COLS = {
+    "CALLING": ("Calling", ""),
+    "WHATSAPP": ("WhatsApp", "Msgs"),
+    "SQUARE_YARDS_LISTING": ("Sq.Yards", "Listing"),
+    "NISHA_HOMES_LISTING": ("Nisha", "Listing"),
+    "SQUARE_YARDS_LEAD_CLAIM": ("Sq.Yards", "Claim"),
+    "CRM": ("CRM", "Leads"),
+    "SITE_VISIT": ("Site", "Visits"),
+}
+
+
+def _level_tint(color):
+    return {
+        REPORT_RED: (254, 226, 226),
+        REPORT_GREEN: (220, 252, 231),
+        REPORT_BROWN: (254, 243, 199),
+    }.get(color, (243, 244, 246))
+
+
+def _score_color(score):
+    if score >= 75:
+        return REPORT_GREEN
+    if score >= 40:
+        return REPORT_BROWN
+    if score > 0:
+        return REPORT_BLACK
+    return REPORT_RED
+
+
+def _draw_star(d, cx, cy, r, fill):
+    pts = []
+    for i in range(10):
+        ang = -math.pi / 2 + i * math.pi / 5
+        rad = r if i % 2 == 0 else r * 0.45
+        pts.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+    d.polygon(pts, fill=fill)
+
+
+def _fit_text(d, text, font, max_w):
+    text = str(text or "")
+    if d.textlength(text, font=font) <= max_w:
+        return text
+    while text and d.textlength(text + "...", font=font) > max_w:
+        text = text[:-1]
+    return text.rstrip() + "..."
+
+
+def _center_text(d, cx, y, text, font, fill):
+    w = d.textlength(str(text), font=font)
+    d.text((cx - w / 2, y), str(text), font=font, fill=fill)
+
+
+def build_team_report_rows(emp_numbers, start, end):
+    """One row per selected + active employee, ranked by overall target achievement."""
+    rows = []
+    for num in emp_numbers:
+        member = db["teamAssign"].find_one({"Employee number": num}, {"Employee name": 1, "Active": 1})
+        if not member or member.get("Active", True) is False:
+            continue
+        name = member.get("Employee name") or "Unknown"
+        summary = compute_activity_summary(num, name, start, end)
+
+        vals, parts = {}, []
+        for t in ACTIVITY_TYPES:
+            s = summary.get(t, {})
+            if t == "SITE_VISIT":
+                count = s.get("weekCount", 0)
+                target = s.get("weekTarget", WEEKLY_VISIT_TARGET)
+            else:
+                count = s.get("count", 0)
+                target = ACTIVITY_REPORT_TARGETS.get(t, 5)
+            vals[t] = {"count": count, "target": target}
+            parts.append(min(count / float(target or 1), 1.0))
+
+        rows.append({
+            "number": num,
+            "name": name,
+            "vals": vals,
+            "score": int(round(sum(parts) / len(parts) * 100)) if parts else 0,
+            "total": sum(summary.get(t, {}).get("count", 0) for t in ACTIVITY_TYPES),
+        })
+
+    rows.sort(key=lambda r: (-r["score"], -r["total"], r["name"].lower()))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return rows
+
+
+def build_activity_comparison_image(rows, slot_title, ist_now):
+    """Returns PNG bytes of the team comparison dashboard."""
+    W, pad = 1600, 40
+    col_rank, col_name, col_act, col_score = 80, 330, 128, 214
+    acts = ACTIVITY_TYPES
+    header_h, kpi_h, thead_h = 220, 180, 104
+    row_h, row_gap, team_h, footer_h = 100, 10, 100, 130
+    n = max(1, len(rows))
+    H = header_h + kpi_h + thead_h + 12 + n * (row_h + row_gap) + 10 + team_h + footer_h
 
     img = Image.new("RGB", (W, H), (245, 243, 238))
     d = ImageDraw.Draw(img)
 
-    # ---------- header ----------
+    # ---------- HEADER ----------
     d.rectangle([0, 0, W, header_h], fill=BRAND_NAVY_SOLID)
-    d.text((pad, 42), "NISHA HOMES", font=_font("bold", 38), fill=BRAND_GOLD)
-    d.text((pad, 100), "Daily Activity Report", font=_font("bold", 58), fill="white")
-    d.text((pad, 172), "Your Trusted Real Estate Advisor", font=_font("regular", 24), fill=(200, 204, 214))
+    d.text((pad, 40), "NISHA HOMES", font=_font("bold", 40), fill=BRAND_GOLD)
+    d.text((pad, 98), "Team Performance Comparison", font=_font("bold", 64), fill="white")
+    d.text((pad, 176), "Your Trusted Real Estate Advisor", font=_font("regular", 24), fill=(200, 204, 214))
+
+    f_date = _font("bold", 44)
+    date_txt = ist_now.strftime("%d %b %Y")
+    d.text((W - pad - d.textlength(date_txt, font=f_date), 44), date_txt, font=f_date, fill=BRAND_ORANGE)
+    f_sub = _font("regular", 28)
+    d.text((W - pad - d.textlength(slot_title, font=f_sub), 110), slot_title, font=f_sub, fill="white")
+    win_txt = f"Today 12:00 AM to {ist_now.strftime('%I:%M %p')} IST"
+    f_win = _font("regular", 24)
+    d.text((W - pad - d.textlength(win_txt, font=f_win), 156), win_txt, font=f_win, fill=(200, 204, 214))
     d.line([(0, header_h), (W, header_h)], fill=BRAND_GOLD, width=5)
 
-    # ---------- employee strip ----------
-    date_txt = ist_now.strftime("%d %b %Y")
-    f_date = _font("bold", 30)
-    date_w = d.textlength(date_txt, font=f_date)
-    f_name = _font("bold", 40)
-    max_name_w = W - pad * 2 - date_w - 30
-    name_txt = emp_name or "Unknown"
-    while name_txt and d.textlength(name_txt, font=f_name) > max_name_w:
-        name_txt = name_txt[:-1]
-    if name_txt != (emp_name or "Unknown"):
-        name_txt = name_txt.rstrip() + "..."
-    d.text((pad, header_h + 22), name_txt, font=f_name, fill=REPORT_BLACK)
-    d.text((W - pad - date_w, header_h + 30), date_txt, font=f_date, fill=BRAND_ORANGE)
-    d.text(
-        (pad, header_h + 78),
-        f"{slot_title}   |   Today 12:00 AM to {ist_now.strftime('%I:%M %p')} IST",
-        font=_font("regular", 25), fill=(107, 114, 128)
-    )
+    # ---------- KPI CARDS ----------
+    total_calls = sum(r["vals"]["CALLING"]["count"] for r in rows)
+    total_acts = sum(r["total"] for r in rows)
+    avg_score = int(round(sum(r["score"] for r in rows) / len(rows))) if rows else 0
+    top = rows[0] if rows else None
 
-    # ---------- activity rows ----------
-    f_label = _font("bold", 32)
-    f_sub = _font("regular", 24)
-    f_count = _font("bold", 56)
-    f_target = _font("regular", 20)
+    cards = [
+        ("TEAM CALLS TODAY", str(total_calls), f"across {len(rows)} members", BRAND_ORANGE),
+        ("TOTAL ACTIVITIES", str(total_acts), "all categories today", BRAND_GOLD),
+        ("TOP PERFORMER", (top["name"] if top else "-"), (f"Score {top['score']}%" if top else ""), REPORT_GREEN),
+        ("TEAM AVG SCORE", f"{avg_score}%", "average target achievement", _score_color(avg_score)),
+    ]
+    gap = 24
+    cw = (W - 2 * pad - 3 * gap) // 4
+    cy, ch = header_h + 26, kpi_h - 44
+    for i, (label, value, sub, col) in enumerate(cards):
+        cx = pad + i * (cw + gap)
+        d.rounded_rectangle([cx, cy, cx + cw, cy + ch], radius=18, fill="white", outline=(225, 222, 214), width=2)
+        d.rounded_rectangle([cx, cy + 14, cx + 10, cy + ch - 14], radius=5, fill=col)
+        d.text((cx + 30, cy + 14), label, font=_font("bold", 20), fill=(107, 114, 128))
+        f_val = _font("bold", 52 if i != 2 else 40)
+        d.text((cx + 30, cy + 42 if i != 2 else cy + 48),
+               _fit_text(d, value, f_val, cw - 60), font=f_val, fill=col if i != 1 else REPORT_BLACK)
+        d.text((cx + 30, cy + ch - 34), sub, font=_font("regular", 20), fill=(150, 150, 150))
 
-    y = header_h + strip_h
-    total_count = 0
-    zero_count = 0
+    # ---------- TABLE HEADER ----------
+    name_x = pad + col_rank
+    act_x0 = name_x + col_name
+    score_x = act_x0 + len(acts) * col_act
+    y0 = header_h + kpi_h
+    d.rounded_rectangle([pad, y0, W - pad, y0 + thead_h - 8], radius=16, fill=BRAND_NAVY_SOLID)
+    f_h = _font("bold", 20)
+    f_ht = _font("regular", 17)
+    _center_text(d, pad + col_rank / 2, y0 + 34, "#", _font("bold", 26), BRAND_GOLD)
+    d.text((name_x + 10, y0 + 34), "EMPLOYEE", font=_font("bold", 24), fill=BRAND_GOLD)
+    for i, t in enumerate(acts):
+        cx = act_x0 + i * col_act + col_act / 2
+        l1, l2 = ACTIVITY_REPORT_COLS.get(t, (t, ""))
+        _center_text(d, cx, y0 + 10, _fit_text(d, l1, f_h, col_act - 8), f_h, "white")
+        if l2:
+            _center_text(d, cx, y0 + 34, _fit_text(d, l2, f_h, col_act - 8), f_h, "white")
+        tgt = ACTIVITY_REPORT_TARGETS.get(t, 5)
+        tgt_txt = f"tgt {tgt}/wk" if t == "SITE_VISIT" else f"tgt {tgt}"
+        _center_text(d, cx, y0 + 62, tgt_txt, f_ht, BRAND_GOLD)
+    _center_text(d, score_x + col_score / 2, y0 + 34, "SCORE", _font("bold", 24), BRAND_GOLD)
 
-    for t in ACTIVITY_TYPES:
-        s = summary.get(t, {})
-        today_count = s.get("count", 0)
-        count = today_count
-        target = ACTIVITY_REPORT_TARGETS.get(t, 5)
-        tgt_txt = f"target {target}"
+    # ---------- ROWS ----------
+    best = {t: max([r["vals"][t]["count"] for r in rows] or [0]) for t in acts}
+    badge_cols = {1: (212, 175, 55), 2: (156, 163, 175), 3: (180, 110, 60)}
+    y = y0 + thead_h + 12
+    f_name = _font("bold", 30)
+    f_small = _font("regular", 21)
+    f_cnt = _font("bold", 40)
+    f_tg = _font("regular", 18)
+    f_pct = _font("bold", 38)
 
-        if t == "SITE_VISIT":
-            # Weekly (Mon-Sat) visits vs weekly target
-            count = s.get("weekCount", 0)
-            target = s.get("weekTarget", WEEKLY_VISIT_TARGET)
-            tgt_txt = f"target {target}/week"
+    for r in rows:
+        d.rounded_rectangle([pad, y, W - pad, y + row_h], radius=18, fill="white",
+                            outline=(225, 222, 214), width=2)
 
-        color = _activity_level_color(count, target)
-        total_count += today_count
-        if count == 0:
-            zero_count += 1
+        # rank badge
+        bc = badge_cols.get(r["rank"], (209, 213, 219))
+        bx, by = pad + col_rank / 2, y + row_h / 2
+        d.ellipse([bx - 27, by - 27, bx + 27, by + 27], fill=bc)
+        _center_text(d, bx, by - 17, r["rank"], _font("bold", 28),
+                     "white" if r["rank"] <= 3 else REPORT_BLACK)
 
-        if t == "CALLING":
-            sub = f"Connected {s.get('connected', 0)}   |   Not connected {s.get('notConnected', 0)}"
-        elif t == "CRM":
-            sub = f"New {s.get('newCount', 0)}   |   Duplicate {s.get('duplicateCount', 0)}"
-        elif t == "SITE_VISIT":
-            remaining = max(0, target - count)
-            days_left = s.get("daysLeft", 0)
-            if remaining == 0:
-                sub = f"Weekly target achieved ({count}/{target})   |   Today {today_count}"
-            elif days_left == 0:
-                sub = f"Week ended: {remaining} short of target   |   Today {today_count}"
-            else:
-                sub = f"{remaining} more to go   |   {days_left} day(s) left   |   Today {today_count}"
-        else:
-            sub = ACTIVITY_REPORT_SUBTEXT.get(t, "")
+        # name + total
+        d.text((name_x + 10, y + 16), _fit_text(d, r["name"], f_name, col_name - 24), font=f_name, fill=REPORT_BLACK)
+        d.text((name_x + 10, y + 58), f"Total today: {r['total']}", font=f_small, fill=(107, 114, 128))
 
-        x1, x2 = pad, W - pad
-        d.rounded_rectangle([x1, y, x2, y + row_h], radius=18, fill="white", outline=(225, 222, 214), width=2)
-        d.rounded_rectangle([x1, y + 14, x1 + 10, y + row_h - 14], radius=5, fill=color)
+        # activity cells
+        for i, t in enumerate(acts):
+            v = r["vals"][t]
+            count, target = v["count"], v["target"]
+            color = _activity_level_color(count, target)
+            cx0 = act_x0 + i * col_act
+            ry = y + 10
+            d.rounded_rectangle([cx0 + 6, ry, cx0 + col_act - 6, y + row_h - 10], radius=12, fill=_level_tint(color))
+            _center_text(d, cx0 + col_act / 2, ry + 4, count, f_cnt, color)
+            _center_text(d, cx0 + col_act / 2, ry + 54, f"/ {target}", f_tg, (130, 130, 130))
+            if best[t] > 0 and count == best[t]:
+                _draw_star(d, cx0 + col_act - 20, ry + 16, 9, (212, 175, 55))
 
-        d.text((x1 + 34, y + 18), ACTIVITY_REPORT_LABELS.get(t, t), font=f_label, fill=REPORT_BLACK)
-        d.text((x1 + 34, y + 66), sub, font=f_sub, fill=(107, 114, 128))
+        # score + progress bar
+        sc = _score_color(r["score"])
+        d.text((score_x + 18, y + 12), f"{r['score']}%", font=f_pct, fill=sc)
+        bar_x1, bar_x2, bar_y = score_x + 18, score_x + col_score - 18, y + 66
+        d.rounded_rectangle([bar_x1, bar_y, bar_x2, bar_y + 14], radius=7, fill=(229, 231, 235))
+        fill_w = int((bar_x2 - bar_x1) * min(r["score"], 100) / 100)
+        if fill_w > 0:
+            d.rounded_rectangle([bar_x1, bar_y, bar_x1 + max(fill_w, 14), bar_y + 14], radius=7, fill=sc)
 
-        cnt_txt = str(count)
-        cw = d.textlength(cnt_txt, font=f_count)
-        d.text((x2 - 30 - cw, y + 10), cnt_txt, font=f_count, fill=color)
-        tw = d.textlength(tgt_txt, font=f_target)
-        d.text((x2 - 30 - tw, y + 82), tgt_txt, font=f_target, fill=(150, 150, 150))
+        y += row_h + row_gap
 
-        y += row_h + gap
+    # ---------- TEAM TOTAL ROW ----------
+    y += 10
+    d.rounded_rectangle([pad, y, W - pad, y + team_h - 12], radius=18, fill=BRAND_NAVY_SOLID)
+    d.text((name_x - 50, y + 30), "TEAM TOTAL", font=_font("bold", 30), fill=BRAND_GOLD)
+    for i, t in enumerate(acts):
+        s = sum(r["vals"][t]["count"] for r in rows)
+        _center_text(d, act_x0 + i * col_act + col_act / 2, y + 22, s, _font("bold", 40), "white")
+    _center_text(d, score_x + col_score / 2, y + 22, f"{avg_score}%", _font("bold", 40), BRAND_ORANGE)
+    y += team_h
 
-    # ---------- total block ----------
-    d.rounded_rectangle([pad, y, W - pad, y + total_h - 14], radius=18, fill=BRAND_NAVY_SOLID)
-    d.text((pad + 34, y + 22), "TOTAL ACTIVITIES (TODAY)", font=_font("bold", 24), fill=BRAND_GOLD)
-    d.text((pad + 34, y + 52), str(total_count), font=_font("bold", 48), fill="white")
-    idle_txt = f"Idle categories: {zero_count}"
-    f_idle = _font("bold", 30)
-    iw = d.textlength(idle_txt, font=f_idle)
-    d.text((W - pad - 34 - iw, y + 44), idle_txt, font=f_idle,
-           fill=(252, 165, 165) if zero_count else (134, 239, 172))
-    y += total_h
-
-    # ---------- legend + footer ----------
+    # ---------- LEGEND + FOOTER ----------
     f_leg = _font("regular", 22)
     x = pad
     for label, col in (("None", REPORT_RED), ("Low", REPORT_BLACK),
                        ("Medium", REPORT_BROWN), ("On target", REPORT_GREEN)):
-        d.ellipse([x, y + 12, x + 20, y + 32], fill=col)
-        d.text((x + 30, y + 8), label, font=f_leg, fill=(107, 114, 128))
+        d.ellipse([x, y + 14, x + 20, y + 34], fill=col)
+        d.text((x + 30, y + 10), label, font=f_leg, fill=(107, 114, 128))
         x += 30 + d.textlength(label, font=f_leg) + 40
-    d.text((pad, y + 54),
+    _draw_star(d, x + 10, y + 24, 10, (212, 175, 55))
+    d.text((x + 28, y + 10), "Best in category", font=f_leg, fill=(107, 114, 128))
+    d.text((pad, y + 52),
+           "Score = average target achievement across all 7 activities (site visits counted weekly).",
+           font=f_leg, fill=(150, 150, 150))
+    d.text((pad, y + 84),
            f"Generated {ist_now.strftime('%I:%M %p')} IST  |  nishahomes.com",
            font=f_leg, fill=(150, 150, 150))
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def prepare_shared_activity_report(slot_title, emp_numbers):
+    """Builds the ONE comparison PNG, saves it, returns everything needed to send it."""
+    start, end, ist_now = get_ist_day_range_utc()
+    rows = build_team_report_rows(emp_numbers, start, end)
+    if not rows:
+        raise RuntimeError("No active selected members to compare")
+
+    png_bytes = build_activity_comparison_image(rows, slot_title, ist_now)
+    filename = f"team_report_{ist_now.strftime('%Y-%m-%d')}_{secrets.token_hex(8)}.png"
+    path = os.path.join(ACTIVITY_REPORT_DIR, filename)
+    with open(path, "wb") as fh:
+        fh.write(png_bytes)
+
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
+    return {
+        "rows": rows, "filename": filename, "path": path,
+        "image_url": f"{base_url}/activity-reports/{filename}",
+        "ist_now": ist_now,
+    }
+
+
+def build_activity_report_caption(shared, emp_number, slot_title):
+    rows, ist_now = shared["rows"], shared["ist_now"]
+    lines = [
+        "📊 Team Performance Comparison",
+        f"📅 {ist_now.strftime('%d %b %Y')} | {slot_title}",
+    ]
+    if rows:
+        lines.append(f"🏆 Top performer: {rows[0]['name']} ({rows[0]['score']}%)")
+    me = next((r for r in rows if r["number"] == emp_number), None)
+    if me:
+        lines.append(f"👤 You: rank #{me['rank']} of {len(rows)} | score {me['score']}%")
+        idle = [ACTIVITY_REPORT_LABELS[t] for t in ACTIVITY_TYPES if me["vals"][t]["count"] == 0]
+        if idle:
+            lines.append("⚠️ No activity yet: " + ", ".join(idle))
+        sv = me["vals"]["SITE_VISIT"]
+        left = max(0, sv["target"] - sv["count"])
+        if left == 0:
+            lines.append(f"✅ Site visits this week: {sv['count']}/{sv['target']} - target achieved")
+        else:
+            lines.append(f"🏠 Site visits this week: {sv['count']}/{sv['target']} - {left} more needed (Mon-Sat)")
+    return "\n".join(lines)[:1000]
 
 
 def send_wirebase_image(to_phone, image_url, caption, instance_name=None):
@@ -11746,10 +11912,11 @@ def send_wirebase_image(to_phone, image_url, caption, instance_name=None):
     return False, (body.get("error") or f"HTTP {resp.status_code}"), body
 
 
-def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
-    """Builds the PNG for one employee, sends it (with retries), deletes the PNG on
-    success. On failure the PNG is kept and the log is marked 'failed' so the admin
-    dashboard shows it with a Retry button. Returns True/False."""
+def deliver_activity_report(emp_number, slot_key, slot_title, log_id, shared=None):
+    """Sends the team comparison image to ONE employee (with retries).
+    `shared` = the already-built image for this slot. If None (admin Retry button),
+    a fresh comparison image is built. On failure the PNG is kept and the log is
+    marked 'failed' so the admin dashboard shows it with a Retry button."""
     ist_date = get_ist_now().strftime("%Y-%m-%d")
     base_fields = {
         "employeeNumber": emp_number, "slot": slot_key,
@@ -11760,6 +11927,7 @@ def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
     if prev.get("imageFile"):
         _safe_remove(os.path.join(ACTIVITY_REPORT_DIR, prev["imageFile"]))
 
+    owns_file = shared is None
     emp_name = "Unknown"
     filename = None
     attempts = 0
@@ -11769,54 +11937,27 @@ def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
         member = db["teamAssign"].find_one({"Employee number": emp_number}) or {}
         emp_name = member.get("Employee name") or "Unknown"
 
-        start, end, ist_now = get_ist_day_range_utc()
-        summary = compute_activity_summary(emp_number, emp_name, start, end)
-        png_bytes = build_activity_report_image(emp_name, summary, slot_title, ist_now)
+        if shared is None:
+            selected = list(get_round_robin_config().get("employees") or [])
+            if emp_number not in selected:
+                selected.append(emp_number)
+            shared = prepare_shared_activity_report(slot_title, selected)
 
-        filename = f"report_{emp_number}_{ist_date}_{slot_key}_{secrets.token_hex(8)}.png"
-        path = os.path.join(ACTIVITY_REPORT_DIR, filename)
-        with open(path, "wb") as fh:
-            fh.write(png_bytes)
-
-        base_url = os.getenv("PUBLIC_BASE_URL", "https://crm.nishahomes.com")
-        image_url = f"{base_url}/activity-reports/{filename}"
+        filename = shared["filename"]
+        caption = build_activity_report_caption(shared, emp_number, slot_title)
         to_phone = normalize_phone_91(emp_number)
-
-        total = sum(summary[t]["count"] for t in ACTIVITY_TYPES)
-        zero_names = [
-            ACTIVITY_REPORT_LABELS[t] for t in ACTIVITY_TYPES
-            if (summary[t].get("weekCount", 0) if t == "SITE_VISIT" else summary[t]["count"]) == 0
-        ]
-        caption_lines = [
-            f"📊 Daily Activity Report - {emp_name}",
-            f"📅 {ist_now.strftime('%d %b %Y')} | {slot_title}",
-            f"Total activities: {total}",
-        ]
-        if zero_names:
-            caption_lines.append("⚠️ No activity yet: " + ", ".join(zero_names))
-        sv = summary.get("SITE_VISIT", {})
-        sv_done = sv.get("weekCount", 0)
-        sv_target = sv.get("weekTarget", WEEKLY_VISIT_TARGET)
-        sv_left = max(0, sv_target - sv_done)
-        if sv_left == 0:
-            caption_lines.append(f"✅ Site visits this week: {sv_done}/{sv_target} - target achieved")
-        else:
-            caption_lines.append(
-                f"🏠 Site visits this week: {sv_done}/{sv_target} - {sv_left} more needed, "
-                f"{sv.get('daysLeft', 0)} day(s) left (Mon-Sat)"
-            )
-        caption = "\n".join(caption_lines)
 
         for attempt in range(1, ACTIVITY_REPORT_MAX_ATTEMPTS + 1):
             attempts = attempt
-            ok, err, _ = send_wirebase_image(to_phone, image_url, caption)
+            ok, err, _ = send_wirebase_image(to_phone, shared["image_url"], caption)
             if ok:
-                _safe_remove(path)  # success -> delete the image
+                if owns_file:
+                    _safe_remove(shared["path"])   # shared file is deleted by run_activity_report_slot
                 _set_report_log(
                     log_id, status="sent", resolved=True, error=None,
                     attempts=attempts, employeeName=emp_name, imageFile=None, **base_fields
                 )
-                print(f"[activity-report] sent {slot_key} report to {emp_name} ({emp_number})")
+                print(f"[activity-report] sent {slot_key} comparison report to {emp_name} ({emp_number})")
                 return True
 
             last_error = err
@@ -11838,12 +11979,15 @@ def deliver_activity_report(emp_number, slot_key, slot_title, log_id):
 
 
 def run_activity_report_slot(slot_key, slot_title, manual=False):
-    """Generates + sends reports to everyone CURRENTLY selected in Round Robin."""
+    """Builds ONE comparison image and sends it to everyone CURRENTLY selected in Round Robin."""
     date_ist = get_ist_now().strftime("%Y-%m-%d")
     selected = list(get_round_robin_config().get("employees") or [])
     if not selected:
         print(f"[activity-report] {slot_key}: nobody selected in Round Robin - nothing to send")
         return
+
+    shared = None          # built lazily, only AFTER we win a claim (scheduler loops every 30s)
+    all_ok = True
 
     for emp in selected:
         # Re-check selection right before each send, so an un-select takes effect immediately
@@ -11869,12 +12013,35 @@ def run_activity_report_slot(slot_key, slot_title, manual=False):
         except DuplicateKeyError:
             continue
 
+        # First successful claim -> build the single shared comparison image
+        if shared is None:
+            try:
+                current_selected = get_round_robin_config().get("employees") or selected
+                shared = prepare_shared_activity_report(slot_title, current_selected)
+            except Exception as build_err:
+                import traceback
+                traceback.print_exc()
+                _set_report_log(
+                    log_id, status="failed", resolved=False,
+                    error=f"Report generation failed: {build_err}", attempts=0,
+                    employeeNumber=emp, slot=slot_key, slotTitle=slot_title,
+                    dateIST=date_ist, imageFile=None
+                )
+                all_ok = False
+                continue
+
         try:
-            deliver_activity_report(emp, slot_key, slot_title, log_id)
+            ok = deliver_activity_report(emp, slot_key, slot_title, log_id, shared=shared)
+            all_ok = all_ok and ok
         except Exception:
             import traceback
             traceback.print_exc()
+            all_ok = False
         time.sleep(3)
+
+    # Everyone got it -> delete the shared PNG. If anyone failed, keep it for the Retry button.
+    if shared and all_ok:
+        _safe_remove(shared["path"])
 
 
 def activity_report_scheduler_loop():
