@@ -2612,6 +2612,7 @@ COLLECTION_MAP = {
     "rental": "RentalLeads",
     "selling": "sellingLeads",
     "agent": "agentLeads",
+    "owner": "OwnerLeads",
     "other": "Leads"
 }
 
@@ -2708,6 +2709,24 @@ def add_call_log():
                     {"_id": lead_doc["_id"]},
                     {"$set": {"callBy": session.get("user_id")}}
                 )
+
+                # NEW: Owner lead -> first logged call moves status New -> Contacted
+                if collection_name == "OwnerLeads":
+                    try:
+                        db[collection_name].update_one(
+                            {"_id": lead_doc["_id"], "Status": {"$in": [None, "", "New"]}},
+                            {
+                                "$set": {"Status": "Contacted", "updatedAt": now},
+                                "$push": {"History": {"$each": [{
+                                    "at": now,
+                                    "action": "Status: New → Contacted (call log saved)",
+                                    "by": employee_name,
+                                    "remark": data.get("callerRemarks", "")
+                                }], "$slice": -100}}
+                            }
+                        )
+                    except Exception as ow_err:
+                        print(f"[owner-leads] auto status failed: {ow_err}")
 
         update_fields = {
             "Call Status": data.get("callStatus", ""),
@@ -13365,6 +13384,477 @@ def admin_rescore_leads():
     ).start()
     return jsonify({"success": True, "message": "Scoring started in background - check server logs"}), 200
 
+
+# =====================================================================
+# OWNER LEADS  (LeadType = "owner")
+# Separate collection "OwnerLeads" — never mixes with Buying/Rental/
+# Selling/Agent leads, the dashboard KPIs or follow-up engines.
+# Calls + call logs reuse /api/call-attempt and /api/call-log
+# (leadType "owner" -> OwnerLeads via COLLECTION_MAP).
+# =====================================================================
+owner_leads_collection = db["OwnerLeads"]
+try:
+    owner_leads_collection.create_index("Phone10")
+    owner_leads_collection.create_index("Status")
+    owner_leads_collection.create_index("createdAt")
+except Exception as _ow_idx_err:
+    print(f"[startup] OwnerLeads index warning: {_ow_idx_err}")
+
+OWNER_TARGET_FIELDS = [
+    {"key": "Lead Name",       "label": "Owner Name",       "required": True},
+    {"key": "Phone Number",    "label": "Phone Number",     "required": True},
+    {"key": "WhatsApp Number", "label": "WhatsApp Number",  "required": False},
+    {"key": "Owner Type",      "label": "Type",             "required": False},
+    {"key": "Properties",      "label": "Properties",       "required": False},
+    {"key": "Locations",       "label": "Locations",        "required": False},
+    {"key": "City",            "label": "City",             "required": False},
+    {"key": "Status",          "label": "Status",           "required": False},
+    {"key": "Note",            "label": "Note / Remarks",   "required": False},
+]
+OWNER_OPTIONAL_TEXT_KEYS = ["Owner Type", "Properties", "Locations", "City", "Status", "Note"]
+OWNER_EDITABLE = {"Lead Name", "WhatsApp Number", "Owner Type", "Properties",
+                  "Locations", "City", "Status", "Note"}
+
+_OWNER_MAP_KEYWORDS = {
+    "Lead Name":       ["owner", "owner name", "name", "lead name", "full name", "customer name"],
+    "Phone Number":    ["phone", "phone number", "mobile", "mobile number", "contact", "contact number", "number"],
+    "WhatsApp Number": ["whatsapp", "whatsapp number", "whatsapp no", "wa", "wa number"],
+    "Owner Type":      ["type", "owner type", "category"],
+    "Properties":      ["properties", "property", "property type", "inventory"],
+    "Locations":       ["locations", "location", "area", "locality"],
+    "City":            ["city"],
+    "Status":          ["status"],
+    "Note":            ["note", "notes", "remarks", "comment", "comments"],
+}
+
+
+def _owner_staff_only():
+    if not session.get("user_id") or session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    return None
+
+
+def _owner_oid(raw):
+    try:
+        return ObjectId(str(raw))
+    except Exception:
+        return None
+
+
+def _owner_hist(action, remark=""):
+    return {"at": datetime.utcnow(), "action": action,
+            "by": session.get("employee_name") or "System", "remark": remark or ""}
+
+
+def _owner_pick_phone(raw):
+    """First valid Indian mobile from a cell that may hold several numbers
+    ('98xxxxxxx0, 97xxxxxxx1') or Excel '9876543210.0' style values."""
+    for part in re.split(r"[,/;|\n]+", str(raw or "")):
+        part = re.sub(r"\.0+$", "", part.strip())
+        if phone_last10(part):
+            return part
+    return ""
+
+
+def _owner_cell(row, mapping, key):
+    col = mapping.get(key)
+    if not col:
+        return ""
+    v = row.get(col, "")
+    return "" if v is None else str(v).strip()
+
+
+def _owner_auto_guess(headers):
+    lower = {}
+    for h in headers:
+        lower.setdefault(str(h).strip().lower(), h)
+    guesses, used = {}, set()
+    for target, kws in _OWNER_MAP_KEYWORDS.items():
+        for kw in kws:
+            h = lower.get(kw)
+            if h is not None and h not in used:
+                guesses[target] = h
+                used.add(h)
+                break
+    return guesses
+
+
+@app.route("/api/owner-leads/import/parse", methods=["POST"])
+def owner_leads_import_parse():
+    """Step 1: upload file -> headers + preview + auto-suggested mapping."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+        file = request.files["file"]
+        if not file.filename:
+            return jsonify({"success": False, "message": "No file selected"}), 400
+
+        ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        if ext not in ("csv", "xlsx", "xls"):
+            return jsonify({"success": False, "message": "Only .csv, .xlsx or .xls files are supported"}), 400
+
+        _cleanup_old_imports()
+        import_id = uuid.uuid4().hex
+        saved_path = os.path.join(IMPORT_TEMP_DIR, f"{import_id}.{ext}")
+        file.save(saved_path)
+
+        try:
+            df = _read_import_file(saved_path, ext)
+        except Exception as parse_err:
+            try:
+                os.remove(saved_path)
+            except Exception:
+                pass
+            return jsonify({"success": False, "message": f"Could not read file: {parse_err}"}), 400
+
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how="all")
+        if df.empty or len(df.columns) == 0:
+            os.remove(saved_path)
+            return jsonify({"success": False, "message": "File has no readable data"}), 400
+
+        headers = list(df.columns)
+        preview_rows = df.head(5).fillna("").astype(str).to_dict(orient="records")
+        _import_cache[import_id] = {"path": saved_path, "ext": ext, "createdAt": time.time()}
+
+        return jsonify({
+            "success": True, "importId": import_id, "fileName": file.filename,
+            "headers": headers, "previewRows": preview_rows, "totalRows": int(len(df)),
+            "targetFields": OWNER_TARGET_FIELDS, "autoMapping": _owner_auto_guess(headers)
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/import/commit", methods=["POST"])
+def owner_leads_import_commit():
+    """Step 2: user-mapped columns -> insert / update owner leads.
+    Name + a valid phone are mandatory. Same number = same owner (no duplicates)."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        data = request.json or {}
+        import_id = data.get("importId")
+        mapping = data.get("mapping") or {}
+
+        if not mapping.get("Lead Name") or not mapping.get("Phone Number"):
+            return jsonify({"success": False, "message": "Owner Name and Phone Number must be mapped"}), 400
+
+        entry = _import_cache.get(import_id)
+        if not entry or not os.path.exists(entry["path"]):
+            return jsonify({"success": False, "message": "Import session expired — please re-upload the file"}), 400
+
+        df = _read_import_file(entry["path"], entry["ext"])
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how="all")
+
+        now = datetime.utcnow()
+        batch = secrets.token_hex(4)
+        by = session.get("employee_name") or "Unknown"
+        inserted = updated = skipped = 0
+        errors = []
+
+        for idx, row in df.iterrows():
+            try:
+                name = _owner_cell(row, mapping, "Lead Name")
+                raw_phone = _owner_pick_phone(_owner_cell(row, mapping, "Phone Number"))
+
+                if not name or not raw_phone:
+                    skipped += 1
+                    errors.append(f"Row {idx + 2}: owner name or valid phone number missing")
+                    continue
+                if is_number_blocked(raw_phone):
+                    skipped += 1
+                    errors.append(f"Row {idx + 2}: number is blocked in CRM")
+                    continue
+
+                p10 = phone_last10(raw_phone)
+                phone91 = normalize_phone_91(raw_phone)
+                wa_raw = _owner_pick_phone(_owner_cell(row, mapping, "WhatsApp Number"))
+                wa91 = normalize_phone_91(wa_raw) if wa_raw else phone91
+
+                extra = {}
+                for k in OWNER_OPTIONAL_TEXT_KEYS:
+                    v = _owner_cell(row, mapping, k)
+                    if v:
+                        extra[k] = v
+
+                existing = owner_leads_collection.find_one({"Phone10": p10}, {"_id": 1})
+                if existing:
+                    # re-import: fill details only — never overwrite the team's Status / name
+                    upd = {k: v for k, v in extra.items() if k != "Status"}
+                    if wa_raw:
+                        upd["WhatsApp Number"] = wa91
+                    upd["updatedAt"] = now
+                    owner_leads_collection.update_one(
+                        {"_id": existing["_id"]},
+                        {"$set": upd,
+                         "$push": {"History": {"$each": [{"at": now, "action": "Re-imported (details refreshed)",
+                                                          "by": by, "remark": f"Batch {batch}"}],
+                                               "$slice": -100}}}
+                    )
+                    updated += 1
+                else:
+                    doc = {
+                        "Lead Name": name,
+                        "Phone Number": phone91,
+                        "Phone10": p10,
+                        "WhatsApp Number": wa91,
+                        "LeadType": "owner",
+                        "Owner Type": extra.get("Owner Type", ""),
+                        "Properties": extra.get("Properties", ""),
+                        "Locations": extra.get("Locations", ""),
+                        "City": extra.get("City", ""),
+                        "Status": extra.get("Status") or "New",
+                        "Note": extra.get("Note", ""),
+                        "Source": "Excel Import",
+                        "ImportBatch": batch,
+                        "ImportedBy": by,
+                        "Created At": now.strftime("%Y-%m-%d %H:%M:%S"),
+                        "Date": now.strftime("%d-%m-%Y"),
+                        "createdAt": now,
+                        "updatedAt": now,
+                        "History": [{"at": now, "action": "Imported from Excel", "by": by,
+                                     "remark": f"Batch {batch}"}],
+                    }
+                    owner_leads_collection.insert_one(doc)
+                    inserted += 1
+
+            except Exception as row_err:
+                skipped += 1
+                errors.append(f"Row {idx + 2}: {row_err}")
+
+        try:
+            os.remove(entry["path"])
+        except Exception:
+            pass
+        _import_cache.pop(import_id, None)
+
+        return jsonify({
+            "success": True, "totalRows": int(len(df)),
+            "inserted": inserted, "updated": updated, "skipped": skipped,
+            "errors": errors[:25]
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads", methods=["GET"])
+def owner_leads_list():
+    """Paginated owner list (+ merged call info from endData) + status counts."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        q = (request.args.get("q") or "").strip()
+        status = (request.args.get("status") or "all").strip()
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+            limit = max(1, min(int(request.args.get("limit", 18)), 100))
+        except ValueError:
+            page, limit = 1, 18
+
+        query = {}
+        if status != "all":
+            query["Status"] = status
+        if q:
+            rx = {"$regex": re.escape(q), "$options": "i"}
+            query["$or"] = [{"Lead Name": rx}, {"Phone Number": rx}, {"WhatsApp Number": rx},
+                            {"Properties": rx}, {"Locations": rx}, {"City": rx}, {"Owner Type": rx}]
+
+        total = owner_leads_collection.count_documents(query)
+        docs = list(owner_leads_collection.find(query, {"History": 0})
+                    .sort("createdAt", -1).skip((page - 1) * limit).limit(limit))
+
+        phones = [d.get("Phone Number") for d in docs if d.get("Phone Number")]
+        end_map = {}
+        if phones:
+            for ed in db["endData"].find({"Number": {"$in": phones}}):
+                end_map[ed.get("Number")] = ed
+
+        def _c(v):
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                return ""
+            return v
+
+        items = []
+        for d in docs:
+            ed = end_map.get(d.get("Phone Number"), {})
+            items.append({
+                "id": str(d["_id"]),
+                "name": d.get("Lead Name", ""),
+                "phone": d.get("Phone Number", ""),
+                "whatsapp": d.get("WhatsApp Number") or d.get("Phone Number", ""),
+                "ownerType": d.get("Owner Type", ""),
+                "properties": d.get("Properties", ""),
+                "locations": d.get("Locations", ""),
+                "city": d.get("City", ""),
+                "status": d.get("Status") or "New",
+                "note": d.get("Note", ""),
+                "createdAt": format_ist(d.get("createdAt")) if isinstance(d.get("createdAt"), datetime) else "-",
+                "importedBy": d.get("ImportedBy", ""),
+                "callStatus": _c(ed.get("Call Status", "")),
+                "interestLevel": _c(ed.get("Interest Level", "")),
+                "nextCallDate": _c(ed.get("Next Call Date", "")),
+                "nextFollowup": _c(ed.get("Next Follow-up Timeline", "")),
+                "callerRemarks": _c(ed.get("Caller Remarks", "")),
+                "callAttempts": ed.get("Call_attempt") if isinstance(ed.get("Call_attempt"), int) else 0,
+                "lastCallBy": _c(ed.get("lastCallBy", "")),
+                "lastCallAt": _c(ed.get("lastCallAtFormatted", "")),
+            })
+
+        stats = {}
+        for r in owner_leads_collection.aggregate([{"$group": {"_id": "$Status", "count": {"$sum": 1}}}]):
+            key = r["_id"] or "New"
+            stats[key] = stats.get(key, 0) + r["count"]
+
+        return jsonify({"success": True, "total": total, "page": page, "limit": limit,
+                        "stats": stats, "statsTotal": sum(stats.values()), "data": items}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/update", methods=["POST"])
+def owner_leads_update():
+    """Edit details and/or status. Every change is written to the lead's History."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        data = request.json or {}
+        oid = _owner_oid(data.get("id"))
+        if not oid:
+            return jsonify({"success": False, "message": "Invalid lead id"}), 400
+
+        incoming = data.get("set") or {}
+        set_fields = {}
+        for k in OWNER_EDITABLE:
+            if k in incoming:
+                v = incoming[k]
+                set_fields[k] = "" if v is None else str(v).strip()
+
+        if "Lead Name" in set_fields and not set_fields["Lead Name"]:
+            return jsonify({"success": False, "message": "Owner name cannot be empty"}), 400
+        if set_fields.get("WhatsApp Number"):
+            wa = _owner_pick_phone(set_fields["WhatsApp Number"])
+            if not wa:
+                return jsonify({"success": False, "message": "Invalid WhatsApp number"}), 400
+            set_fields["WhatsApp Number"] = normalize_phone_91(wa)
+        if "Status" in set_fields and not set_fields["Status"]:
+            set_fields["Status"] = "New"
+        if not set_fields:
+            return jsonify({"success": False, "message": "Nothing to update"}), 400
+
+        doc = owner_leads_collection.find_one({"_id": oid})
+        if not doc:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
+
+        old_status = doc.get("Status") or "New"
+        actions = []
+        if "Status" in set_fields and set_fields["Status"] != old_status:
+            actions.append(f"Status: {old_status} → {set_fields['Status']}")
+        changed_keys = [k for k, v in set_fields.items()
+                        if k != "Status" and str(doc.get(k) or "") != v]
+        if changed_keys:
+            actions.append("Details edited (" + ", ".join(changed_keys) + ")")
+
+        if not actions:
+            return jsonify({"success": True, "unchanged": True}), 200
+
+        set_fields["updatedAt"] = datetime.utcnow()
+        owner_leads_collection.update_one(
+            {"_id": oid},
+            {"$set": set_fields,
+             "$push": {"History": {"$each": [_owner_hist("; ".join(actions), data.get("remark", ""))],
+                                   "$slice": -100}}}
+        )
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/activity", methods=["POST"])
+def owner_leads_activity():
+    """Records a WhatsApp action on an owner lead in the Activity Tracker
+    (counts as WhatsApp Engagement) + the lead's own History."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        data = request.json or {}
+        oid = _owner_oid(data.get("id"))
+        if not oid or data.get("type") != "whatsapp":
+            return jsonify({"success": False, "message": "Invalid request"}), 400
+
+        doc = owner_leads_collection.find_one({"_id": oid})
+        if not doc:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
+
+        log_activity(
+            activity_type="WHATSAPP",
+            source_platform="Owner Leads",
+            caller_number=session.get("employee_number"),
+            caller_name=session.get("employee_name"),
+            customer_name=doc.get("Lead Name"),
+            mobile=doc.get("WhatsApp Number") or doc.get("Phone Number"),
+            lead_id=str(oid),
+            status="sent",
+            extra={"leadType": "owner"}
+        )
+        owner_leads_collection.update_one(
+            {"_id": oid},
+            {"$push": {"History": {"$each": [_owner_hist("WhatsApp message opened")], "$slice": -100}}}
+        )
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/<lead_id>/history", methods=["GET"])
+def owner_leads_history(lead_id):
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    oid = _owner_oid(lead_id)
+    if not oid:
+        return jsonify({"success": False, "message": "Invalid id"}), 400
+    doc = owner_leads_collection.find_one({"_id": oid}, {"History": 1})
+    if not doc:
+        return jsonify({"success": False, "message": "Not found"}), 404
+    items = []
+    for h in reversed(doc.get("History") or []):
+        at = h.get("at")
+        items.append({
+            "atIso": at.isoformat() if isinstance(at, datetime) else "",
+            "atText": format_ist(at) if isinstance(at, datetime) else "-",
+            "action": h.get("action", ""), "by": h.get("by", ""), "remark": h.get("remark", "")
+        })
+    return jsonify({"success": True, "items": items}), 200
+
+
+@app.route("/api/owner-leads/<lead_id>", methods=["DELETE"])
+def owner_leads_delete(lead_id):
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    oid = _owner_oid(lead_id)
+    if not oid:
+        return jsonify({"success": False, "message": "Invalid id"}), 400
+    res = owner_leads_collection.delete_one({"_id": oid})
+    if res.deleted_count == 0:
+        return jsonify({"success": False, "message": "Lead not found"}), 404
+    return jsonify({"success": True}), 200
 
 import followup90
 followup90.register(globals())   # 90-day follow-up engine (routes + scheduler)

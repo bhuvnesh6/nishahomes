@@ -1171,6 +1171,56 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   flex-shrink:0;
 }
 .leads-table .th-check{padding:12px 14px 12px 16px}
+
+
+/* ═══════════════════════════
+   OWNER LEADS
+═══════════════════════════ */
+.owner-stat-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.owner-stat{
+  display:flex;align-items:center;gap:7px;
+  padding:8px 14px;border-radius:var(--radius-pill);
+  border:1.5px solid var(--border);background:#fff;
+  font-size:0.8rem;font-weight:600;color:var(--text-soft);
+  cursor:pointer;transition:var(--transition);white-space:nowrap;
+}
+.owner-stat b{color:var(--primary);font-weight:800}
+.owner-stat:hover{border-color:var(--accent);color:var(--accent)}
+.owner-stat.active{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 12px var(--accent-glow)}
+.owner-stat.active b{color:#fff}
+.owner-stat .os-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+.owner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+@media(max-width:420px){.owner-grid{grid-template-columns:1fr}}
+
+.owner-card{
+  background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--sh-sm);overflow:hidden;position:relative;
+  display:flex;flex-direction:column;transition:var(--transition);
+}
+.owner-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--oc,var(--accent))}
+.owner-card:hover{transform:translateY(-3px);box-shadow:var(--sh)}
+.owner-card .lc-body{padding-bottom:12px}
+.owner-card .lc-actions{margin-top:auto}
+.owner-card .lc-action-btn{min-width:72px}
+.oc-status{
+  flex-shrink:0;max-width:128px;
+  padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--radius-pill);
+  font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:700;
+  background:#fff;cursor:pointer;outline:none;
+}
+.oc-note{
+  margin:10px 14px 0 18px;padding:8px 10px;border-radius:8px;
+  background:rgba(107,114,128,0.07);font-size:0.78rem;color:var(--text-soft);
+  font-style:italic;word-break:break-word;
+}
+.owner-tl-item{
+  display:flex;gap:10px;padding:10px 12px;border-radius:10px;
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);
+}
+.owner-tl-icon{font-size:1.05rem;flex-shrink:0;line-height:1.3}
+.owner-map-row{margin-bottom:14px}
+
 </style>
 </head>
 <body data-hide-leads="{{ 'true' if hide_all_leads else 'false' }}">
@@ -1200,6 +1250,13 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     Assigned Leads
     <span class="sidebar-badge" id="sidebarAssignedCount">—</span>
   </button>
+
+  <button class="sidebar-link" data-page="owners">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Owner Leads
+    <span class="sidebar-badge" id="sidebarOwnerCount">—</span>
+  </button>
+
   <div class="sidebar-section">Tools</div>
 
   {% if role == 'admin' %}
@@ -1735,7 +1792,39 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
   </div>
 
+    <!-- OWNER LEADS PAGE -->
+  <div class="page" id="ownersPage">
+    <div class="content">
+      <div class="leads-header anim anim-1">
+        <div>
+          <div class="leads-title">Owner Leads</div>
+          <div class="leads-subtitle" id="ownerPageSubtitle">Property owners imported from Excel</div>
+        </div>
+        <button class="action-btn-sm primary" onclick="openOwnerImport()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import Owners
+        </button>
+      </div>
+
+      <div class="owner-stat-row anim anim-2" id="ownerStatRow"></div>
+
+      <div class="filter-bar anim anim-2">
+        <div class="filter-search-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="filter-search" id="ownerSearch" placeholder="Search owner, phone, property, location, city…" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="owner-grid anim anim-3" id="ownerGrid"></div>
+
+      <div class="pagination" style="border:1px solid var(--border);border-radius:var(--radius);margin-top:16px">
+        <div class="pagination-info" id="ownerPaginationInfo"></div>
+        <div class="pagination-btns" id="ownerPaginationBtns"></div>
+      </div>
+    </div>
+  </div>
 </div><!-- /main-wrap -->
+
 
 
 
@@ -2046,6 +2135,64 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     <h2>AI Call · <span id="aiCallTitle" style="color:var(--accent)"></span></h2>
     <div id="aiCallPhone" style="color:rgba(255,255,255,0.5);font-size:0.82rem;margin:-14px 0 14px"></div>
     <div id="aiCallBody" style="max-height:68vh;overflow-y:auto;color:#fff"></div>
+  </div>
+</div>
+
+
+<!-- ═════════ OWNER LEADS: IMPORT MODAL ═════════ -->
+<div class="modal-overlay" id="ownerImportModal">
+  <div class="modal" style="max-width:600px">
+    <button class="modal-close" onclick="closeOwnerImport()">✕</button>
+    <h2>Import Owner Leads</h2>
+
+    <div id="ownerImportStep1">
+      <div style="color:rgba(255,255,255,0.6);font-size:0.85rem;line-height:1.6;margin-bottom:16px">
+        Upload a <b>.xlsx / .xls / .csv</b> file with columns like
+        <i>Owner, Phone, WhatsApp, Type, Properties, Locations, City, Status</i>.
+        In the next step you match your columns to the CRM fields.
+        <b style="color:var(--accent-light)">Owner name and phone number are required.</b>
+      </div>
+      <input type="file" id="ownerImportFile" class="form-input" accept=".csv,.xlsx,.xls" style="margin-bottom:14px">
+      <button class="submit-btn" id="ownerImportParseBtn" onclick="ownerImportParse()">Upload &amp; Map Fields →</button>
+    </div>
+
+    <div id="ownerImportStep2" style="display:none">
+      <div id="ownerImportInfo" style="color:rgba(255,255,255,0.55);font-size:0.82rem;margin-bottom:16px"></div>
+      <div id="ownerMapRows"></div>
+      <button class="submit-btn" id="ownerImportCommitBtn" onclick="ownerImportCommit()">Import Owners</button>
+    </div>
+
+    <div id="ownerImportStep3" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ═════════ OWNER LEADS: EDIT MODAL ═════════ -->
+<div class="modal-overlay" id="ownerEditModal">
+  <div class="modal" style="max-width:500px">
+    <button class="modal-close" onclick="closeOwnerEdit()">✕</button>
+    <h2>Edit Owner</h2>
+    <form id="ownerEditForm">
+      <input type="hidden" id="ownerEditId">
+      <div class="form-group"><label class="form-label">Owner Name *</label><input type="text" id="ownerEditName" class="form-input" required></div>
+      <div class="form-group"><label class="form-label">Phone (cannot be changed)</label><input type="text" id="ownerEditPhone" class="form-input" readonly></div>
+      <div class="form-group"><label class="form-label">WhatsApp Number</label><input type="text" id="ownerEditWa" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Type</label><input type="text" id="ownerEditType" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Properties</label><input type="text" id="ownerEditProps" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Locations</label><input type="text" id="ownerEditLocs" class="form-input"></div>
+      <div class="form-group"><label class="form-label">City</label><input type="text" id="ownerEditCity" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Status</label><select id="ownerEditStatus" class="form-select"></select></div>
+      <div class="form-group"><label class="form-label">Note</label><textarea id="ownerEditNote" class="form-textarea"></textarea></div>
+      <button type="submit" class="submit-btn">Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═════════ OWNER LEADS: ACTIVITY TIMELINE ═════════ -->
+<div class="modal-overlay" id="ownerActivityModal">
+  <div class="modal" style="max-width:560px">
+    <button class="modal-close" onclick="closeOwnerActivity()">✕</button>
+    <h2>Activity · <span id="ownerActivityTitle" style="color:var(--accent)"></span></h2>
+    <div id="ownerActivityBody" style="display:flex;flex-direction:column;gap:8px;max-height:65vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -2692,6 +2839,7 @@ function switchPage(page){
   sidebarLinks.forEach(l=>l.classList.toggle('active', l.dataset.page===page));
   if(page==='leads' && flatLeads.length===0) loadAllLeads();
   if(page==='assigned') loadAssignedLeads();
+  if(page==='owners') loadOwnerLeads(true);
   closeSidebar();
 }
 sidebarLinks.forEach(l=>l.addEventListener('click',()=>switchPage(l.dataset.page)));
@@ -3980,7 +4128,10 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
   };
 
   try{
-    await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':telNumber(phone),set:updatedLead})});
+    // Owner leads keep their own fields in OwnerLeads — don't write lead-style fields onto them
+    if(type !== 'owner'){
+      await fetch(`${BASE}/modify-document`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collection,'Phone Number':telNumber(phone),set:updatedLead})});
+    }
     const logRes = await fetch(`${BASE}/call-log`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(callLogPayload)});
     const logData = await logRes.json();
     const attemptMsg = logData.attempt_number ? ` (Call #${logData.attempt_number} at ${logData.call_datetime})` : '';
@@ -3999,6 +4150,7 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
     loadAllLeads(true);
     loadAssignedLeads();
     loadDashboardStats();
+    loadOwnerLeads(true);   // refresh owner cards (call status / auto "Contacted")
   }catch(err){console.error(err);alert('Failed')}
   finally{hideLoader()}
 });
@@ -4534,6 +4686,411 @@ function closeAICallModal(){
 document.getElementById('aiCallModal').addEventListener('click', e=>{ if(e.target.id==='aiCallModal') closeAICallModal(); });
 
 
+/* ═══════════════════════════════════════════════════
+   OWNER LEADS  (import · list · call · WhatsApp · log · edit · status · timeline)
+═══════════════════════════════════════════════════ */
+const IS_ADMIN = {{ 'true' if role == 'admin' else 'false' }};
+const OWNER_STATUSES = ['New','Contacted','Interested','Follow-up','Not Interested','Deal Done'];
+const OWNER_STATUS_COLORS = {
+  'new':'#3B82F6','contacted':'#F59E0B','interested':'#10B981',
+  'follow-up':'#8B5CF6','not interested':'#EF4444','deal done':'#0D9488'
+};
+const OWNER_PAGE_SIZE = 18;
+
+let ownerLeadsList = [];
+let ownerStats = {};
+let ownerStatsTotal = 0;
+let ownerTotal = 0;
+let ownerPageNo = 1;
+let ownerStatusFilter = 'all';
+let ownerSearchTimer = null;
+let ownerImport = { id:null, headers:[], preview:[], total:0 };
+
+function ownerStatusColor(s){ return OWNER_STATUS_COLORS[String(s||'').trim().toLowerCase()] || '#6B7280'; }
+function ownerById(id){ return ownerLeadsList.find(x => x.id === id); }
+function ownerFmtTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  if(isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+}
+
+/* ───────── LOAD + RENDER ───────── */
+async function loadOwnerLeads(keepPage){
+  if(!keepPage) ownerPageNo = 1;
+  const q = (document.getElementById('ownerSearch').value || '').trim();
+  try{
+    const res = await fetch(`${BASE}/owner-leads?status=${encodeURIComponent(ownerStatusFilter)}&q=${encodeURIComponent(q)}&page=${ownerPageNo}&limit=${OWNER_PAGE_SIZE}`);
+    const d = await res.json();
+    if(!d.success) return;
+    ownerLeadsList = d.data || [];
+    ownerTotal = d.total || 0;
+    ownerStats = d.stats || {};
+    ownerStatsTotal = d.statsTotal || 0;
+
+    // if the current page became empty (e.g. after a status change under a filter), step back
+    if(!ownerLeadsList.length && ownerPageNo > 1){ ownerPageNo--; return loadOwnerLeads(true); }
+
+    document.getElementById('sidebarOwnerCount').textContent = ownerStatsTotal;
+    document.getElementById('ownerPageSubtitle').textContent =
+      `${ownerTotal} owner${ownerTotal!==1?'s':''}${ownerStatusFilter!=='all' ? ' · '+ownerStatusFilter : ''}`;
+    renderOwnerStats();
+    renderOwnerGrid();
+    renderOwnerPagination();
+  }catch(e){ console.warn('owner leads load failed', e); }
+}
+
+function renderOwnerStats(){
+  const names = [...OWNER_STATUSES];
+  Object.keys(ownerStats).forEach(s => { if(!names.includes(s)) names.push(s); });
+  const chip = (key,label,count,color) => `
+    <button class="owner-stat ${ownerStatusFilter===key?'active':''}" onclick="setOwnerStatusFilter('${escHtml(key).replace(/'/g,'&#39;')}')">
+      ${color?`<span class="os-dot" style="background:${color}"></span>`:''}${escHtml(label)} <b>${count}</b>
+    </button>`;
+  document.getElementById('ownerStatRow').innerHTML =
+    chip('all','All',ownerStatsTotal,'') +
+    names.map(s => chip(s, s, ownerStats[s]||0, ownerStatusColor(s))).join('');
+}
+
+function setOwnerStatusFilter(s){
+  ownerStatusFilter = s;
+  loadOwnerLeads();
+}
+
+function ownerStatusSelect(l){
+  const cur = l.status || 'New';
+  const list = OWNER_STATUSES.includes(cur) ? OWNER_STATUSES : [cur, ...OWNER_STATUSES];
+  const c = ownerStatusColor(cur);
+  return `<select class="oc-status" style="border-color:${c};color:${c}" onchange="ownerQuickStatus('${l.id}',this.value)" title="Change status">
+    ${list.map(s=>`<option ${s===cur?'selected':''}>${escHtml(s)}</option>`).join('')}
+  </select>`;
+}
+
+function renderOwnerGrid(){
+  const grid = document.getElementById('ownerGrid');
+  if(!ownerLeadsList.length){
+    grid.style.display = 'block';
+    grid.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🏠</div>
+      <h3>No owner leads yet</h3>
+      <p>Import an Excel / CSV file to build your owner list</p>
+      <button class="action-btn-sm primary" style="margin:16px auto 0" onclick="openOwnerImport()">⬆ Import Owners</button>
+    </div>`;
+    return;
+  }
+  grid.style.display = '';
+  grid.innerHTML = ownerLeadsList.map(l => {
+    const color = ownerStatusColor(l.status);
+    const phoneRaw = telNumber(l.phone);
+    const waRaw = telNumber(l.whatsapp || l.phone);
+    const waText = encodeURIComponent(`Hi ${l.name||''}, this is Nisha Homes. We'd love to help you with your property. Please let us know a good time to talk.`.replace(/\s+/g,' ').trim());
+    const logPayload = encodeURIComponent(JSON.stringify({
+      name: l.name, phone: l.phone, type: 'owner',
+      location: [l.locations, l.city].filter(Boolean).join(', '),
+      property: l.properties || '', budget: '', timeline: '', note: l.note || ''
+    }));
+    const hasFollow = l.nextFollowup || l.nextCallDate;
+
+    return `
+    <div class="owner-card" style="--oc:${color}">
+      <div class="lc-header">
+        <div class="lc-avatar">${initials(l.name)}</div>
+        <div class="lc-name-block">
+          <div class="lc-name">${escHtml(l.name)}</div>
+          <div class="lc-date">Added ${escHtml(l.createdAt)}${l.importedBy?' · '+escHtml(l.importedBy):''}</div>
+          <div class="lc-badges">
+            ${l.ownerType?`<span class="badge badge-agent">${escHtml(l.ownerType)}</span>`:''}
+            ${l.callAttempts>0?`<span class="badge" style="background:rgba(59,130,246,.1);color:#3b82f6">📞 ${l.callAttempts}×</span>`:''}
+            ${l.interestLevel?`<span class="badge" style="background:rgba(16,185,129,.08);color:#059669">${escHtml(l.interestLevel)}</span>`:''}
+          </div>
+        </div>
+        ${ownerStatusSelect(l)}
+      </div>
+
+      <div class="lc-body">
+        <div class="lc-field"><div class="lc-field-label">Phone</div><div class="lc-field-value"><a href="tel:${phoneRaw}">+${escHtml(phoneRaw)}</a></div></div>
+        <div class="lc-field"><div class="lc-field-label">WhatsApp</div><div class="lc-field-value">+${escHtml(waRaw)}</div></div>
+        <div class="lc-field"><div class="lc-field-label">Properties</div><div class="lc-field-value">${escHtml(l.properties||'—')}</div></div>
+        <div class="lc-field"><div class="lc-field-label">Locations</div><div class="lc-field-value">${escHtml(l.locations||'—')}</div></div>
+        <div class="lc-field"><div class="lc-field-label">City</div><div class="lc-field-value">${escHtml(l.city||'—')}</div></div>
+        <div class="lc-field"><div class="lc-field-label">Call Status</div><div class="lc-field-value">${l.callStatus?`<span class="lc-status-badge ${statusClass(l.callStatus)}"><span class="lc-status-dot"></span>${escHtml(l.callStatus)}</span>`:'—'}</div></div>
+      </div>
+
+      ${l.note?`<div class="oc-note">📝 ${escHtml(l.note)}</div>`:''}
+      ${l.callerRemarks?`<div class="oc-note" style="background:rgba(239,131,84,0.07)">💬 ${escHtml(l.callerRemarks)}</div>`:''}
+
+      ${hasFollow?`<div class="lc-followup-strip" style="margin-top:10px">📅 Follow-up: ${escHtml(l.nextFollowup||'')}${l.nextCallDate?' · '+escHtml(l.nextCallDate):''}</div>`:''}
+      ${l.lastCallBy?`<div class="lc-followup-strip" style="background:rgba(59,130,246,0.06);border-top-color:rgba(59,130,246,0.15);color:#2563eb">Last called by ${escHtml(l.lastCallBy)}${l.lastCallAt?' · '+escHtml(l.lastCallAt):''}</div>`:''}
+
+      <div class="lc-actions">
+        <button class="lc-action-btn call" onclick="ownerCall('${l.id}')">📞 Call</button>
+        <a class="lc-action-btn wa" href="https://wa.me/${waRaw}?text=${waText}" target="_blank" rel="noopener" onclick="ownerWaClick('${l.id}')">💬 WA</a>
+        <button class="lc-action-btn" data-lead="${logPayload}" onclick="openCallLogModal(this)">📝 Log</button>
+        <button class="lc-action-btn" onclick="openOwnerEdit('${l.id}')">✏️ Edit</button>
+        <button class="lc-action-btn" onclick="openOwnerActivity('${l.id}')">🕘 Activity</button>
+        ${IS_ADMIN?`<button class="lc-action-btn danger" onclick="deleteOwnerLead('${l.id}')">🗑</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderOwnerPagination(){
+  const totalPages = Math.max(1, Math.ceil(ownerTotal / OWNER_PAGE_SIZE));
+  const start = ownerTotal ? (ownerPageNo-1)*OWNER_PAGE_SIZE + 1 : 0;
+  const end = Math.min(ownerPageNo*OWNER_PAGE_SIZE, ownerTotal);
+  document.getElementById('ownerPaginationInfo').textContent = ownerTotal ? `Showing ${start}–${end} of ${ownerTotal}` : '';
+  const pb = document.getElementById('ownerPaginationBtns');
+  pb.innerHTML = '';
+  const go = p => { ownerPageNo = p; loadOwnerLeads(true); window.scrollTo(0,0); };
+  const prev = document.createElement('button'); prev.className='pg-btn'; prev.textContent='‹'; prev.disabled = ownerPageNo<=1; prev.onclick=()=>go(ownerPageNo-1); pb.appendChild(prev);
+  for(let p=Math.max(1,ownerPageNo-2); p<=Math.min(totalPages,ownerPageNo+2); p++){
+    const b = document.createElement('button'); b.className='pg-btn'+(p===ownerPageNo?' active':''); b.textContent=p; b.onclick=()=>go(p); pb.appendChild(b);
+  }
+  const next = document.createElement('button'); next.className='pg-btn'; next.textContent='›'; next.disabled = ownerPageNo>=totalPages; next.onclick=()=>go(ownerPageNo+1); pb.appendChild(next);
+}
+
+document.getElementById('ownerSearch').addEventListener('input', ()=>{
+  clearTimeout(ownerSearchTimer);
+  ownerSearchTimer = setTimeout(()=>loadOwnerLeads(), 350);
+});
+
+/* ───────── ACTIONS ───────── */
+function ownerCall(id){
+  const l = ownerById(id); if(!l) return;
+  const raw = telNumber(l.phone);
+  logCallClick(raw, l.name, 'owner');      // records Call attempt (callLogs + endData + activity tracker)
+  location.href = 'tel:' + raw;
+}
+
+function ownerWaClick(id){
+  try{
+    fetch(`${BASE}/owner-leads/activity`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, type:'whatsapp' }), keepalive:true
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+async function ownerQuickStatus(id, status){
+  try{
+    const res = await fetch(`${BASE}/owner-leads/update`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, set:{ Status: status } })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Status update failed'); }
+  }catch(e){ console.error(e); alert('Status update failed'); }
+  loadOwnerLeads(true);
+}
+
+async function deleteOwnerLead(id){
+  const l = ownerById(id);
+  if(!confirm(`Delete owner "${l ? l.name : ''}"? This cannot be undone.`)) return;
+  try{
+    const res = await fetch(`${BASE}/owner-leads/${id}`,{ method:'DELETE' });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Delete failed'); return; }
+    loadOwnerLeads(true);
+  }catch(e){ console.error(e); alert('Delete failed'); }
+}
+
+/* ───────── EDIT ───────── */
+function openOwnerEdit(id){
+  const l = ownerById(id); if(!l) return;
+  document.getElementById('ownerEditId').value = l.id;
+  document.getElementById('ownerEditName').value = l.name || '';
+  document.getElementById('ownerEditPhone').value = '+' + telNumber(l.phone);
+  document.getElementById('ownerEditWa').value = l.whatsapp || '';
+  document.getElementById('ownerEditType').value = l.ownerType || '';
+  document.getElementById('ownerEditProps').value = l.properties || '';
+  document.getElementById('ownerEditLocs').value = l.locations || '';
+  document.getElementById('ownerEditCity').value = l.city || '';
+  document.getElementById('ownerEditNote').value = l.note || '';
+  const cur = l.status || 'New';
+  const list = OWNER_STATUSES.includes(cur) ? OWNER_STATUSES : [cur, ...OWNER_STATUSES];
+  const sel = document.getElementById('ownerEditStatus');
+  sel.innerHTML = list.map(s=>`<option ${s===cur?'selected':''}>${escHtml(s)}</option>`).join('');
+  document.getElementById('ownerEditModal').classList.add('active');
+}
+function closeOwnerEdit(){ document.getElementById('ownerEditModal').classList.remove('active'); }
+document.getElementById('ownerEditModal').addEventListener('click', e=>{ if(e.target.id==='ownerEditModal') closeOwnerEdit(); });
+
+document.getElementById('ownerEditForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const btn = e.target.querySelector('.submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${BASE}/owner-leads/update`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        id: document.getElementById('ownerEditId').value,
+        set: {
+          'Lead Name': document.getElementById('ownerEditName').value,
+          'WhatsApp Number': document.getElementById('ownerEditWa').value,
+          'Owner Type': document.getElementById('ownerEditType').value,
+          'Properties': document.getElementById('ownerEditProps').value,
+          'Locations': document.getElementById('ownerEditLocs').value,
+          'City': document.getElementById('ownerEditCity').value,
+          'Status': document.getElementById('ownerEditStatus').value,
+          'Note': document.getElementById('ownerEditNote').value
+        }
+      })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Update failed'); return; }
+    closeOwnerEdit();
+    loadOwnerLeads(true);
+  }catch(err){ console.error(err); alert('Update failed'); }
+  finally{ btn.disabled = false; btn.textContent = 'Save Changes'; }
+});
+
+/* ───────── ACTIVITY TIMELINE (calls + call logs + WhatsApp + edits + status) ───────── */
+async function openOwnerActivity(id){
+  const l = ownerById(id); if(!l) return;
+  document.getElementById('ownerActivityTitle').textContent = l.name || 'Owner';
+  const body = document.getElementById('ownerActivityBody');
+  body.innerHTML = '<div class="loader" style="margin:24px auto"></div>';
+  document.getElementById('ownerActivityModal').classList.add('active');
+
+  try{
+    const [h, c] = await Promise.all([
+      fetch(`${BASE}/owner-leads/${id}/history`).then(r=>r.json()),
+      fetch(`${BASE}/call-logs/${telNumber(l.phone)}`).then(r=>r.json()).catch(()=>({logs:[]}))
+    ]);
+    const items = [];
+    (h.items||[]).forEach(x => items.push({
+      iso:x.atIso, icon: /whatsapp/i.test(x.action)?'💬':(/status/i.test(x.action)?'🔄':'📝'),
+      title:x.action, sub:x.remark, by:x.by
+    }));
+    (c.logs||[]).forEach(x => items.push({
+      iso:x.CreatedAt, icon:'📞',
+      title: x.CallAttemptOnly ? 'Call button pressed' : `Call log · ${x.CallStatus||'—'} · ${x.CustomerResponse||'—'}`,
+      sub:x.CallerRemarks, by:x.CalledBy
+    }));
+    items.sort((a,b)=> String(b.iso||'').localeCompare(String(a.iso||'')));
+
+    body.innerHTML = items.length ? items.map(i=>`
+      <div class="owner-tl-item">
+        <div class="owner-tl-icon">${i.icon}</div>
+        <div style="min-width:0;flex:1">
+          <div style="color:#fff;font-weight:600;font-size:0.85rem;word-break:break-word">${escHtml(i.title)}</div>
+          ${i.sub?`<div style="color:rgba(255,255,255,0.65);font-size:0.8rem;margin-top:3px;word-break:break-word">${escHtml(i.sub)}</div>`:''}
+          <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;margin-top:4px">${escHtml(i.by||'')}${i.by&&i.iso?' · ':''}${escHtml(ownerFmtTime(i.iso))}</div>
+        </div>
+      </div>`).join('')
+      : '<p style="color:rgba(255,255,255,0.5);text-align:center;padding:20px">No activity recorded yet</p>';
+  }catch(e){
+    console.error(e);
+    body.innerHTML = '<p style="color:#ff6b6b">Failed to load activity</p>';
+  }
+}
+function closeOwnerActivity(){ document.getElementById('ownerActivityModal').classList.remove('active'); }
+document.getElementById('ownerActivityModal').addEventListener('click', e=>{ if(e.target.id==='ownerActivityModal') closeOwnerActivity(); });
+
+/* ───────── IMPORT (upload -> map fields -> commit) ───────── */
+function ownerImportShowStep(n){
+  [1,2,3].forEach(i => document.getElementById('ownerImportStep'+i).style.display = (i===n?'block':'none'));
+}
+function openOwnerImport(){
+  document.getElementById('ownerImportFile').value = '';
+  ownerImport = { id:null, headers:[], preview:[], total:0 };
+  ownerImportShowStep(1);
+  document.getElementById('ownerImportModal').classList.add('active');
+}
+function closeOwnerImport(){
+  document.getElementById('ownerImportModal').classList.remove('active');
+  // free the temp file on the server if the user abandons step 2
+  if(ownerImport.id){
+    fetch(`${BASE}/import-leads/cancel`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ importId: ownerImport.id })
+    }).catch(()=>{});
+    ownerImport.id = null;
+  }
+}
+document.getElementById('ownerImportModal').addEventListener('click', e=>{ if(e.target.id==='ownerImportModal') closeOwnerImport(); });
+
+async function ownerImportParse(){
+  const f = document.getElementById('ownerImportFile').files[0];
+  if(!f){ alert('Please choose a .xlsx, .xls or .csv file'); return; }
+  const btn = document.getElementById('ownerImportParseBtn');
+  btn.disabled = true; btn.textContent = 'Reading file…';
+  try{
+    const fd = new FormData(); fd.append('file', f);
+    const res = await fetch(`${BASE}/owner-leads/import/parse`,{ method:'POST', body: fd });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Could not read the file'); return; }
+    ownerImport = { id:d.importId, headers:d.headers, preview:d.previewRows||[], total:d.totalRows };
+    document.getElementById('ownerImportInfo').innerHTML =
+      `📄 <b style="color:#fff">${escHtml(d.fileName)}</b> · ${d.totalRows} row${d.totalRows!==1?'s':''} found. Match your columns to the CRM fields:`;
+    renderOwnerMapping(d.targetFields || [], d.autoMapping || {});
+    ownerImportShowStep(2);
+  }catch(e){ console.error(e); alert('Upload failed'); }
+  finally{ btn.disabled = false; btn.textContent = 'Upload & Map Fields →'; }
+}
+
+function renderOwnerMapping(fields, auto){
+  const opts = ownerImport.headers.map(h => `<option value="${escHtml(h)}">${escHtml(h)}</option>`).join('');
+  document.getElementById('ownerMapRows').innerHTML = fields.map(f => `
+    <div class="owner-map-row">
+      <label class="form-label">${escHtml(f.label)}${f.required?' <span style="color:#ff6b6b">* required</span>':''}</label>
+      <select class="form-select owner-map-select" data-key="${escHtml(f.key)}" onchange="ownerMapSample(this)">
+        <option value="">— Don't import —</option>${opts}
+      </select>
+      <div class="owner-map-sample" style="font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:4px;min-height:14px"></div>
+    </div>`).join('');
+
+  document.querySelectorAll('.owner-map-select').forEach(sel => {
+    const guess = auto[sel.dataset.key];
+    if(guess !== undefined) sel.value = guess;
+    ownerMapSample(sel);
+  });
+}
+
+function ownerMapSample(sel){
+  const box = sel.parentElement.querySelector('.owner-map-sample');
+  if(!sel.value){ box.textContent = ''; return; }
+  const samples = ownerImport.preview.map(r => String(r[sel.value] ?? '').trim()).filter(Boolean).slice(0,2);
+  box.textContent = samples.length ? 'e.g. ' + samples.join('  ·  ') : 'No sample data in first rows';
+}
+
+async function ownerImportCommit(){
+  const mapping = {};
+  document.querySelectorAll('.owner-map-select').forEach(sel => { if(sel.value) mapping[sel.dataset.key] = sel.value; });
+  if(!mapping['Lead Name'])    { alert('Please map the Owner Name column (required)'); return; }
+  if(!mapping['Phone Number']) { alert('Please map the Phone Number column (required)'); return; }
+
+  const btn = document.getElementById('ownerImportCommitBtn');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  try{
+    const res = await fetch(`${BASE}/owner-leads/import/commit`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ importId: ownerImport.id, mapping })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Import failed'); return; }
+    ownerImport.id = null;   // server already cleaned the temp file
+
+    document.getElementById('ownerImportStep3').innerHTML = `
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="font-size:2.4rem">✅</div>
+        <div style="color:#fff;font-weight:700;font-size:1.05rem;margin-top:6px">Import complete</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+        <div class="owner-tl-item" style="flex-direction:column;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#34d399">${d.inserted}</div><div style="font-size:0.72rem;color:rgba(255,255,255,0.55)">New owners</div></div>
+        <div class="owner-tl-item" style="flex-direction:column;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#60a5fa">${d.updated}</div><div style="font-size:0.72rem;color:rgba(255,255,255,0.55)">Already existed</div></div>
+        <div class="owner-tl-item" style="flex-direction:column;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#f87171">${d.skipped}</div><div style="font-size:0.72rem;color:rgba(255,255,255,0.55)">Skipped</div></div>
+      </div>
+      ${(d.errors&&d.errors.length)?`<div style="max-height:150px;overflow-y:auto;font-size:0.76rem;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 12px;line-height:1.6">${d.errors.map(x=>escHtml(x)).join('<br>')}</div>`:''}
+      <button class="submit-btn" onclick="closeOwnerImport()">Done</button>`;
+    ownerImportShowStep(3);
+
+    ownerStatusFilter = 'all';
+    document.getElementById('ownerSearch').value = '';
+    loadOwnerLeads();
+  }catch(e){ console.error(e); alert('Import failed'); }
+  finally{ btn.disabled = false; btn.textContent = 'Import Owners'; }
+}
 
 window.addEventListener('load',()=>{
   setTimeout(()=>{
@@ -4545,6 +5102,7 @@ window.addEventListener('load',()=>{
     flushCallQueue();
     loadReportAlerts();
     loadWaStatus();
+    loadOwnerLeads();   // fills the "Owner Leads" sidebar badge
   },600);
 });
 </script>
