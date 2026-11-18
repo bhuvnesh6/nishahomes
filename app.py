@@ -4247,6 +4247,9 @@ def add_lead():
             # Round robin: only for brand-new leads, one lead -> one user
             auto_assign_round_robin(collection_name, insert_res.inserted_id, clean_phone, name)
 
+            # AI outbound call for new buyer leads
+            auto_queue_ai_call(collection_name, insert_res.inserted_id, source="add-lead")
+
         # 4. Activity Tracker
         log_activity(
             activity_type="CRM",
@@ -6680,6 +6683,9 @@ def import_leads_commit():
                     except Exception as rr_err:
                         print(f"[import-leads] round-robin failed (non-fatal): {rr_err}")
 
+                    # AI outbound call for each newly imported buyer lead
+                    auto_queue_ai_call(collection_name, insert_res.inserted_id, source="excel-import")
+
             except Exception as row_err:
                 skipped += 1
                 errors.append(f"Row {idx + 2}: {row_err}")
@@ -8725,6 +8731,10 @@ def create_wa_lead(phone, name_hint):
         auto_assign_round_robin("Leads", result.inserted_id, phone, name_hint)
     except Exception as rr_err:
         print(f"[wa-ai] round-robin auto-assign failed (non-fatal): {rr_err}")
+
+    # AI outbound call for new WhatsApp leads. 3 min delay so the WhatsApp AI
+    # can first work out whether it is a buyer / rental / seller.
+    auto_queue_ai_call("Leads", result.inserted_id, source="whatsapp", delay_seconds=180)
 
     return "Leads", doc
 
@@ -12198,6 +12208,84 @@ class PravaahError(Exception):
         super().__init__(message)
         self.status_code = status_code
 
+# ---------------------------------------------------------------------
+# AUTO AI-CALL ON NEW LEADS (buyer leads only)
+# ---------------------------------------------------------------------
+AI_CALLING_DEFAULT_ENABLED = os.getenv("AI_CALLING_DEFAULT_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+AI_CALL_AUTO_ON_NEW_LEAD = os.getenv("AI_CALL_AUTO_ON_NEW_LEAD", "true").strip().lower() in ("1", "true", "yes", "on")
+AI_CALL_ALLOWED_LEAD_TYPES = {
+    t.strip() for t in os.getenv("AI_CALL_ALLOWED_LEAD_TYPES", "buyer_purchase,unidentified").split(",") if t.strip()
+}
+AI_CALL_START_HOUR = int(os.getenv("AI_CALL_START_HOUR", "9"))     # Pravaah only accepts calls 09:00-19:00 IST
+AI_CALL_END_HOUR = int(os.getenv("AI_CALL_END_HOUR", "19"))
+
+
+def is_within_ai_call_hours():
+    return AI_CALL_START_HOUR <= get_ist_now().hour < AI_CALL_END_HOUR
+
+
+def ai_call_lead_is_eligible(doc):
+    """(True, "") if this lead may be auto-called, else (False, reason)."""
+    lt = (doc.get("LeadType") or "").strip()
+    if lt not in AI_CALL_ALLOWED_LEAD_TYPES:
+        return False, f"lead type '{lt or 'blank'}' is not a buyer lead"
+    p10 = phone_last10(doc.get("Phone Number"))
+    if not p10:
+        return False, "invalid phone number"
+    if is_number_blocked(p10):
+        return False, "blocked number"
+    if doc.get("followup_optout"):
+        return False, "lead asked not to be contacted"
+    if is_ai_disabled_for_phone("91" + p10):
+        return False, "AI disabled for this lead (DAI)"
+    if doc.get("AICallCount"):
+        return False, "already called by AI"
+    return True, ""
+
+
+def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0):
+    """Puts a freshly-added lead into the AI call queue. Never raises.
+    The worker places calls strictly one at a time, only inside calling hours."""
+    try:
+        if not AI_CALL_AUTO_ON_NEW_LEAD:
+            return False
+        if not PRAVAAH_API_KEY:
+            print("[ai-call] PRAVAAH_API_KEY not set - lead not queued")
+            return False
+        if coll_name not in LEAD_COLLECTIONS_ALL:
+            return False
+
+        doc = db[coll_name].find_one({"_id": lead_id})
+        if not doc:
+            return False
+
+        ok, why = ai_call_lead_is_eligible(doc)
+        if not ok:
+            print(f"[ai-call] auto-queue skipped ({source}): {why}")
+            return False
+
+        p10 = phone_last10(doc.get("Phone Number"))
+        if ai_call_queue_collection.find_one(
+                {"phone10": p10, "status": {"$in": ["queued", "calling", "waiting_result"]}}):
+            return False
+
+        now = datetime.utcnow()
+        ai_call_queue_collection.insert_one({
+            "leadId": str(lead_id), "collection": coll_name,
+            "name": doc.get("Lead Name") or doc.get("Name") or "",
+            "phone10": p10, "status": "queued",
+            "autoQueued": True, "queuedBy": f"Auto ({source})",
+            "runAfter": now + timedelta(seconds=delay_seconds),
+            "createdAt": now, "updatedAt": now
+        })
+        print(f"[ai-call] auto-queued {p10} from {source}")
+        return True
+    except Exception as e:
+        print(f"[ai-call] auto_queue_ai_call failed (non-fatal): {e}")
+        return False
+
+
+def _pravaah_headers():
 
 def _pravaah_headers():
     if not PRAVAAH_API_KEY:
@@ -12514,6 +12602,18 @@ def process_ai_call_job(job):
             _upd(status="skipped", error="number blocked or AI disabled for this lead")
             return None
 
+        # Auto-queued jobs: lead type may have changed since it was queued
+        # (e.g. WhatsApp AI later marked it rental/seller) -> re-check right now.
+        if job.get("autoQueued"):
+            _chk = db[coll_name].find_one({"_id": lead_id})
+            if not _chk:
+                _upd(status="skipped", error="lead no longer exists")
+                return None
+            _ok, _why = ai_call_lead_is_eligible(_chk)
+            if not _ok:
+                _upd(status="skipped", error=_why)
+                return None
+
         try:
             placed = place_pravaah_ai_call(phone10, job.get("name"), reference_id=str(job_id))
         except PravaahError as e:
@@ -12593,10 +12693,10 @@ def ai_call_worker_loop():
     while True:
         try:
             cfg = settings_collection.find_one({"_id": "ai_calling"}) or {}
-            if not cfg.get("enabled"):
+            if not cfg.get("enabled", AI_CALLING_DEFAULT_ENABLED):
                 time.sleep(20)
                 continue
-            if not is_within_business_hours():
+            if not is_within_ai_call_hours():
                 time.sleep(300)
                 continue
             if not _acquire_ai_call_lock(_AI_CALL_OWNER, AI_CALL_LOCK_TTL_SEC):
@@ -12611,7 +12711,8 @@ def ai_call_worker_loop():
             )
 
             job = ai_call_queue_collection.find_one_and_update(
-                {"status": "queued"},
+                {"status": "queued",
+                 "$or": [{"runAfter": {"$exists": False}}, {"runAfter": {"$lte": now}}]},
                 {"$set": {"status": "calling", "startedAt": now, "updatedAt": now}},
                 sort=[("createdAt", 1)], return_document=ReturnDocument.AFTER
             )
@@ -12626,9 +12727,6 @@ def ai_call_worker_loop():
             import traceback
             traceback.print_exc()
             time.sleep(30)
-
-
-_ai_call_thread_started = False
 
 
 def start_ai_call_worker():
@@ -12714,9 +12812,10 @@ def ai_calls_status():
     jobs = list(ai_call_queue_collection.find({}, {"call": 0}).sort("createdAt", -1).limit(100))
     return jsonify({
         "success": True,
-        "enabled": bool(cfg.get("enabled")),
+        "enabled": bool(cfg.get("enabled", AI_CALLING_DEFAULT_ENABLED)),
         "pausedReason": cfg.get("pausedReason", ""),
-        "inCallingHours": is_within_business_hours(),
+        "inCallingHours":             # Round robin: only for brand-new leads, one lead -> one user
+            auto_assign_round_robin(collection_name, insert_res.inserted_id, clean_phone, name)is_within_ai_call_hours(),
         "counts": counts,
         "jobs": [serialize_doc(j) for j in jobs]
     }), 200
