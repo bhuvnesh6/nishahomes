@@ -1799,13 +1799,21 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
       <div class="leads-header anim anim-1">
         <div>
           <div class="leads-title">Owner Leads</div>
-          <div class="leads-subtitle" id="ownerPageSubtitle">Property owners imported from Excel</div>
+          <div class="leads-subtitle" id="ownerPageSubtitle">Property owners imported from Excel / Google Sheet</div>
         </div>
-        <button class="action-btn-sm primary" onclick="openOwnerImport()">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Import Owners
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="action-btn-sm" onclick="openOwnerSheet()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            Import from Google Sheet
+          </button>
+          <button class="action-btn-sm primary" onclick="openOwnerImport()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import Owners
+          </button>
+        </div>
       </div>
+
+      <div id="ownerSheetBanner" style="display:none;background:#fff;border:1.5px solid var(--border);border-left:5px solid #10B981;border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);margin-bottom:14px"></div>
 
       <div class="owner-stat-row anim anim-2" id="ownerStatRow"></div>
 
@@ -2194,6 +2202,45 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     <button class="modal-close" onclick="closeOwnerActivity()">✕</button>
     <h2>Activity · <span id="ownerActivityTitle" style="color:var(--accent)"></span></h2>
     <div id="ownerActivityBody" style="display:flex;flex-direction:column;gap:8px;max-height:65vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+
+<!-- ═════════ OWNER LEADS: IMPORT FROM GOOGLE SHEET ═════════ -->
+<div class="modal-overlay" id="ownerSheetModal">
+  <div class="modal" style="max-width:620px">
+    <button class="modal-close" onclick="closeOwnerSheet()">✕</button>
+    <h2>Import from Google Sheet</h2>
+
+    <!-- HOME: connected sheet + paste link -->
+    <div id="ownerSheetViewHome">
+      <div id="ownerSheetConnected" style="display:none"></div>
+      <div style="color:rgba(255,255,255,0.6);font-size:0.82rem;line-height:1.6;margin-bottom:14px">
+        In Google Sheets: <b>File → Share → Publish to web</b> → choose the tab → format <b>CSV</b> → Publish, then paste the link below.
+        <b style="color:var(--accent-light)">Owner name and phone number columns are required.</b>
+        The server downloads and imports everything itself — you can close this window.
+      </div>
+      <input type="text" id="ownerSheetUrl" class="form-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" style="margin-bottom:14px">
+      <button class="submit-btn" id="ownerSheetFetchBtn" onclick="ownerSheetFetch()">Fetch Columns →</button>
+    </div>
+
+    <!-- MAP columns -->
+    <div id="ownerSheetViewMap" style="display:none">
+      <div id="ownerSheetInfo" style="color:rgba(255,255,255,0.55);font-size:0.82rem;margin-bottom:16px"></div>
+      <div id="ownerSheetMapRows"></div>
+      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#fff;font-size:0.84rem;margin:6px 0 16px;cursor:pointer">
+        <input type="checkbox" id="ownerSheetAutoNew" style="accent-color:var(--accent)">
+        Keep this sheet synced automatically every
+        <select id="ownerSheetAutoNewInt" class="form-select" style="width:auto;padding:4px 8px"></select>
+      </label>
+      <button class="submit-btn" id="ownerSheetStartBtn" onclick="ownerSheetStart()">Start Import</button>
+      <button class="action-btn-sm" style="width:100%;justify-content:center;margin-top:10px;background:transparent;color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.2)" onclick="ownerSheetShow('Home')">← Back</button>
+    </div>
+
+    <!-- PROGRESS -->
+    <div id="ownerSheetViewProgress" style="display:none">
+      <div id="ownerSheetProgressBox"></div>
+    </div>
   </div>
 </div>
 
@@ -5107,6 +5154,261 @@ async function ownerImportCommit(){
   }catch(e){ console.error(e); alert('Import failed'); }
   finally{ btn.disabled = false; btn.textContent = 'Import Owners'; }
 }
+
+
+/* ═══════════════════════════════════════════════════
+   OWNER LEADS — IMPORT FROM GOOGLE SHEET (server does the work)
+═══════════════════════════════════════════════════ */
+let ownerSheet = { headers:[], preview:[], url:'', jobId:null, timer:null, cfg:null };
+let ownerSheetWasRunning = false;
+const OWNER_SHEET_INTERVALS = [[15,'15 minutes'],[30,'30 minutes'],[60,'1 hour'],[180,'3 hours'],[360,'6 hours'],[720,'12 hours'],[1440,'24 hours']];
+
+function ownerSheetIntervalOptions(selected){
+  return OWNER_SHEET_INTERVALS.map(([v,l]) => `<option value="${v}" ${Number(selected)===v?'selected':''}>${l}</option>`).join('');
+}
+function ownerSheetShow(view){
+  ['Home','Map','Progress'].forEach(v => document.getElementById('ownerSheetView'+v).style.display = (v===view?'block':'none'));
+}
+function ownerSheetStopPoll(){ if(ownerSheet.timer){ clearInterval(ownerSheet.timer); ownerSheet.timer = null; } }
+function ownerSheetStartPoll(){
+  ownerSheetStopPoll();
+  ownerSheetPoll();
+  ownerSheet.timer = setInterval(ownerSheetPoll, 2500);
+}
+
+function openOwnerSheet(){
+  document.getElementById('ownerSheetModal').classList.add('active');
+  ownerSheetLoadHome();
+}
+function closeOwnerSheet(){
+  document.getElementById('ownerSheetModal').classList.remove('active');
+  ownerSheetStopPoll();            // server keeps importing; we just stop watching
+  ownerSheetRefreshBanner();
+}
+document.getElementById('ownerSheetModal').addEventListener('click', e=>{ if(e.target.id==='ownerSheetModal') closeOwnerSheet(); });
+
+async function ownerSheetLoadHome(){
+  ownerSheetShow('Home');
+  ownerSheetRenderConnected(null);
+  try{
+    const d = await (await fetch(`${BASE}/owner-leads/sheet/status`)).json();
+    if(!d.success) return;
+    ownerSheet.cfg = d.hasConfig ? d.config : null;
+    ownerSheetRenderConnected(ownerSheet.cfg);
+    const urlBox = document.getElementById('ownerSheetUrl');
+    if(d.hasConfig && !urlBox.value) urlBox.value = d.config.url || '';
+    if(d.job && d.job.status === 'running'){
+      ownerSheet.jobId = d.job.id;
+      ownerSheetShow('Progress');
+      ownerSheetStartPoll();
+    }
+  }catch(e){ console.warn(e); }
+}
+
+function ownerSheetRenderConnected(cfg){
+  const box = document.getElementById('ownerSheetConnected');
+  if(!cfg){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="call-log-section">
+      <div class="call-log-section-title">Connected sheet</div>
+      <div style="font-size:0.76rem;color:rgba(255,255,255,0.6);word-break:break-all;margin-bottom:8px">${escHtml(cfg.url)}</div>
+      <div style="font-size:0.78rem;color:rgba(255,255,255,0.55);margin-bottom:12px">
+        Last sync: ${escHtml(cfg.lastSyncAt || 'never')}${cfg.lastStatus ? ' · ' + escHtml(cfg.lastStatus) : ''}
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#fff;font-size:0.82rem;margin-bottom:12px;cursor:pointer">
+        <input type="checkbox" id="ownerSheetAutoChk" style="accent-color:var(--accent)" ${cfg.autoSync?'checked':''} onchange="ownerSheetSaveAuto()">
+        Auto-sync every
+        <select id="ownerSheetAutoInt" class="form-select" style="width:auto;padding:4px 8px" onchange="ownerSheetSaveAuto()">${ownerSheetIntervalOptions(cfg.intervalMinutes)}</select>
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="action-btn-sm primary" onclick="ownerSheetSyncNow(false)">↻ Sync now</button>
+        <button class="action-btn-sm" style="background:transparent;color:#ff8787;border-color:rgba(255,135,135,0.4)" onclick="ownerSheetDisconnect()">Disconnect</button>
+      </div>
+    </div>`;
+}
+
+async function ownerSheetSaveAuto(){
+  try{
+    await fetch(`${BASE}/owner-leads/sheet/config`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        autoSync: document.getElementById('ownerSheetAutoChk').checked,
+        intervalMinutes: Number(document.getElementById('ownerSheetAutoInt').value)
+      })
+    });
+  }catch(e){ console.error(e); alert('Could not save auto-sync setting'); }
+}
+
+async function ownerSheetDisconnect(){
+  if(!confirm('Disconnect this Google Sheet? Owners already imported stay in the CRM.')) return;
+  try{
+    await fetch(`${BASE}/owner-leads/sheet/disconnect`,{ method:'POST' });
+    document.getElementById('ownerSheetUrl').value = '';
+    ownerSheetLoadHome();
+    ownerSheetRefreshBanner();
+  }catch(e){ console.error(e); }
+}
+
+/* ── step 1: fetch columns (server downloads the sheet) ── */
+async function ownerSheetFetch(){
+  const url = document.getElementById('ownerSheetUrl').value.trim();
+  if(!url){ alert('Paste the published Google Sheet link'); return; }
+  const btn = document.getElementById('ownerSheetFetchBtn');
+  btn.disabled = true; btn.textContent = 'Reading sheet…';
+  try{
+    const res = await fetch(`${BASE}/owner-leads/sheet/preview`,{
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Could not read the sheet'); return; }
+    ownerSheet.headers = d.headers; ownerSheet.preview = d.previewRows || []; ownerSheet.url = url;
+
+    document.getElementById('ownerSheetInfo').innerHTML =
+      `📄 <b style="color:#fff">${d.totalRows}</b> row${d.totalRows!==1?'s':''} found. Match your columns to the CRM fields:`;
+    ownerSheetRenderMapping(d.targetFields || [], d.autoMapping || {});
+
+    const cfg = ownerSheet.cfg;
+    document.getElementById('ownerSheetAutoNew').checked = !!(cfg && cfg.autoSync);
+    document.getElementById('ownerSheetAutoNewInt').innerHTML = ownerSheetIntervalOptions(cfg ? cfg.intervalMinutes : 60);
+    ownerSheetShow('Map');
+  }catch(e){ console.error(e); alert('Could not read the sheet'); }
+  finally{ btn.disabled = false; btn.textContent = 'Fetch Columns →'; }
+}
+
+function ownerSheetRenderMapping(fields, auto){
+  const opts = ownerSheet.headers.map(h => `<option value="${escHtml(h)}">${escHtml(h)}</option>`).join('');
+  document.getElementById('ownerSheetMapRows').innerHTML = fields.map(f => `
+    <div class="owner-map-row">
+      <label class="form-label">${escHtml(f.label)}${f.required?' <span style="color:#ff6b6b">* required</span>':''}</label>
+      <select class="form-select owner-sheet-map-select" data-key="${escHtml(f.key)}" onchange="ownerSheetSample(this)">
+        <option value="">— Don't import —</option>${opts}
+      </select>
+      <div class="owner-sheet-sample" style="font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:4px;min-height:14px"></div>
+    </div>`).join('');
+  document.querySelectorAll('.owner-sheet-map-select').forEach(sel => {
+    const guess = auto[sel.dataset.key];
+    if(guess !== undefined) sel.value = guess;
+    ownerSheetSample(sel);
+  });
+}
+function ownerSheetSample(sel){
+  const box = sel.parentElement.querySelector('.owner-sheet-sample');
+  if(!sel.value){ box.textContent = ''; return; }
+  const s = ownerSheet.preview.map(r => String(r[sel.value] ?? '').trim()).filter(Boolean).slice(0,2);
+  box.textContent = s.length ? 'e.g. ' + s.join('  ·  ') : 'No sample data in first rows';
+}
+
+/* ── step 2: start the server-side import ── */
+async function ownerSheetStart(){
+  const mapping = {};
+  document.querySelectorAll('.owner-sheet-map-select').forEach(sel => { if(sel.value) mapping[sel.dataset.key] = sel.value; });
+  if(!mapping['Lead Name'])    { alert('Please map the Owner Name column (required)'); return; }
+  if(!mapping['Phone Number']) { alert('Please map the Phone Number column (required)'); return; }
+
+  const btn = document.getElementById('ownerSheetStartBtn');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  try{
+    const res = await fetch(`${BASE}/owner-leads/sheet/start`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        url: ownerSheet.url, mapping,
+        autoSync: document.getElementById('ownerSheetAutoNew').checked,
+        intervalMinutes: Number(document.getElementById('ownerSheetAutoNewInt').value)
+      })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Could not start the import'); return; }
+    ownerSheet.jobId = d.jobId;
+    ownerSheetShow('Progress');
+    ownerSheetStartPoll();
+  }catch(e){ console.error(e); alert('Could not start the import'); }
+  finally{ btn.disabled = false; btn.textContent = 'Start Import'; }
+}
+
+async function ownerSheetSyncNow(fromBanner){
+  try{
+    const res = await fetch(`${BASE}/owner-leads/sheet/sync-now`,{ method:'POST' });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Could not start the sync'); return; }
+    ownerSheet.jobId = d.jobId;
+    if(fromBanner){ ownerSheetRefreshBanner(); return; }
+    ownerSheetShow('Progress');
+    ownerSheetStartPoll();
+  }catch(e){ console.error(e); alert('Could not start the sync'); }
+}
+
+/* ── live progress ── */
+async function ownerSheetPoll(){
+  try{
+    const q = ownerSheet.jobId ? `?jobId=${encodeURIComponent(ownerSheet.jobId)}` : '';
+    const d = await (await fetch(`${BASE}/owner-leads/sheet/status${q}`)).json();
+    if(!d.success || !d.job) return;
+    ownerSheetRenderProgress(d.job);
+    if(d.job.status !== 'running'){
+      ownerSheetStopPoll();
+      loadOwnerLeads();
+      ownerSheetRefreshBanner();
+    }
+  }catch(e){ console.warn(e); }
+}
+
+function ownerSheetRenderProgress(j){
+  const running = j.status === 'running', ok = j.status === 'done';
+  const pct = j.total ? Math.min(100, Math.round(j.processed * 100 / j.total)) : (ok ? 100 : 0);
+  const tile = (n, label, color) => `<div class="owner-tl-item" style="flex-direction:column;text-align:center"><div style="font-size:1.4rem;font-weight:800;color:${color}">${n}</div><div style="font-size:0.7rem;color:rgba(255,255,255,0.55)">${label}</div></div>`;
+  document.getElementById('ownerSheetProgressBox').innerHTML = `
+    <div style="text-align:center;margin-bottom:14px">
+      <div style="font-size:2.2rem">${running ? '⏳' : (ok ? '✅' : '❌')}</div>
+      <div style="color:#fff;font-weight:700;font-size:1.05rem;margin-top:4px">${running ? 'Importing on the server…' : (ok ? 'Import complete' : 'Import failed')}</div>
+      ${running ? '<div style="color:rgba(255,255,255,0.55);font-size:0.78rem;margin-top:4px">You can safely close this window — the import keeps running on the server.</div>' : ''}
+    </div>
+    <div style="height:10px;background:rgba(255,255,255,0.1);border-radius:10px;overflow:hidden;margin-bottom:6px">
+      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--accent),var(--accent-light));transition:width .4s"></div>
+    </div>
+    <div style="text-align:center;color:rgba(255,255,255,0.55);font-size:0.76rem;margin-bottom:14px">${j.processed} / ${j.total || '…'} rows · ${pct}%</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+      ${tile(j.inserted,'New','#34d399')}${tile(j.updated,'Updated','#60a5fa')}${tile(j.unchanged,'Unchanged','#9ca3af')}${tile(j.skipped,'Skipped','#f87171')}
+    </div>
+    ${j.error ? `<div style="color:#ff8787;font-size:0.84rem;background:rgba(239,68,68,0.1);border-radius:10px;padding:10px 12px;margin-bottom:12px">${escHtml(j.error)}</div>` : ''}
+    ${(j.errors && j.errors.length) ? `<div style="max-height:140px;overflow-y:auto;font-size:0.76rem;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 12px;line-height:1.6;margin-bottom:12px">${j.errors.map(x=>escHtml(x)).join('<br>')}</div>` : ''}
+    ${running ? '' : '<button class="submit-btn" onclick="closeOwnerSheet()">Done</button>'}`;
+}
+
+/* ── banner on the Owner Leads page ── */
+async function ownerSheetRefreshBanner(){
+  const el = document.getElementById('ownerSheetBanner');
+  if(!el) return;
+  try{
+    const d = await (await fetch(`${BASE}/owner-leads/sheet/status`)).json();
+    if(!d.success) return;
+    const running = !!(d.job && d.job.status === 'running');
+    if(ownerSheetWasRunning && !running) loadOwnerLeads(true);   // finished while we were watching
+    ownerSheetWasRunning = running;
+
+    if(!d.hasConfig && !running){ el.style.display = 'none'; return; }
+    const c = d.config || {};
+    const intl = (OWNER_SHEET_INTERVALS.find(x => x[0] === Number(c.intervalMinutes)) || [0, c.intervalMinutes + ' min'])[1];
+    el.style.display = 'flex';
+    el.style.alignItems = 'center'; el.style.gap = '12px'; el.style.flexWrap = 'wrap';
+    el.innerHTML = `
+      <div style="flex:1;min-width:200px">
+        <div style="font-weight:700;color:var(--primary);font-size:0.88rem">🔗 Google Sheet ${running ? '· <span style="color:#d97706">syncing now…</span>' : 'connected'}</div>
+        <div style="font-size:0.76rem;color:var(--text-soft);margin-top:2px">
+          Last sync: ${escHtml(c.lastSyncAt || 'never')}${c.lastStatus ? ' · ' + escHtml(c.lastStatus) : ''}
+          · Auto-sync: ${c.autoSync ? 'every ' + escHtml(String(intl)) : 'off'}
+        </div>
+      </div>
+      <button class="action-btn-sm primary" ${running?'disabled':''} onclick="ownerSheetSyncNow(true)">↻ Sync now</button>
+      <button class="action-btn-sm" onclick="openOwnerSheet()">Manage</button>`;
+  }catch(e){ /* silent */ }
+}
+window.addEventListener('load', ()=> setTimeout(ownerSheetRefreshBanner, 2000));
+setInterval(()=>{
+  const pg = document.getElementById('ownersPage');
+  if(pg && pg.classList.contains('active')) ownerSheetRefreshBanner();
+}, 30000);
+
 
 window.addEventListener('load',()=>{
   setTimeout(()=>{

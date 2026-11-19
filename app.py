@@ -13993,6 +13993,494 @@ def owner_leads_delete(lead_id):
         return jsonify({"success": False, "message": "Lead not found"}), 404
     return jsonify({"success": True}), 200
 
+
+# =====================================================================
+# OWNER LEADS — IMPORT FROM GOOGLE SHEET (published-to-web CSV)
+# Everything runs on the SERVER in a background thread, so it keeps
+# going even if the browser tab is slow / closed. Optional auto-sync.
+# Reuses: _owner_pick_phone, _owner_cell, _owner_auto_guess, _owner_hist
+# helpers, OWNER_TARGET_FIELDS, OWNER_OPTIONAL_TEXT_KEYS above.
+# =====================================================================
+OWNER_SHEET_CFG_ID = "owner_sheet"          # saved config lives in `settings`
+OWNER_SHEET_LOCK_ID = "owner_sheet_sync"    # one sync at a time (all workers)
+OWNER_SHEET_LOCK_TTL = 600                  # seconds, renewed while running
+
+owner_sheet_jobs_collection = db["ownerSheetJobs"]
+try:
+    owner_sheet_jobs_collection.create_index("createdAt")
+except Exception as _osj_err:
+    print(f"[startup] ownerSheetJobs index warning: {_osj_err}")
+
+
+def _owner_sheet_csv_url(raw):
+    """Turns whatever the user pasted into a direct CSV URL. Google Sheets only."""
+    u = (raw or "").strip()
+    if not u:
+        raise ValueError("Paste the Google Sheet link first")
+    if not re.match(r"^https://docs\.google\.com/spreadsheets/", u):
+        raise ValueError("Only Google Sheets links (https://docs.google.com/spreadsheets/...) are allowed")
+
+    # Published-to-web link: .../d/e/<id>/pubhtml  or  .../pub?output=csv
+    if re.search(r"/d/e/[^/]+/pub", u):
+        u = u.replace("/pubhtml", "/pub")
+        if re.search(r"output=\w+", u):
+            u = re.sub(r"output=\w+", "output=csv", u)
+        else:
+            u += ("&" if "?" in u else "?") + "output=csv"
+        return u
+
+    # Normal sheet link (works only if the sheet is shared/published publicly)
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", u)
+    if m:
+        out = f"https://docs.google.com/spreadsheets/d/{m.group(1)}/export?format=csv"
+        g = re.search(r"[#&?]gid=(\d+)", u)
+        if g:
+            out += f"&gid={g.group(1)}"
+        return out
+
+    raise ValueError("Could not understand this Google Sheet link")
+
+
+def _owner_sheet_fetch_df(csv_url):
+    """Downloads + parses the published CSV. Raises ValueError with a friendly message."""
+    resp = requests.get(csv_url, timeout=60, headers={"User-Agent": "NishaHomesCRM/1.0"})
+    if resp.status_code in (401, 403, 404):
+        raise ValueError("Google denied access — publish the sheet to the web as CSV (File → Share → Publish to web)")
+    resp.raise_for_status()
+
+    text = resp.content.decode("utf-8-sig", errors="replace")
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    if "text/html" in ctype or text.lstrip()[:15].lower().startswith(("<!doctype", "<html")):
+        raise ValueError("This link returned a web page, not CSV — use Publish to web → choose the tab → format CSV")
+
+    try:
+        df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        raise ValueError("The sheet is empty")
+
+    df.columns = [str(c).strip() for c in df.columns]
+    df = df.dropna(how="all")
+    df = df[df.apply(lambda r: any(str(v).strip() for v in r), axis=1)]
+    if df.empty or len(df.columns) == 0:
+        raise ValueError("The sheet has no readable rows")
+    return df
+
+
+def _owner_sheet_clean_mapping(raw):
+    valid = {f["key"] for f in OWNER_TARGET_FIELDS}
+    return {k: str(v).strip() for k, v in (raw or {}).items()
+            if k in valid and v and str(v).strip()}
+
+
+# ---- single global lock (works across gunicorn workers) ----
+def _owner_sheet_lock_acquire(owner):
+    now = datetime.utcnow()
+    exp = now + timedelta(seconds=OWNER_SHEET_LOCK_TTL)
+    res = system_locks_collection.find_one_and_update(
+        {"_id": OWNER_SHEET_LOCK_ID, "lockedUntil": {"$lt": now}},
+        {"$set": {"lockedUntil": exp, "lockedBy": owner, "lockedAt": now}}
+    )
+    if res is not None:
+        return True
+    try:
+        system_locks_collection.insert_one(
+            {"_id": OWNER_SHEET_LOCK_ID, "lockedUntil": exp, "lockedBy": owner, "lockedAt": now})
+        return True
+    except Exception:
+        return False
+
+
+def _owner_sheet_lock_renew(owner):
+    try:
+        system_locks_collection.update_one(
+            {"_id": OWNER_SHEET_LOCK_ID, "lockedBy": owner},
+            {"$set": {"lockedUntil": datetime.utcnow() + timedelta(seconds=OWNER_SHEET_LOCK_TTL)}})
+    except Exception as e:
+        print(f"[owner-sheet] lock renew failed: {e}")
+
+
+def _owner_sheet_lock_release(owner):
+    try:
+        system_locks_collection.update_one(
+            {"_id": OWNER_SHEET_LOCK_ID, "lockedBy": owner},
+            {"$set": {"lockedUntil": datetime.utcnow() - timedelta(seconds=1)}})
+    except Exception as e:
+        print(f"[owner-sheet] lock release failed: {e}")
+
+
+def _owner_sheet_process_row(row, mapping, now, batch, by):
+    """Returns (result, reason). result: inserted | updated | unchanged | skipped."""
+    name = _owner_cell(row, mapping, "Lead Name")
+    phone_cell = _owner_cell(row, mapping, "Phone Number")
+    if not name and not phone_cell:
+        return "skipped", ""                      # blank row, no noise
+    raw_phone = _owner_pick_phone(phone_cell)
+    if not name or not raw_phone:
+        return "skipped", "owner name or valid phone number missing"
+    if is_number_blocked(raw_phone):
+        return "skipped", "number is blocked in CRM"
+
+    p10 = phone_last10(raw_phone)
+    phone91 = normalize_phone_91(raw_phone)
+    wa_raw = _owner_pick_phone(_owner_cell(row, mapping, "WhatsApp Number"))
+    wa91 = normalize_phone_91(wa_raw) if wa_raw else phone91
+
+    extra = {}
+    for k in OWNER_OPTIONAL_TEXT_KEYS:
+        v = _owner_cell(row, mapping, k)
+        if v:
+            extra[k] = v
+
+    existing = owner_leads_collection.find_one({"Phone10": p10})
+    if existing:
+        # refresh details only — never overwrite the team's Status or name
+        upd = {k: v for k, v in extra.items() if k != "Status"}
+        if wa_raw:
+            upd["WhatsApp Number"] = wa91
+        changed = [k for k, v in upd.items() if str(existing.get(k) or "") != str(v)]
+        if not changed:
+            return "unchanged", ""
+        upd["updatedAt"] = now
+        owner_leads_collection.update_one(
+            {"_id": existing["_id"]},
+            {"$set": upd,
+             "$push": {"History": {"$each": [{
+                 "at": now, "by": by,
+                 "action": "Google Sheet sync - details updated (" + ", ".join(changed) + ")",
+                 "remark": f"Batch {batch}"}], "$slice": -100}}}
+        )
+        return "updated", ""
+
+    owner_leads_collection.insert_one({
+        "Lead Name": name,
+        "Phone Number": phone91,
+        "Phone10": p10,
+        "WhatsApp Number": wa91,
+        "LeadType": "owner",
+        "Owner Type": extra.get("Owner Type", ""),
+        "Properties": extra.get("Properties", ""),
+        "Locations": extra.get("Locations", ""),
+        "City": extra.get("City", ""),
+        "Status": extra.get("Status") or "New",
+        "Note": extra.get("Note", ""),
+        "Source": "Google Sheet",
+        "ImportBatch": batch,
+        "ImportedBy": by,
+        "Created At": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "Date": now.strftime("%d-%m-%Y"),
+        "createdAt": now,
+        "updatedAt": now,
+        "History": [{"at": now, "action": "Imported from Google Sheet", "by": by,
+                     "remark": f"Batch {batch}"}],
+    })
+    return "inserted", ""
+
+
+def _owner_sheet_run_job(job_id, csv_url, mapping, by, lock_owner):
+    """Runs in a background thread. Fetches the sheet, upserts every row,
+    writes live progress to ownerSheetJobs, always releases the lock."""
+    def upd(**fields):
+        fields["updatedAt"] = datetime.utcnow()
+        owner_sheet_jobs_collection.update_one({"_id": job_id}, {"$set": fields})
+
+    counts = {"inserted": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+    errors = []
+    final_text = ""
+    try:
+        df = _owner_sheet_fetch_df(csv_url)
+
+        missing = [c for c in set(mapping.values()) if c not in df.columns]
+        if missing:
+            raise ValueError("Mapped column(s) no longer exist in the sheet: " + ", ".join(missing))
+
+        records = df.to_dict(orient="records")
+        total = len(records)
+        upd(total=total, processed=0)
+        batch = secrets.token_hex(4)
+
+        for i, row in enumerate(records):
+            try:
+                result, why = _owner_sheet_process_row(row, mapping, datetime.utcnow(), batch, by)
+            except Exception as row_err:
+                result, why = "skipped", str(row_err)
+            counts[result] += 1
+            if result == "skipped" and why and len(errors) < 25:
+                errors.append(f"Row {i + 2}: {why}")
+
+            if (i + 1) % 20 == 0:
+                upd(processed=i + 1, errors=errors, **counts)
+                _owner_sheet_lock_renew(lock_owner)
+
+        upd(status="done", processed=total, errors=errors,
+            finishedAt=datetime.utcnow(), **counts)
+        final_text = (f"done: {counts['inserted']} new, {counts['updated']} updated, "
+                      f"{counts['skipped']} skipped")
+        print(f"[owner-sheet] job {job_id} {final_text}")
+
+    except requests.RequestException as net_err:
+        upd(status="failed", error=f"Could not reach Google Sheets: {net_err}"[:300],
+            errors=errors, finishedAt=datetime.utcnow(), **counts)
+        final_text = "failed: could not reach Google"
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        upd(status="failed", error=str(e)[:300], errors=errors,
+            finishedAt=datetime.utcnow(), **counts)
+        final_text = f"failed: {str(e)[:120]}"
+    finally:
+        try:
+            settings_collection.update_one(
+                {"_id": OWNER_SHEET_CFG_ID},
+                {"$set": {"lastSyncAt": datetime.utcnow(), "lastStatus": final_text,
+                          "lastJobId": str(job_id)}}
+            )
+        except Exception as cfg_err:
+            print(f"[owner-sheet] could not save last sync: {cfg_err}")
+        _owner_sheet_lock_release(lock_owner)   # release AFTER lastSyncAt is saved
+
+
+def _owner_sheet_launch(trigger, by, csv_url, mapping, background=True):
+    """Takes the lock, creates the job doc, runs it. Returns (job_id, error)."""
+    owner = f"{socket.gethostname()}-{os.getpid()}-{secrets.token_hex(4)}"
+    if not _owner_sheet_lock_acquire(owner):
+        return None, "A Google Sheet import is already running - please wait for it to finish"
+
+    now = datetime.utcnow()
+    job_id = owner_sheet_jobs_collection.insert_one({
+        "status": "running", "trigger": trigger, "by": by, "csvUrl": csv_url,
+        "total": 0, "processed": 0,
+        "inserted": 0, "updated": 0, "unchanged": 0, "skipped": 0,
+        "errors": [], "error": None,
+        "createdAt": now, "updatedAt": now, "finishedAt": None
+    }).inserted_id
+
+    args = (job_id, csv_url, mapping, by, owner)
+    if background:
+        threading.Thread(target=_owner_sheet_run_job, args=args, daemon=True,
+                         name="owner-sheet-import").start()
+    else:
+        _owner_sheet_run_job(*args)
+    return job_id, None
+
+
+def _owner_sheet_job_view(j):
+    if not j:
+        return None
+    return {
+        "id": str(j["_id"]), "status": j.get("status"), "trigger": j.get("trigger"),
+        "by": j.get("by"), "total": j.get("total", 0), "processed": j.get("processed", 0),
+        "inserted": j.get("inserted", 0), "updated": j.get("updated", 0),
+        "unchanged": j.get("unchanged", 0), "skipped": j.get("skipped", 0),
+        "errors": j.get("errors") or [], "error": j.get("error"),
+        "startedAt": format_ist(j.get("createdAt")),
+        "finishedAt": format_ist(j.get("finishedAt")) if j.get("finishedAt") else None,
+    }
+
+
+@app.route("/api/owner-leads/sheet/preview", methods=["POST"])
+def owner_sheet_preview():
+    """Step 1: fetch the sheet server-side, return headers + sample rows + suggested mapping."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        csv_url = _owner_sheet_csv_url((request.json or {}).get("url"))
+        df = _owner_sheet_fetch_df(csv_url)
+        headers = list(df.columns)
+
+        mapping = _owner_auto_guess(headers)
+        cfg = settings_collection.find_one({"_id": OWNER_SHEET_CFG_ID}) or {}
+        if cfg.get("csvUrl") == csv_url:                       # same sheet -> reuse saved mapping
+            for k, v in (cfg.get("mapping") or {}).items():
+                if v in headers:
+                    mapping[k] = v
+
+        return jsonify({
+            "success": True, "csvUrl": csv_url, "headers": headers,
+            "previewRows": df.head(5).fillna("").astype(str).to_dict(orient="records"),
+            "totalRows": int(len(df)),
+            "targetFields": OWNER_TARGET_FIELDS, "autoMapping": mapping
+        }), 200
+    except ValueError as ve:
+        return jsonify({"success": False, "message": str(ve)}), 400
+    except requests.RequestException as net_err:
+        return jsonify({"success": False, "message": f"Could not reach Google Sheets: {net_err}"}), 502
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/sheet/start", methods=["POST"])
+def owner_sheet_start():
+    """Step 2: save sheet + mapping, then start the background import. Returns immediately."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        data = request.json or {}
+        raw_url = (data.get("url") or "").strip()
+        csv_url = _owner_sheet_csv_url(raw_url)
+        mapping = _owner_sheet_clean_mapping(data.get("mapping"))
+        if not mapping.get("Lead Name") or not mapping.get("Phone Number"):
+            return jsonify({"success": False, "message": "Owner Name and Phone Number must be mapped"}), 400
+
+        try:
+            interval = max(5, min(int(data.get("intervalMinutes") or 60), 1440))
+        except (TypeError, ValueError):
+            interval = 60
+
+        by = session.get("employee_name") or "Unknown"
+        job_id, err = _owner_sheet_launch("manual", by, csv_url, mapping)
+        if err:
+            return jsonify({"success": False, "message": err}), 409
+
+        settings_collection.update_one(
+            {"_id": OWNER_SHEET_CFG_ID},
+            {"$set": {"url": raw_url, "csvUrl": csv_url, "mapping": mapping,
+                      "autoSync": bool(data.get("autoSync", False)),
+                      "intervalMinutes": interval,
+                      "connectedBy": by, "connectedAt": datetime.utcnow()}},
+            upsert=True
+        )
+        return jsonify({"success": True, "jobId": str(job_id)}), 200
+    except ValueError as ve:
+        return jsonify({"success": False, "message": str(ve)}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/owner-leads/sheet/sync-now", methods=["POST"])
+def owner_sheet_sync_now():
+    """Re-runs the import using the saved sheet + mapping."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    cfg = settings_collection.find_one({"_id": OWNER_SHEET_CFG_ID}) or {}
+    if not cfg.get("csvUrl") or not cfg.get("mapping"):
+        return jsonify({"success": False, "message": "No Google Sheet connected yet"}), 400
+    job_id, err = _owner_sheet_launch(
+        "manual", session.get("employee_name") or "Unknown", cfg["csvUrl"], cfg["mapping"])
+    if err:
+        return jsonify({"success": False, "message": err}), 409
+    return jsonify({"success": True, "jobId": str(job_id)}), 200
+
+
+@app.route("/api/owner-leads/sheet/config", methods=["POST"])
+def owner_sheet_config():
+    """Turn auto-sync on/off and change its interval."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    data = request.json or {}
+    try:
+        interval = max(5, min(int(data.get("intervalMinutes") or 60), 1440))
+    except (TypeError, ValueError):
+        interval = 60
+    res = settings_collection.update_one(
+        {"_id": OWNER_SHEET_CFG_ID},
+        {"$set": {"autoSync": bool(data.get("autoSync", False)), "intervalMinutes": interval}}
+    )
+    if res.matched_count == 0:
+        return jsonify({"success": False, "message": "No Google Sheet connected yet"}), 404
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/owner-leads/sheet/disconnect", methods=["POST"])
+def owner_sheet_disconnect():
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    settings_collection.delete_one({"_id": OWNER_SHEET_CFG_ID})
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/owner-leads/sheet/status", methods=["GET"])
+def owner_sheet_status():
+    """Saved config + live progress of the latest (or a given) import job."""
+    denied = _owner_staff_only()
+    if denied:
+        return denied
+    try:
+        # a job whose thread died (server restart) must not look "running" forever
+        owner_sheet_jobs_collection.update_many(
+            {"status": "running", "updatedAt": {"$lt": datetime.utcnow() - timedelta(minutes=10)}},
+            {"$set": {"status": "failed", "error": "Interrupted (server restarted)",
+                      "finishedAt": datetime.utcnow()}}
+        )
+
+        job = None
+        job_id = request.args.get("jobId")
+        if job_id:
+            try:
+                job = owner_sheet_jobs_collection.find_one({"_id": ObjectId(job_id)})
+            except Exception:
+                job = None
+        else:
+            job = owner_sheet_jobs_collection.find_one(sort=[("createdAt", -1)])
+
+        cfg = settings_collection.find_one({"_id": OWNER_SHEET_CFG_ID})
+        config = None
+        if cfg and cfg.get("csvUrl"):
+            last = cfg.get("lastSyncAt")
+            config = {
+                "url": cfg.get("url") or cfg.get("csvUrl"),
+                "mapping": cfg.get("mapping") or {},
+                "autoSync": bool(cfg.get("autoSync")),
+                "intervalMinutes": cfg.get("intervalMinutes", 60),
+                "lastSyncAt": format_ist(last) if isinstance(last, datetime) else None,
+                "lastStatus": cfg.get("lastStatus") or "",
+                "connectedBy": cfg.get("connectedBy") or "",
+            }
+
+        return jsonify({"success": True, "hasConfig": bool(config), "config": config,
+                        "job": _owner_sheet_job_view(job)}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------
+# AUTO-SYNC SCHEDULER (only runs if "Auto-sync" is switched on in the UI)
+# ---------------------------------------------------------------------
+def owner_sheet_scheduler_loop():
+    print("[owner-sheet] auto-sync scheduler started")
+    time.sleep(45)
+    while True:
+        try:
+            cfg = settings_collection.find_one({"_id": OWNER_SHEET_CFG_ID}) or {}
+            if cfg.get("csvUrl") and cfg.get("mapping") and cfg.get("autoSync"):
+                interval = max(5, int(cfg.get("intervalMinutes") or 60))
+                last = cfg.get("lastSyncAt")
+                due = (not isinstance(last, datetime)
+                       or (datetime.utcnow() - last) >= timedelta(minutes=interval))
+                if due:
+                    # runs inline in this thread; the DB lock stops other workers duplicating it
+                    _owner_sheet_launch("auto", "Auto-sync", cfg["csvUrl"], cfg["mapping"], background=False)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        time.sleep(60)
+
+
+_owner_sheet_thread_started = False
+
+
+def start_owner_sheet_scheduler():
+    global _owner_sheet_thread_started
+    if _owner_sheet_thread_started:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        threading.Thread(target=owner_sheet_scheduler_loop, daemon=True,
+                         name="owner-sheet-scheduler").start()
+        _owner_sheet_thread_started = True
+
+
+start_owner_sheet_scheduler()
+
 import followup90
 followup90.register(globals())   # 90-day follow-up engine (routes + scheduler)
 
