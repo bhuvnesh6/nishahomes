@@ -12286,8 +12286,6 @@ def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0):
 
 
 def _pravaah_headers():
-
-def _pravaah_headers():
     if not PRAVAAH_API_KEY:
         raise PravaahError("PRAVAAH_API_KEY not configured in .env")
     return {"X-API-Key": PRAVAAH_API_KEY, "Content-Type": "application/json"}
@@ -12729,6 +12727,9 @@ def ai_call_worker_loop():
             time.sleep(30)
 
 
+_ai_call_thread_started = False
+
+
 def start_ai_call_worker():
     global _ai_call_thread_started
     if _ai_call_thread_started:
@@ -12814,8 +12815,7 @@ def ai_calls_status():
         "success": True,
         "enabled": bool(cfg.get("enabled", AI_CALLING_DEFAULT_ENABLED)),
         "pausedReason": cfg.get("pausedReason", ""),
-        "inCallingHours":             # Round robin: only for brand-new leads, one lead -> one user
-            auto_assign_round_robin(collection_name, insert_res.inserted_id, clean_phone, name)is_within_ai_call_hours(),
+        "inCallingHours": is_within_ai_call_hours(),
         "counts": counts,
         "jobs": [serialize_doc(j) for j in jobs]
     }), 200
