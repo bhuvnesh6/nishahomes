@@ -1765,6 +1765,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
                   <th>Lead</th>
                   <th>Phone</th>
                   <th>Type</th>
+                  <th>Location</th>
                   <th>Assigned To</th>
                   <th>Assigned By</th>
                   <th>Call Status</th>
@@ -2414,6 +2415,16 @@ function buildLeadCallLogPayload(l){
    gets retried automatically the moment connectivity returns, so no
    call ever goes unrecorded.
 ═══════════════════════════════════ */
+/* ═══════════════ SORT BY AI SCORE (high → low) ═══════════════ */
+function leadScoreVal(l){
+  const s = Number(l && l.AIScore);
+  return isNaN(s) ? 0 : s;          // no score = 0 → goes to the bottom
+}
+// Array.sort is stable, so leads with equal scores keep their existing order
+function sortByScoreDesc(arr){
+  return arr.sort((a,b) => leadScoreVal(b) - leadScoreVal(a));
+}
+
 /* ═══════════════ AI SCORE BADGE ═══════════════ */
 function scoreBadge(l, collection){
   const s = Number(l && l.AIScore);
@@ -2439,7 +2450,8 @@ async function refreshLeadScore(ev, id, collection){
       const lead = arr.find(x=>x._id===id);
       if(lead){ lead.AIScore = d.score; lead.AIScoreReason = d.reason; }
     });
-    renderTable(); renderMobileCards(); renderAssignedTable(); renderAssignedCards();
+    applyFilter(true);            // re-sort, stay on the same page
+    applyAssignedFilter(true);
   }catch(e){ console.error(e); alert('Score failed'); }
 }
 
@@ -2655,6 +2667,7 @@ function applyAssignedFilter(keepPage){
     const assignedTo = (l.AssignTo||'').toLowerCase();
     return name.includes(q)||phone.includes(q)||assignedTo.includes(q);
   });
+  sortByScoreDesc(filteredAssignedLeads);   // highest AI score first
   if(!keepPage) assignedCurrentPage = 1;
   renderAssignedTable();
   renderAssignedCards();
@@ -2716,6 +2729,7 @@ function renderAssignedTable(){
       <td><div class="td-name">${name}</div><div class="td-date">${escHtml(l.Date||'')}</div><div style="margin-top:4px">${scoreBadge(l, collection)}</div></td>
       <td><a href="tel:${rawPhone}" class="td-phone">${escHtml(phone)}</a></td>
       <td><span class="badge ${typeBadgeClass(t)}">${getTypeLabel(t)}</span></td>
+      <td>${escHtml(l['Location Interested In']||l['Property Location']||l['Operating City']||ed?.['Location Interested In']||'—')}</td>
       <td><span class="badge" style="background:rgba(59,130,246,.12);color:#2563eb">${escHtml(l.AssignTo||'—')}</span></td>
       <td style="font-size:0.8rem;color:var(--text-soft)">${escHtml(l.AssignedBy||'—')}${l.AssignedAt?'<br>'+escHtml(l.AssignedAt):''}</td>
       <td>${callStatus!=='—'?`<span class="status-badge ${statusClass(callStatus)}"><span class="status-badge-dot"></span>${escHtml(callStatus)}</span>`:callStatus}</td>
@@ -2801,6 +2815,7 @@ function renderAssignedCards(){
       </div>
       <div class="lc-body">
         <div class="lc-field"><div class="lc-field-label">Phone</div><div class="lc-field-value"><a href="tel:${rawPhone}">${escHtml(phone)}</a></div></div>
+        <div class="lc-field"><div class="lc-field-label">Location</div><div class="lc-field-value">${escHtml(l['Location Interested In']||l['Property Location']||l['Operating City']||ed?.['Location Interested In']||'—')}</div></div>
         <div class="lc-field"><div class="lc-field-label">Budget</div><div class="lc-field-value">${escHtml(l['Budget Range']||l['Expected Price']||'—')}</div></div>
       </div>
       ${callStatus?`<div class="lc-status-row"><span class="lc-status-badge ${statusClass(callStatus)}"><span class="lc-status-dot"></span>${escHtml(callStatus)}</span></div>`:''}
@@ -2939,6 +2954,7 @@ function applyFilter(keepPage){
     const loc = (l['Location Interested In']||l['Property Location']||l['Operating City']||'').toLowerCase();
     return name.includes(q)||phone.includes(q)||loc.includes(q);
   });
+  sortByScoreDesc(filteredLeads);   // highest AI score first
   if(!keepPage){
     currentPage = 1;
   }else{

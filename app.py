@@ -8732,10 +8732,6 @@ def create_wa_lead(phone, name_hint):
     except Exception as rr_err:
         print(f"[wa-ai] round-robin auto-assign failed (non-fatal): {rr_err}")
 
-    # AI outbound call for new WhatsApp leads. 3 min delay so the WhatsApp AI
-    # can first work out whether it is a buyer / rental / seller.
-    auto_queue_ai_call("Leads", result.inserted_id, source="whatsapp", delay_seconds=180)
-
     return "Leads", doc
 
 
@@ -9419,6 +9415,26 @@ def send_after_hours_reply(coll_name, lead_id, phone, recipient_phone_id):
         db[coll_name].update_one({"_id": lead_id}, {"$unset": {"lastAfterHoursReplyAt": ""}})
 
 
+def send_new_lead_welcome_and_queue_call(coll_name, lead_id, phone, recipient_phone_id):
+    """Brand-new WhatsApp lead: drop the 'virtual assistant will contact you'
+    message, then queue the AI call for 1-3 minutes later."""
+    text = NEW_LEAD_WELCOME_TEXT if is_within_ai_call_hours() else NEW_LEAD_WELCOME_TEXT_OFFHOURS
+    try:
+        send_whatsapp_text(phone, text, phone_no_id=recipient_phone_id)
+        save_chat_message(lead_id, phone, "assistant", text)
+        db[coll_name].update_one({"_id": lead_id}, {"$set": {
+            "AIreply": text,
+            "lastAfterHoursReplyAt": datetime.utcnow()   # stops a 2nd "team offline" message
+        }})
+        print(f"[wa-ai] welcome message sent to new lead {phone}")
+    except Exception as e:
+        print(f"[wa-ai] welcome message failed for {phone}: {e}")   # still queue the call
+
+    delay = random.randint(60, 180)   # 1 to 3 minutes
+    auto_queue_ai_call(coll_name, lead_id, source="whatsapp",
+                       delay_seconds=delay, allowed_types=AI_CALL_TYPES_WHATSAPP)
+
+
 def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_phone_id):
     try:
         phone = normalize_number(sender_phone)
@@ -9451,9 +9467,11 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
             purge_optout_number(phone, user_text, "whatsapp-ai")
             return
 
+        is_new_lead = False
         coll_name, lead_doc = find_wa_lead_by_phone(phone)
         if not lead_doc:
             coll_name, lead_doc = create_wa_lead(phone, sender_name)
+            is_new_lead = True
         lead_id = lead_doc["_id"]
 
         save_chat_message(lead_id, phone, "user", user_text)
@@ -9475,6 +9493,11 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
 
         if is_ai_disabled_for_phone(phone):
             print(f"[wa-ai] AI disabled for {phone} — message stored, no auto-reply")
+            return
+
+        # ---- brand-new lead: welcome message + AI call in 1-3 min (no normal AI chat reply) ----
+        if is_new_lead:
+            send_new_lead_welcome_and_queue_call(coll_name, lead_id, phone, recipient_phone_id)
             return
 
         # ---- outside business hours: no AI, just the static "team will contact you" message ----
@@ -12214,8 +12237,21 @@ class PravaahError(Exception):
 AI_CALLING_DEFAULT_ENABLED = os.getenv("AI_CALLING_DEFAULT_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 AI_CALL_AUTO_ON_NEW_LEAD = os.getenv("AI_CALL_AUTO_ON_NEW_LEAD", "true").strip().lower() in ("1", "true", "yes", "on")
 AI_CALL_ALLOWED_LEAD_TYPES = {
-    t.strip() for t in os.getenv("AI_CALL_ALLOWED_LEAD_TYPES", "buyer_purchase,unidentified").split(",") if t.strip()
+    t.strip() for t in os.getenv("AI_CALL_ALLOWED_LEAD_TYPES", "buyer_purchase").split(",") if t.strip()
 }
+# WhatsApp leads are also called when the lead type is not defined yet
+AI_CALL_TYPES_WHATSAPP = {"buyer_purchase", "unidentified", ""}
+
+NEW_LEAD_WELCOME_TEXT = (
+    "Thank you for contacting Nisha Homes 🙏\n\n"
+    "Our virtual assistant will contact you soon.\n\n"
+    "🌐 https://nishahomes.com"
+)
+NEW_LEAD_WELCOME_TEXT_OFFHOURS = (
+    "Thank you for contacting Nisha Homes 🙏\n\n"
+    "Our virtual assistant will contact you soon, during business hours (9:00 AM – 7:00 PM IST).\n\n"
+    "🌐 https://nishahomes.com"
+)
 AI_CALL_START_HOUR = int(os.getenv("AI_CALL_START_HOUR", "9"))     # Pravaah only accepts calls 09:00-19:00 IST
 AI_CALL_END_HOUR = int(os.getenv("AI_CALL_END_HOUR", "19"))
 
@@ -12224,10 +12260,11 @@ def is_within_ai_call_hours():
     return AI_CALL_START_HOUR <= get_ist_now().hour < AI_CALL_END_HOUR
 
 
-def ai_call_lead_is_eligible(doc):
+def ai_call_lead_is_eligible(doc, allowed_types=None):
     """(True, "") if this lead may be auto-called, else (False, reason)."""
+    allowed = set(allowed_types) if allowed_types is not None else AI_CALL_ALLOWED_LEAD_TYPES
     lt = (doc.get("LeadType") or "").strip()
-    if lt not in AI_CALL_ALLOWED_LEAD_TYPES:
+    if lt not in allowed:
         return False, f"lead type '{lt or 'blank'}' is not a buyer lead"
     p10 = phone_last10(doc.get("Phone Number"))
     if not p10:
@@ -12243,7 +12280,7 @@ def ai_call_lead_is_eligible(doc):
     return True, ""
 
 
-def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0):
+def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0, allowed_types=None):
     """Puts a freshly-added lead into the AI call queue. Never raises.
     The worker places calls strictly one at a time, only inside calling hours."""
     try:
@@ -12259,7 +12296,7 @@ def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0):
         if not doc:
             return False
 
-        ok, why = ai_call_lead_is_eligible(doc)
+        ok, why = ai_call_lead_is_eligible(doc, allowed_types)
         if not ok:
             print(f"[ai-call] auto-queue skipped ({source}): {why}")
             return False
@@ -12275,6 +12312,7 @@ def auto_queue_ai_call(coll_name, lead_id, source="new-lead", delay_seconds=0):
             "name": doc.get("Lead Name") or doc.get("Name") or "",
             "phone10": p10, "status": "queued",
             "autoQueued": True, "queuedBy": f"Auto ({source})",
+            "allowedTypes": sorted(allowed_types) if allowed_types is not None else None,
             "runAfter": now + timedelta(seconds=delay_seconds),
             "createdAt": now, "updatedAt": now
         })
@@ -12607,7 +12645,7 @@ def process_ai_call_job(job):
             if not _chk:
                 _upd(status="skipped", error="lead no longer exists")
                 return None
-            _ok, _why = ai_call_lead_is_eligible(_chk)
+            _ok, _why = ai_call_lead_is_eligible(_chk, job.get("allowedTypes"))
             if not _ok:
                 _upd(status="skipped", error=_why)
                 return None
