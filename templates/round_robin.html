@@ -315,6 +315,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
   </div>
 
+    <div class="card">
+    <div class="card-title">Dholera Leads</div>
+    <div class="card-sub">Any lead whose location is Dholera skips round robin and goes only to the person selected here</div>
+    <select class="member-search" id="dholeraSelect" style="margin-bottom:10px"></select>
+    <div class="status-hint" id="dholeraHint" style="margin-bottom:12px"></div>
+    <button class="save-btn" id="saveDholeraBtn" onclick="saveDholera()">Save Dholera user</button>
+  </div>
+
   <div class="card">
     <div class="card-title">Lead Workload</div>
     <div class="card-sub">Total leads currently assigned to each team member — manual assign, bulk assign, or round robin, all counted</div>
@@ -392,6 +400,8 @@ async function loadConfig(){
     renderRotationList();
 renderWorkloadList();
     renderHideList();
+    dholeraNumber = d.dholeraNumber || null;
+    renderDholera();
   }catch(e){
     console.error(e);
     document.getElementById('memberList').innerHTML = '<p style="color:var(--hot);font-size:0.85rem">Failed to load team members</p>';
@@ -676,6 +686,45 @@ document.getElementById('wlModalCloseBtn').addEventListener('click', () => {
 document.getElementById('wlModalOverlay').addEventListener('click', (e) => {
   if(e.target.id === 'wlModalOverlay') document.getElementById('wlModalOverlay').classList.remove('open');
 });
+
+let dholeraNumber = null;
+
+function renderDholera(){
+  const sel = document.getElementById('dholeraSelect');
+  const active = members.filter(m => m.active);
+  sel.innerHTML = '<option value="">— Not set (Dholera leads use normal round robin) —</option>' +
+    active.map(m => `<option value="${m.number}" ${m.number===dholeraNumber?'selected':''}>${escHtml(m.name)} (${m.number})</option>`).join('');
+  const cur = members.find(m => m.number === dholeraNumber);
+  document.getElementById('dholeraHint').textContent = cur
+    ? `All Dholera leads → ${cur.name}`
+    : 'No Dholera user selected right now';
+}
+
+async function saveDholera(){
+  const val = document.getElementById('dholeraSelect').value;
+  const btn = document.getElementById('saveDholeraBtn');
+  btn.disabled = true;
+  try{
+    const res = await fetch(`${BASE}/round-robin/dholera`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({number: val ? Number(val) : null})
+    });
+    const d = await res.json();
+    if(d.success){
+      dholeraNumber = d.dholeraNumber || null;
+      renderDholera();
+      showToast(dholeraNumber ? 'Dholera user saved ✓' : 'Dholera user cleared ✓');
+    }else{
+      showToast(d.message || 'Failed to save');
+    }
+  }catch(e){
+    console.error(e);
+    showToast('Failed to save');
+  }finally{
+    btn.disabled = false;
+  }
+}
 
 loadConfig();
 </script>

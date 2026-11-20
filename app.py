@@ -7507,7 +7507,7 @@ def followup_scheduler_loop():
 _followup_thread_started = False
  
  
-LEGACY_FOLLOWUPS_ENABLED = False   # legacy engine ON (sends via wp.send_whatsapp_message, max 30/day)
+LEGACY_FOLLOWUPS_ENABLED = False   # OLD follow-up engine is PERMANENTLY OFF. Only followup90.py sends follow-ups now.
 
 def start_followup_scheduler():
     """Starts the background follow-up thread exactly once per process,
@@ -7693,8 +7693,7 @@ def followup_trigger():
     background so the request returns immediately."""
     if session.get("role") != "admin":
         return jsonify({"success": False, "message": "Admin only"}), 403
-    threading.Thread(target=run_followup_scan_and_send, daemon=True, name="followup-manual-trigger").start()
-    return jsonify({"success": True, "message": "Follow-up scan started in the background"}), 200
+    return jsonify({"success": False, "message": "Old follow-up engine is permanently disabled. Use the 90-day follow-up engine."}), 410
  
  
  #webhook handler 
@@ -8687,7 +8686,7 @@ def find_wa_lead_by_phone(phone):
     return find_lead_by_any_phone(phone)
 
 
-def create_wa_lead(phone, name_hint):
+def create_wa_lead(phone, name_hint, first_message=""):
     phone = normalize_phone_91(phone)
 
     # If this number already exists in any format (or another thread is
@@ -8712,7 +8711,7 @@ def create_wa_lead(phone, name_hint):
         "Buying Timeline": "",
         "Final Intent": "",
         "Lead Intent %": "",
-        "Location Interested In": "",
+        "Location Interested In": "Dholera" if is_dholera_text(first_message) else "",
         "Mark_Connected": "note",
         "Property Type": "",
         "Size_Purpose_Note": "Size: , purpose: , note: ",
@@ -9470,7 +9469,7 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
         is_new_lead = False
         coll_name, lead_doc = find_wa_lead_by_phone(phone)
         if not lead_doc:
-            coll_name, lead_doc = create_wa_lead(phone, sender_name)
+            coll_name, lead_doc = create_wa_lead(phone, sender_name, user_text)
             is_new_lead = True
         lead_id = lead_doc["_id"]
 
@@ -9483,7 +9482,13 @@ def handle_incoming_wa_message(sender_phone, sender_name, user_text, recipient_p
         }
         if sender_name and not lead_doc.get("Lead Name"):
             update_fields["Lead Name"] = sender_name
+        if is_dholera_text(user_text):
+            update_fields["Location Interested In"] = "Dholera"
         db[coll_name].update_one({"_id": lead_id}, {"$set": update_fields})
+
+        # Existing lead mentions Dholera: if still unassigned -> Dholera user (assigned leads are left alone)
+        if is_dholera_text(user_text) and not is_new_lead:
+            auto_assign_round_robin(coll_name, lead_id, phone, lead_doc.get("Lead Name") or sender_name)
 
         # ---- soft "not interested / not required": keep the lead, but no more automatic messages ----
         if detect_optout_level(user_text) == "soft":
@@ -10370,21 +10375,69 @@ def get_next_round_robin_employee():
     return None
 
 
+
+# =====================================================================
+# DHOLERA RULE: leads whose location is Dholera skip round robin and go
+# to the one team member selected on the Round Robin page.
+# =====================================================================
+DHOLERA_RE = re.compile(r"dhol[ae]ra", re.I)
+
+
+def is_dholera_text(text):
+    return bool(DHOLERA_RE.search(str(text or "")))
+
+
+def lead_is_dholera(lead):
+    for k in ("Location Interested In", "Property Location", "Operating City"):
+        if is_dholera_text((lead or {}).get(k)):
+            return True
+    return False
+
+
+def get_dholera_owner():
+    """Employee number selected for Dholera leads (must exist + be Active), else None."""
+    cfg = round_robin_collection.find_one({"_id": "config"}) or {}
+    num = cfg.get("dholeraNumber")
+    if num in (None, ""):
+        return None
+    try:
+        num = int(num)
+    except (TypeError, ValueError):
+        return None
+    member = db["teamAssign"].find_one({"Employee number": num}, {"Active": 1})
+    if member and member.get("Active", True):
+        return num
+    return None
+
 def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
     """
-    Called right after a BRAND NEW lead is inserted. Gives the lead to
-    exactly ONE employee (next in rotation), then WhatsApps only that
-    employee via Wirebase. Leads that already have an owner are never touched.
+    Called right after a BRAND NEW lead is inserted (or when an unassigned lead
+    mentions Dholera). Dholera leads -> the selected Dholera user.
+    Everything else -> next person in round robin. Already-assigned leads are never touched.
     """
     try:
-        lead = db[collection_name].find_one({"_id": lead_id}, {"AssignToNumber": 1})
+        lead = db[collection_name].find_one(
+            {"_id": lead_id},
+            {"AssignToNumber": 1, "Location Interested In": 1, "Property Location": 1, "Operating City": 1}
+        )
         if not lead:
             return
         if lead.get("AssignToNumber") not in (None, ""):
             print(f"[round-robin] lead {lead_id} already assigned - skipping")
             return
 
-        employee_number = get_next_round_robin_employee()
+        employee_number = None
+        assigned_by = "Round Robin (Auto)"
+
+        if lead_is_dholera(lead):
+            employee_number = get_dholera_owner()
+            if employee_number:
+                assigned_by = "Dholera Rule (Auto)"
+            else:
+                print("[round-robin] Dholera lead but no Dholera user selected - using normal round robin")
+
+        if not employee_number:
+            employee_number = get_next_round_robin_employee()
         if not employee_number:
             return
 
@@ -10395,7 +10448,7 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
 
         now = datetime.utcnow()
         history_entry = {
-            "by": "Round Robin (Auto)",
+            "by": assigned_by,
             "byNumber": None,
             "to": employee.get("Employee name"),
             "toNumber": employee_number,
@@ -10416,7 +10469,7 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
                 "$set": {
                     "AssignTo": employee.get("Employee name"),
                     "AssignToNumber": employee_number,
-                    "AssignedBy": "Round Robin (Auto)",
+                    "AssignedBy": assigned_by,
                     "AssignedByNumber": None,
                     "AssignedAt": now
                 },
@@ -10428,8 +10481,8 @@ def auto_assign_round_robin(collection_name, lead_id, phone_number, lead_name):
             print(f"[round-robin] lead {lead_id} got assigned by someone else first - no notification sent")
             return
 
-        notify_employee_lead_assigned(employee_number, lead_name, phone_number, assigned_by="Round Robin (Auto)")
-        print(f"[round-robin] lead {lead_id} -> {employee.get('Employee name')} ({employee_number})")
+        notify_employee_lead_assigned(employee_number, lead_name, phone_number, assigned_by=assigned_by)
+        print(f"[round-robin] lead {lead_id} -> {employee.get('Employee name')} ({employee_number}) via {assigned_by}")
 
     except Exception:
         import traceback
@@ -10912,6 +10965,7 @@ def get_round_robin_config_api():
         "success": True,
         "enabled": config.get("enabled", False),
         "employees": employees_list,
+        "dholeraNumber": config.get("dholeraNumber"),
         "nextUp": next_up,
         "members": [{
             "name": m.get("Employee name", "Unknown"),
@@ -10966,6 +11020,32 @@ def save_round_robin_config_api():
         upsert=True
     )
     return jsonify({"success": True}), 200
+
+@app.route("/api/round-robin/dholera", methods=["POST"])
+def round_robin_set_dholera():
+    """Admin only. Choose which team member receives all Dholera leads. number=null clears it."""
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    data = request.json or {}
+    raw = data.get("number")
+
+    if raw in (None, ""):
+        round_robin_collection.update_one({"_id": "config"}, {"$unset": {"dholeraNumber": ""}}, upsert=True)
+        return jsonify({"success": True, "dholeraNumber": None}), 200
+
+    try:
+        number = int(str(raw).strip())
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid employee number"}), 400
+
+    member = db["teamAssign"].find_one({"Employee number": number, "roll": {"$in": ["admin", "emp"]}})
+    if not member:
+        return jsonify({"success": False, "message": "Team member not found"}), 404
+
+    round_robin_collection.update_one({"_id": "config"}, {"$set": {"dholeraNumber": number}}, upsert=True)
+    return jsonify({"success": True, "dholeraNumber": number}), 200
+
 
 @app.route("/api/round-robin/reset-pointer", methods=["POST"])
 def reset_round_robin_pointer():

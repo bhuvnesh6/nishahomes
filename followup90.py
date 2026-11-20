@@ -60,7 +60,11 @@ BANNED = re.compile(
     r"still looking|any update|have you decided|last chance|hurry|limited|only \d+ left|"
     r"prices will rise|guaranteed|assured returns|jaldi karein|sirf kuch hi bache", re.I)
 
-FU_DAILY_LIMIT = 30            # HARD LIMIT: max follow-ups sent per IST day (can't be raised from the page)
+FU_DAILY_LIMIT = 15            # HARD LIMIT per IST day. With a 40-60 min gap inside 9AM-9PM only ~14 messages fit anyway
+FU_GAP_MIN_MINUTES = 40        # FIXED gap between two follow-ups (random between these two)
+FU_GAP_MAX_MINUTES = 60
+FU_WINDOW_START_HOUR = 9       # 9:00 AM IST
+FU_WINDOW_END_HOUR = 21        # 9:00 PM IST
 
 DEFAULT_CFG = {
     "enabled": False,          # master switch - OFF until you turn it on from the page
@@ -70,8 +74,8 @@ DEFAULT_CFG = {
     "per_scan": FU_DAILY_LIMIT,
     "enroll_per_day": 60,      # max NEW leads put into the journey per day
     "fallback_enroll": True,   # if not enough high-score leads, also take any non-cold lead (set False to disable)
-    "gap_min_minutes": 10,     # random wait between two sends: 10 - 15 MINUTES (decimals like 11.7 happen automatically)
-    "gap_max_minutes": 15,
+    "gap_min_minutes": FU_GAP_MIN_MINUTES,   # random wait between two sends: 40 - 60 MINUTES
+    "gap_max_minutes": FU_GAP_MAX_MINUTES,
     "test_day_minutes": 0,     # TEST: 1 journey day = N minutes (0 = real days)
     "ignore_window": False,    # TEST: ignore the sending window
 }
@@ -88,6 +92,8 @@ def cfg():
     out["daily_cap"] = FU_DAILY_LIMIT
     out["daily_target"] = FU_DAILY_LIMIT
     out["per_scan"] = FU_DAILY_LIMIT
+    out["gap_min_minutes"] = FU_GAP_MIN_MINUTES   # fixed 40-60 min, whatever was saved before
+    out["gap_max_minutes"] = FU_GAP_MAX_MINUTES
     return out
 
 
@@ -111,7 +117,7 @@ def in_window(c):
     if t.weekday() == 6:      # Sunday
         return False
     m = t.hour * 60 + t.minute
-    return 600 <= m < 1200     # 10:00 AM - 8:00 PM IST, Mon-Sat (30 msgs x ~12.5 min = ~6.3 hrs)
+    return FU_WINDOW_START_HOUR * 60 <= m < FU_WINDOW_END_HOUR * 60   # 9:00 AM - 9:00 PM IST, Mon-Sat
 
 
 # ----------------------------------------------------------------- journeys
