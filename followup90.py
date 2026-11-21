@@ -142,10 +142,32 @@ def pick_spare(cu):
 
 
 # ----------------------------------------------------------------- lead helpers
+_BAD_NAMES = {"unknown", "na", "n a", "none", "null", "nil", "customer", "user", "lead",
+              "guest", "sir", "madam", "sir madam", "test", "no name", "noname", "name"}
+
+
 def first_name(lead):
+    """Real first name, or '' if the name is missing / Unknown / junk / a phone number."""
     n = (lead.get("Lead Name") or lead.get("Name") or "").strip()
-    n = re.sub(r"[^A-Za-z\u0900-\u097F ]", "", n).strip()
-    return n.split()[0].title() if n else "Sir/Madam"
+    n = re.sub(r"[^A-Za-z\u0900-\u097F ]", " ", n)
+    n = re.sub(r"\s+", " ", n).strip()
+    if not n or n.lower() in _BAD_NAMES:
+        return ""
+    w = n.split()[0]
+    if len(w) < 2 or w.lower() in _BAD_NAMES:
+        return ""
+    return w.title()
+
+
+def greet_name(lead):
+    """Name known -> 'Rajesh Ji'.  Name unknown -> just 'Ji'."""
+    n = first_name(lead)
+    return f"{n} Ji" if n else "Ji"
+
+
+def tidy_ji(text):
+    """If a template already says 'ji' after the name, never print 'Ji ji'."""
+    return re.sub(r"\b[Jj][Ii](?:\s+[Jj][Ii])+\b", "Ji", text or "")
 
 
 def req_snapshot(lead, ed):
@@ -236,7 +258,7 @@ def enroll(coll, lead, ed=None, force=False, c=None, relaxed=False):
         li, nxt = lu, lu + timedelta(hours=72)
     doc = {
         "phone10": p10, "phone91": "91" + p10, "lead_id": str(lead["_id"]), "collection": coll,
-        "name": first_name(lead), "segment": seg, "state": "ACTIVE_SEQUENCE", "touch_no": 0,
+        "name": first_name(lead) or "Unknown", "segment": seg, "state": "ACTIVE_SEQUENCE", "touch_no": 0,
         "sequence_start": nxt, "next_touch_at": nxt, "assets_sent": [], "listings_sent": [],
         "media_sent": [], "sends_total": 0, "fail_count": 0, "opt_out": False,
         "last_outbound_at": None, "last_inbound_at": li, "last_property_at": None,
@@ -447,7 +469,7 @@ def resolve(cu, node, req, v0, seg):
         if not body:
             return None
         foot = render(n.get("footer") or "", vv)
-        return body + ("\n\n" + foot if foot else "")
+        return tidy_ji(body + ("\n\n" + foot if foot else ""))
 
     text = build(cur)
     if not text and cur is node:                     # e.g. MKT-01 without a locality -> next spare poster
@@ -543,7 +565,7 @@ def send_next(cid, c):
     idx = cu["touch_no"]
     nurture = cu["state"] == "QUARTERLY_NURTURE" or idx >= len(nodes)
     req = req_snapshot(lead, ed)
-    v0 = {"1": cu["name"], "2": req_phrase(req)}
+    v0 = {"1": greet_name(lead), "2": req_phrase(req)}
     day = None
     if not nurture:
         node = nodes[idx]
@@ -571,6 +593,9 @@ def send_next(cid, c):
         _log(cu, r, "blocked", "banned word in message", idx + 1, day)
         return "skip"
 
+    if not in_window(c):                              # final guard: never send outside 9 AM - 9 PM IST
+        print("[fu90] outside 9AM-9PM window - not sending")
+        return "abort"
     ok, err = deliver(cu["phone91"], r["text"], r["media"])
     touch = idx + 1
     if not ok:
