@@ -46,7 +46,11 @@ import threading
 import socket
 
 # Load env
+
 load_dotenv()
+
+# Persistent data folder (mounted from the VPS by docker -v). Falls back to the old behaviour if not set.
+DATA_DIR = (os.getenv("DATA_DIR") or "").strip()
 
 # NEW: Cloudinary config - reads from .env
 cloudinary.config(
@@ -92,7 +96,7 @@ CORS(app)
 
 
 # Upload folder
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads") if DATA_DIR else "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
@@ -11599,7 +11603,7 @@ def round_robin_hide_all_leads():
 # Image is saved in ./activity_reports, sent, then deleted on success.
 # On failure: auto-retry, then an alert appears on the admin dashboard.
 # =====================================================================
-ACTIVITY_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "activity_reports")
+ACTIVITY_REPORT_DIR = os.path.join(DATA_DIR or os.path.dirname(os.path.abspath(__file__)), "activity_reports")
 os.makedirs(ACTIVITY_REPORT_DIR, exist_ok=True)
 
 # (slot key, hour in IST 24h, title shown on the report)

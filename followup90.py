@@ -35,7 +35,10 @@ SEED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "followup90
 OWNER = f"{socket.gethostname()}-{os.getpid()}"
 
 # ---- Uploaded follow-up media (photos uploaded from the admin's computer) ----
-FU_MEDIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "followup_media")
+FU_MEDIA_DIR = os.path.join(
+    (os.getenv("DATA_DIR") or "").strip() or os.path.dirname(os.path.abspath(__file__)),
+    "followup_media"
+)
 os.makedirs(FU_MEDIA_DIR, exist_ok=True)
 FU_MEDIA_MAX_BYTES = 10 * 1024 * 1024            # 10 MB upload limit
 _MEDIA_RE = re.compile(r"^[0-9a-f]{20}\.jpg$")   # only files WE generated (blocks path tricks)
@@ -111,13 +114,9 @@ def anchor(start, day_no, c):
 
 
 def in_window(c):
-    if c.get("ignore_window") or c.get("test_day_minutes"):
-        return True
+    """9:00 AM - 8:59 PM IST, EVERY DAY (Sunday included). Never at night. Test settings cannot bypass this."""
     t = get_ist_now()
-    if t.weekday() == 6:      # Sunday
-        return False
-    m = t.hour * 60 + t.minute
-    return FU_WINDOW_START_HOUR * 60 <= m < FU_WINDOW_END_HOUR * 60   # 9:00 AM - 9:00 PM IST, Mon-Sat
+    return FU_WINDOW_START_HOUR <= t.hour < FU_WINDOW_END_HOUR
 
 
 # ----------------------------------------------------------------- journeys
