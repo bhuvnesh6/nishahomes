@@ -1476,7 +1476,34 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
       </div>
     </div>
 
-    <!-- Follow-ups spotlight -->
+
+    {% if role == 'admin' %}
+    <!-- Round Robin assignments (admin only) -->
+    <div class="dash-section anim anim-2" id="rrAssignSection">
+      <div class="dash-section-head">
+        <div class="dash-section-title">Round Robin · Leads Assigned</div>
+        <div class="dash-section-sub" id="rrAssignSub">Tap an employee to see their leads</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <select id="rrPeriod" class="filter-select" onchange="loadRrAssign()">
+          <option value="today" selected>Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">This Week</option>
+          <option value="last_7">Last 7 Days</option>
+          <option value="this_month">This Month</option>
+          <option value="lifetime">Lifetime</option>
+          <option value="custom">Custom Range…</option>
+        </select>
+        <span id="rrCustomWrap" style="display:none;gap:6px;align-items:center">
+          <input type="date" id="rrFrom" class="filter-select" onchange="loadRrAssign()">
+          <span style="color:var(--text-soft);font-size:0.8rem">to</span>
+          <input type="date" id="rrTo" class="filter-select" onchange="loadRrAssign()">
+        </span>
+      </div>
+      <div id="rrAssignList" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    {% endif %}    
+
     <!-- Follow-ups spotlight -->
     <div class="dash-section anim anim-2">
       <div class="dash-section-head">
@@ -1815,13 +1842,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 
       <div id="ownerSheetBanner" style="display:none;background:#fff;border:1.5px solid var(--border);border-left:5px solid #10B981;border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);margin-bottom:14px"></div>
 
-      <div class="owner-stat-row anim anim-2" id="ownerStatRow"></div>
-
       <div class="filter-bar anim anim-2">
         <div class="filter-search-wrap">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" class="filter-search" id="ownerSearch" placeholder="Search owner, phone, property, location, city…" autocomplete="off">
         </div>
+        <select class="filter-select" id="ownerFilterSelect" style="max-width:220px">
+          <option value="all">All Statuses</option>
+        </select>
       </div>
 
       <div class="owner-grid anim anim-3" id="ownerGrid"></div>
@@ -2099,6 +2127,32 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
     <div id="lostLeadsCount" style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-bottom:10px"></div>
     <div id="lostLeadsList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Round Robin: employee's assigned leads -->
+<div class="modal-overlay" id="rrLeadsModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-close" onclick="closeRrLeadsModal()">✕</button>
+    <h2 id="rrLeadsTitle">Assigned Leads</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <select id="rrmPeriod" class="form-select" style="width:auto" onchange="loadRrLeads()">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="week">This Week</option>
+        <option value="last_7">Last 7 Days</option>
+        <option value="this_month">This Month</option>
+        <option value="lifetime">Lifetime</option>
+        <option value="custom">Custom Range…</option>
+      </select>
+      <span id="rrmCustomWrap" style="display:none;gap:6px;align-items:center">
+        <input type="date" id="rrmFrom" class="form-input" style="width:auto" onchange="loadRrLeads()">
+        <input type="date" id="rrmTo" class="form-input" style="width:auto" onchange="loadRrLeads()">
+      </span>
+      <input type="text" id="rrmSearch" class="form-input" placeholder="Search name / number…" style="flex:1;min-width:140px" oninput="renderRrLeads()">
+    </div>
+    <div id="rrmCount" style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-bottom:10px"></div>
+    <div id="rrmList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -4556,6 +4610,105 @@ function renderLostLeadsList(){
 }
 
 
+/* ═══════ ROUND ROBIN ASSIGNMENTS (admin dashboard) ═══════ */
+function rrQuery(period, from, to){
+  let q = `period=${encodeURIComponent(period)}`;
+  if(period === 'custom') q += `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  return q;
+}
+
+async function loadRrAssign(){
+  const sec = document.getElementById('rrAssignSection');
+  if(!sec) return;                                    // not admin
+  const period = document.getElementById('rrPeriod').value;
+  const from = document.getElementById('rrFrom').value;
+  const to = document.getElementById('rrTo').value;
+  document.getElementById('rrCustomWrap').style.display = period === 'custom' ? 'flex' : 'none';
+  if(period === 'custom' && (!from || !to)) return;
+
+  const box = document.getElementById('rrAssignList');
+  try{
+    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery(period, from, to)}`);
+    const d = await res.json();
+    if(!d.success){ box.innerHTML = `<div style="color:var(--hot);font-size:0.82rem">${escHtml(d.message||'Failed to load')}</div>`; return; }
+    if(!d.data.length){
+      box.innerHTML = '<div style="color:var(--text-soft);font-size:0.85rem">No employees selected in Round Robin</div>';
+      document.getElementById('rrAssignSub').textContent = 'Select employees on the Round Robin page';
+      return;
+    }
+    document.getElementById('rrAssignSub').textContent = `${d.total} lead${d.total!==1?'s':''} assigned in total · tap a name to view`;
+    box.innerHTML = d.data.map(r => `
+      <div onclick="openRrLeadsModal(${r.number}, '${escHtml(r.name).replace(/'/g,'&#39;')}')"
+           style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);cursor:pointer;transition:var(--transition)">
+        <span style="font-weight:700;color:var(--primary);font-size:0.92rem">${escHtml(r.name)}</span>
+        <span style="font-weight:800;color:var(--accent);font-size:1.05rem">${r.count}</span>
+      </div>`).join('');
+  }catch(e){ console.warn('rr assign load failed', e); }
+}
+
+let rrModalNumber = null;
+let rrModalData = [];
+
+function openRrLeadsModal(number, name){
+  rrModalNumber = number;
+  document.getElementById('rrLeadsTitle').textContent = `${name} · Assigned Leads`;
+  // start with whatever filter the dashboard widget currently uses
+  document.getElementById('rrmPeriod').value = document.getElementById('rrPeriod').value;
+  document.getElementById('rrmFrom').value = document.getElementById('rrFrom').value;
+  document.getElementById('rrmTo').value = document.getElementById('rrTo').value;
+  document.getElementById('rrmSearch').value = '';
+  document.getElementById('rrLeadsModal').classList.add('active');
+  loadRrLeads();
+}
+function closeRrLeadsModal(){ document.getElementById('rrLeadsModal').classList.remove('active'); }
+document.getElementById('rrLeadsModal').addEventListener('click', e=>{ if(e.target.id==='rrLeadsModal') closeRrLeadsModal(); });
+
+async function loadRrLeads(){
+  const period = document.getElementById('rrmPeriod').value;
+  const from = document.getElementById('rrmFrom').value;
+  const to = document.getElementById('rrmTo').value;
+  document.getElementById('rrmCustomWrap').style.display = period === 'custom' ? 'flex' : 'none';
+  if(period === 'custom' && (!from || !to)){
+    document.getElementById('rrmList').innerHTML = '<p style="color:rgba(255,255,255,0.5)">Pick a from and to date</p>';
+    return;
+  }
+  document.getElementById('rrmList').innerHTML = '<div class="loader" style="margin:20px auto"></div>';
+  try{
+    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery(period, from, to)}&number=${rrModalNumber}`);
+    const d = await res.json();
+    rrModalData = d.success ? d.data : [];
+    if(!d.success) document.getElementById('rrmList').innerHTML = `<p style="color:#ff6b6b">${escHtml(d.message||'Failed')}</p>`;
+    else renderRrLeads();
+  }catch(e){
+    console.error(e);
+    document.getElementById('rrmList').innerHTML = '<p style="color:#ff6b6b">Failed to load leads</p>';
+  }
+}
+
+function renderRrLeads(){
+  const q = (document.getElementById('rrmSearch').value || '').toLowerCase();
+  const list = rrModalData.filter(l => !q || (l.name||'').toLowerCase().includes(q) || (l.phone||'').includes(q));
+  document.getElementById('rrmCount').textContent = `${list.length} lead${list.length!==1?'s':''}`;
+  const box = document.getElementById('rrmList');
+  if(!list.length){ box.innerHTML = '<p style="color:rgba(255,255,255,0.5)">No leads in this range</p>'; return; }
+  box.innerHTML = list.map(l => `
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.08)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <span style="color:#fff;font-weight:700;font-size:0.9rem">${escHtml(l.name)}</span>
+        <span class="badge ${typeBadgeClass(l.leadType)}">${escHtml(getTypeLabel(l.leadType))}</span>
+      </div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;margin-top:6px;line-height:1.6">
+        📞 <a href="tel:${telNumber(l.phone)}" style="color:var(--accent-light)">+${escHtml(telNumber(l.phone))}</a>
+        ${l.interest ? ' · Interest: ' + escHtml(l.interest) : ''}
+      </div>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="status-badge ${statusClass(l.status)}"><span class="status-badge-dot"></span>${escHtml(l.status)}</span>
+        <span style="color:rgba(255,255,255,0.45);font-size:0.72rem">Assigned ${escHtml(l.assignedAt)}${l.assignedBy ? ' · ' + escHtml(l.assignedBy) : ''}</span>
+      </div>
+    </div>`).join('');
+}
+setInterval(loadRrAssign, 60000);
+
 /* ═══════ WHATSAPP CONNECTION STATUS ═══════ */
 async function loadWaStatus(){
   const sec = document.getElementById('waStatusSection');
@@ -4804,15 +4957,14 @@ async function loadOwnerLeads(keepPage){
 }
 
 function renderOwnerStats(){
+  const sel = document.getElementById('ownerFilterSelect');
+  if(!sel) return;
   const names = [...OWNER_STATUSES];
   Object.keys(ownerStats).forEach(s => { if(!names.includes(s)) names.push(s); });
-  const chip = (key,label,count,color) => `
-    <button class="owner-stat ${ownerStatusFilter===key?'active':''}" onclick="setOwnerStatusFilter('${escHtml(key).replace(/'/g,'&#39;')}')">
-      ${color?`<span class="os-dot" style="background:${color}"></span>`:''}${escHtml(label)} <b>${count}</b>
-    </button>`;
-  document.getElementById('ownerStatRow').innerHTML =
-    chip('all','All',ownerStatsTotal,'') +
-    names.map(s => chip(s, s, ownerStats[s]||0, ownerStatusColor(s))).join('');
+  sel.innerHTML =
+    `<option value="all">All Statuses (${ownerStatsTotal})</option>` +
+    names.map(s => `<option value="${escHtml(s)}">${escHtml(s)} (${ownerStats[s]||0})</option>`).join('');
+  sel.value = ownerStatusFilter;
 }
 
 function setOwnerStatusFilter(s){
@@ -4915,6 +5067,9 @@ function renderOwnerPagination(){
 document.getElementById('ownerSearch').addEventListener('input', ()=>{
   clearTimeout(ownerSearchTimer);
   ownerSearchTimer = setTimeout(()=>loadOwnerLeads(), 350);
+});
+document.getElementById('ownerFilterSelect').addEventListener('change', function(){
+  setOwnerStatusFilter(this.value);
 });
 
 /* ───────── ACTIONS ───────── */
@@ -5420,6 +5575,7 @@ window.addEventListener('load',()=>{
     flushCallQueue();
     loadReportAlerts();
     loadWaStatus();
+    loadRrAssign();     // admin: round robin assignment counts
     loadOwnerLeads();   // fills the "Owner Leads" sidebar badge
   },600);
 });

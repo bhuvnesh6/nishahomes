@@ -11051,6 +11051,135 @@ def round_robin_set_dholera():
     return jsonify({"success": True, "dholeraNumber": number}), 200
 
 
+# =====================================================================
+# DASHBOARD: leads assigned to Round-Robin-selected employees
+# GET /api/dashboard/rr-assignments?period=today|yesterday|week|this_month|last_7|lifetime|custom
+#     &from=YYYY-MM-DD&to=YYYY-MM-DD      (from/to only for custom)
+#     &number=<employee number>           (optional -> returns that employee's lead list)
+# Period is matched on the lead's AssignedAt, using IST day boundaries.
+# =====================================================================
+def _rr_period_range_utc(period, from_s=None, to_s=None):
+    off = timedelta(hours=5, minutes=30)
+    ist_now = get_ist_now()
+    today0 = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day = timedelta(days=1)
+
+    if period == "today":
+        s, e = today0, today0 + day
+    elif period == "yesterday":
+        s, e = today0 - day, today0
+    elif period == "week":
+        s, e = today0 - timedelta(days=today0.weekday()), today0 + day
+    elif period == "last_7":
+        s, e = today0 - timedelta(days=6), today0 + day
+    elif period == "this_month":
+        s, e = today0.replace(day=1), today0 + day
+    elif period == "custom":
+        try:
+            s = datetime.strptime(from_s, "%Y-%m-%d")
+            e = datetime.strptime(to_s, "%Y-%m-%d") + day
+        except Exception:
+            raise ValueError("Invalid custom date range")
+        if e <= s:
+            raise ValueError("'To' date must be after 'From' date")
+    else:  # lifetime
+        return None, None
+    return s - off, e - off
+
+
+@app.route("/api/dashboard/rr-assignments", methods=["GET"])
+def dashboard_rr_assignments():
+    if session.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+    try:
+        period = request.args.get("period", "today")
+        try:
+            start, end = _rr_period_range_utc(period, request.args.get("from"), request.args.get("to"))
+        except ValueError as ve:
+            return jsonify({"success": False, "message": str(ve)}), 400
+
+        config = get_round_robin_config()
+        emp_numbers = list(config.get("employees") or [])
+        if not emp_numbers:
+            return jsonify({"success": True, "enabled": bool(config.get("enabled")),
+                            "data": [], "total": 0}), 200
+
+        def _time_filter():
+            if start is None:
+                return {"AssignedAt": {"$exists": True}}
+            return {"AssignedAt": {"$gte": start, "$lt": end}}
+
+        # ---------- DETAIL: one employee's leads ----------
+        number_arg = request.args.get("number")
+        if number_arg:
+            try:
+                num = int(str(number_arg).strip())
+            except ValueError:
+                return jsonify({"success": False, "message": "Invalid employee number"}), 400
+
+            type_map = {"Leads": "buying", "RentalLeads": "rental",
+                        "sellingLeads": "selling", "agentLeads": "agent"}
+            rows = []
+            for coll_name, lt in type_map.items():
+                q = {"AssignToNumber": num, **_time_filter()}
+                for d in db[coll_name].find(q).sort("AssignedAt", -1).limit(1000):
+                    rows.append((coll_name, lt, d))
+
+            phones = set()
+            for _, _, d in rows:
+                p = normalize_phone_91(d.get("Phone Number"))
+                if p:
+                    phones.add(p)
+            end_map = {}
+            if phones:
+                for ed in db["endData"].find({"Number": {"$in": list(phones)}},
+                                             {"Number": 1, "Call Status": 1, "Interest Level": 1}):
+                    end_map[ed.get("Number")] = ed
+
+            out = []
+            for coll_name, lt, d in rows:
+                p = normalize_phone_91(d.get("Phone Number"))
+                ed = end_map.get(p, {})
+                at = d.get("AssignedAt")
+                out.append({
+                    "id": str(d["_id"]), "collection": coll_name, "leadType": lt,
+                    "name": d.get("Lead Name") or d.get("Name") or "Unknown",
+                    "phone": p or str(d.get("Phone Number") or ""),
+                    "status": ed.get("Call Status") or "Not called yet",
+                    "interest": ed.get("Interest Level") or "",
+                    "assignedBy": d.get("AssignedBy") or "",
+                    "assignedAt": format_ist(at) if isinstance(at, datetime) else "-",
+                    "_sort": at if isinstance(at, datetime) else datetime.min
+                })
+            out.sort(key=lambda x: x["_sort"], reverse=True)
+            for o in out:
+                o.pop("_sort", None)
+            return jsonify({"success": True, "count": len(out), "data": out}), 200
+
+        # ---------- SUMMARY: count per selected employee ----------
+        members = {m["Employee number"]: m.get("Employee name", "Unknown")
+                   for m in db["teamAssign"].find({"Employee number": {"$in": emp_numbers}},
+                                                  {"Employee name": 1, "Employee number": 1})}
+        counts = {n: 0 for n in emp_numbers}
+        for coll_name in ("Leads", "RentalLeads", "sellingLeads", "agentLeads"):
+            q = {"AssignToNumber": {"$in": emp_numbers}, **_time_filter()}
+            for r in db[coll_name].aggregate([
+                {"$match": q},
+                {"$group": {"_id": "$AssignToNumber", "count": {"$sum": 1}}}
+            ]):
+                if r["_id"] in counts:
+                    counts[r["_id"]] += r["count"]
+
+        data = [{"name": members.get(n, "Unknown"), "number": n, "count": counts[n]} for n in emp_numbers]
+        return jsonify({"success": True, "enabled": bool(config.get("enabled")),
+                        "data": data, "total": sum(counts.values())}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @app.route("/api/round-robin/reset-pointer", methods=["POST"])
 def reset_round_robin_pointer():
     if session.get("role") != "admin":
