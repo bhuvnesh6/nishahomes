@@ -10140,6 +10140,10 @@ def team_webhook_receiver(token):
             except Exception as msg_err:
                 print(f"[team-webhook] failed to store message for token={token}: {msg_err}")
 
+            # NEW: team chat changed -> re-summarise + re-score this lead (45s delay groups bursts)
+            if lead_match:
+                schedule_ai_score_by_phone(number, delay=45)
+
             # NEW: Activity Tracker — only the employee's OWN outgoing
             # messages count as their WhatsApp Engagement activity;
             # inbound customer messages aren't a "caller" action.
@@ -13509,6 +13513,108 @@ def _clamp_score(v):
         return 1
 
 
+# =====================================================================
+# TEAM WHATSAPP CHAT -> SUMMARY (feeds AI Summary popup + AI Score)
+# Reads teamWebhookMessages (1:1 chats only), summarises with the LLM,
+# caches the result on the lead and only regenerates when the message
+# count changes.
+# =====================================================================
+def _team_chat_query(phone91):
+    p10 = str(phone91)[-10:]
+    return {"number": {"$in": [phone91, p10]}, "isGroup": {"$ne": True}}
+
+
+def refresh_team_chat_summary(coll_name, lead, force=False):
+    empty = {"summary": "", "count": 0, "customerCount": 0}
+    try:
+        phone91 = normalize_phone_91(lead.get("Phone Number"))
+        if not phone91:
+            return empty
+
+        q = _team_chat_query(phone91)
+        total = team_webhook_messages_collection.count_documents(q)
+        if total == 0:
+            return empty
+        cust_total = team_webhook_messages_collection.count_documents({**q, "direction": {"$ne": "out"}})
+
+        cached = lead.get("TeamChatSummary")
+        if not force and cached and lead.get("TeamChatMsgCount") == total:
+            return {"summary": cached, "count": total,
+                    "customerCount": lead.get("TeamChatCustomerCount", cust_total)}
+
+        docs = list(team_webhook_messages_collection.find(
+            q, {"message": 1, "direction": 1, "timestamp": 1}
+        ).sort("timestamp", -1).limit(80))
+        docs.reverse()
+
+        lines = []
+        for d in docs:
+            who = "Team" if d.get("direction") == "out" else "Customer"
+            txt = str(d.get("message") or "").strip()[:400]
+            if txt:
+                lines.append(f"{who}: {txt}")
+        convo = "\n".join(lines)[-6000:]
+
+        summary = ""
+        if LLM_API_KEY and convo:
+            try:
+                system_prompt = (
+                    "You summarise a WhatsApp conversation between a Nisha Homes (Delhi NCR real estate) "
+                    "team member and a customer. 'Team' = Nisha Homes staff, 'Customer' = the lead. "
+                    "Write 3-6 short bullet lines in English (start each with '- '): what the customer wants "
+                    "(budget, location, property type, timeline), objections or concerns, how interested they "
+                    "sound (hot / warm / cold), what the team promised or shared, and the next step. "
+                    "Use only what is in the chat, never invent. Plain text only, no markdown headers."
+                )
+                summary = (call_llm_chat(system_prompt, convo, temperature=0.2, timeout=40) or "").strip()
+            except Exception as e:
+                print(f"[team-chat-summary] LLM failed: {e}")
+
+        if not summary:
+            return {"summary": "", "count": total, "customerCount": cust_total}
+
+        db[coll_name].update_one({"_id": lead["_id"]}, {"$set": {
+            "TeamChatSummary": summary,
+            "TeamChatMsgCount": total,
+            "TeamChatCustomerCount": cust_total,
+            "TeamChatSummaryAt": datetime.utcnow(),
+        }})
+        return {"summary": summary, "count": total, "customerCount": cust_total}
+    except Exception as e:
+        print(f"[team-chat-summary] failed: {e}")
+        return empty
+
+
+@app.route("/api/lead-team-chat-summary", methods=["GET"])
+def lead_team_chat_summary():
+    """Powers the 'Team WhatsApp Chat Summary' part of the AI Summary popup."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "message": "Login required"}), 401
+
+    coll_name = (request.args.get("collection") or "").strip()
+    lead_id = (request.args.get("id") or "").strip()
+    phone = (request.args.get("phone") or "").strip()
+    force = request.args.get("refresh") == "1"
+
+    lead = None
+    try:
+        if coll_name in LEAD_COLLECTIONS_ALL and lead_id:
+            lead = db[coll_name].find_one({"_id": ObjectId(lead_id)})
+    except Exception:
+        lead = None
+    if not lead and phone:
+        coll_name, lead = find_lead_by_any_phone(phone)
+    if not lead:
+        return jsonify({"success": True, "hasChat": False, "summary": "", "count": 0}), 200
+
+    res = refresh_team_chat_summary(coll_name, lead, force=force)
+    return jsonify({
+        "success": True,
+        "hasChat": res["count"] > 0,
+        "summary": res["summary"],
+        "count": res["count"],
+    }), 200
+
 def _build_score_inputs(lead):
     phone91 = normalize_phone_91(lead.get("Phone Number"))
     ed = db["endData"].find_one({"Number": phone91}) or {}
@@ -13547,6 +13653,9 @@ def _build_score_inputs(lead):
         "aiCallIntent": lead.get("AICallStatusAfter") or "",
         "aiCallTranscript": transcript,
         "whatsappChat": chat_text,
+        "teamChatSummary": lead.get("TeamChatSummary") or "",
+        "teamChatMessages": lead.get("TeamChatMsgCount") or 0,
+        "teamChatCustomerMsgs": lead.get("TeamChatCustomerCount") or 0,
     }
 
 
@@ -13578,6 +13687,8 @@ def _rules_score(inp):
 
     customer_msgs = inp["whatsappChat"].count("Customer:") if inp["whatsappChat"] else 0
     score += min(10, customer_msgs * 2)
+    if inp.get("teamChatMessages"):
+        score += 2 + min(8, int(inp.get("teamChatCustomerMsgs") or 0) * 2)
     if inp["callerRemarks"]: score += 3
     if inp["callAttempts"] >= 6 and inp["interestLevel"].strip().lower() in ("", "cold"): score -= 5
 
@@ -13599,7 +13710,8 @@ def _llm_score(inp):
         return None
     has_signal = any([
         inp["callerRemarks"], inp["aiCallSummary"], inp["aiCallTranscript"],
-        inp["whatsappChat"], inp["interestLevel"], any(inp["requirements"].values())
+        inp["whatsappChat"], inp["interestLevel"], any(inp["requirements"].values()),
+        inp.get("teamChatSummary")
     ])
     if not has_signal:
         return None
@@ -13613,6 +13725,9 @@ def _llm_score(inp):
         "30-59 = lukewarm, vague requirement, slow replies, budget mismatch. "
         "10-29 = cold, unreachable or barely responsive. 1-9 = wrong number / explicitly not interested. "
         "Judge from what the customer actually said, not from the agent's wording. "
+        "'teamChatSummary' is a summary of the real WhatsApp conversation between the Nisha Homes team and "
+        "the customer - weigh it strongly (site visit talk, budget confirmed, quick replies = higher; "
+        "ghosting, objections, 'not interested' = lower). "
         "Return ONLY JSON: {\"score\": <int 1-100>, \"reason\": \"<max 15 words>\"}. No markdown."
     )
     try:
@@ -13628,6 +13743,10 @@ def compute_and_save_ai_score(coll_name, lead_id, use_llm=True):
     lead = db[coll_name].find_one({"_id": lead_id})
     if not lead:
         return None
+    tc = refresh_team_chat_summary(coll_name, lead)
+    lead["TeamChatSummary"] = tc.get("summary") or ""
+    lead["TeamChatMsgCount"] = tc.get("count") or 0
+    lead["TeamChatCustomerCount"] = tc.get("customerCount") or 0
     inp = _build_score_inputs(lead)
 
     res = _llm_score(inp) if use_llm else None
@@ -13657,11 +13776,11 @@ def schedule_ai_score(coll_name, lead_id, delay=3):
         print(f"[ai-score] schedule failed: {e}")
 
 
-def schedule_ai_score_by_phone(raw_phone):
+def schedule_ai_score_by_phone(raw_phone, delay=3):
     try:
         coll, doc = find_lead_by_any_phone(raw_phone)
         if doc:
-            schedule_ai_score(coll, doc["_id"])
+            schedule_ai_score(coll, doc["_id"], delay=delay)
     except Exception as e:
         print(f"[ai-score] schedule by phone failed: {e}")
 

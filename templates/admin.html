@@ -1958,6 +1958,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
         <div style="color:var(--accent);font-size:0.85rem" id="aiPhone"></div>
       </div>
       <div class="ai-summary-box" id="aiSummary"></div>
+      <div id="aiTeamChatWrap" style="display:none;margin-top:14px">
+        <div class="call-log-section-title">💬 Team WhatsApp Chat Summary <span id="aiTeamChatCount" style="opacity:.6;text-transform:none;letter-spacing:0"></span></div>
+        <div class="ai-summary-box" id="aiTeamChat" style="white-space:pre-line"></div>
+      </div>
     </div>
     <div id="aiError" style="display:none;color:#ff6b6b;text-align:center">Failed to load AI response</div>
   </div>
@@ -4283,16 +4287,37 @@ function senReqtoAI(btn){
   document.getElementById('aiLoader').style.display='flex';
   document.getElementById('aiContent').style.display='none';
   document.getElementById('aiError').style.display='none';
-  fetch('https://n8n.phishnix.site/webhook/AISummery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name:data.name})})
-  .then(async r=>{const t=await r.text();if(!t) throw new Error('empty');return JSON.parse(t)})
-  .then(resp=>{
+  document.getElementById('aiTeamChatWrap').style.display='none';
+
+  // existing n8n AI summary (a failure here must not hide the team-chat summary)
+  const pN8n = fetch('https://n8n.phishnix.site/webhook/AISummery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name:data.name})})
+    .then(async r=>{const t=await r.text();if(!t) throw new Error('empty');return JSON.parse(t)})
+    .catch(()=>null);
+
+  // NEW: summary of the team's WhatsApp conversation with this lead
+  const pTeam = fetch(`${BASE}/lead-team-chat-summary?collection=${encodeURIComponent(data.collection||'')}&id=${encodeURIComponent(data.id||'')}&phone=${encodeURIComponent(phone)}`, {credentials:'include'})
+    .then(r=>r.json())
+    .catch(()=>null);
+
+  Promise.all([pN8n, pTeam]).then(([resp, team])=>{
     document.getElementById('aiLoader').style.display='none';
-    document.getElementById('aiName').textContent=resp.name||data.name;
-    document.getElementById('aiPhone').textContent=resp.phone||phone;
-    document.getElementById('aiSummary').textContent=resp.summary||resp.output||'No summary';
+    const hasTeam = !!(team && team.success && team.hasChat && team.summary);
+
+    if(!resp && !hasTeam){
+      document.getElementById('aiError').style.display='block';
+      return;
+    }
+    document.getElementById('aiName').textContent=(resp&&resp.name)||data.name;
+    document.getElementById('aiPhone').textContent=(resp&&resp.phone)||phone;
+    document.getElementById('aiSummary').textContent=resp ? (resp.summary||resp.output||'No summary') : 'No AI summary available';
+
+    if(hasTeam){
+      document.getElementById('aiTeamChat').textContent = team.summary;
+      document.getElementById('aiTeamChatCount').textContent = `(${team.count} messages)`;
+      document.getElementById('aiTeamChatWrap').style.display='block';
+    }
     document.getElementById('aiContent').style.display='block';
-  })
-  .catch(()=>{document.getElementById('aiLoader').style.display='none';document.getElementById('aiError').style.display='block'});
+  });
 }
 function closeAIModal(){document.getElementById('aiModal').classList.remove('active')}
 
