@@ -1711,7 +1711,9 @@ def leadjourney():
 
 @app.route("/manageteam")
 def manageteam():
-    return render_template("manageteam.html")
+    if not session.get("user_id") or session.get("role") != "admin":
+        return redirect("/")
+    return render_template("manageteam.html", role=session.get("role"))
 
 @app.route("/status")
 def status():

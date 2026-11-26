@@ -1221,9 +1221,131 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .owner-tl-icon{font-size:1.05rem;flex-shrink:0;line-height:1.3}
 .owner-map-row{margin-bottom:14px}
 
+/* ═══════════ SIDEBAR COLLAPSE (PC) ═══════════ */
+@media(min-width:900px){
+  .topbar-hamburger{display:flex !important}
+  body.sb-collapsed .sidebar{transform:translateX(-100%);box-shadow:none}
+  body.sb-collapsed .main-wrap{margin-left:0}
+}
+
+/* ═══════════ WHATSAPP PILL (TOP BAR) ═══════════ */
+.wa-pill-wrap{position:relative;display:none}
+.wa-pill{
+  display:flex;align-items:center;gap:8px;padding:8px 13px;
+  background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.12);
+  border-radius:100px;color:rgba(255,255,255,0.85);font-size:0.78rem;font-weight:600;
+  transition:var(--transition);white-space:nowrap;
+}
+.wa-pill:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.25)}
+.wa-dot{width:8px;height:8px;border-radius:50%;background:#9CA3AF;flex-shrink:0}
+.wa-dot.ok{background:#10B981;box-shadow:0 0 0 3px rgba(16,185,129,.2)}
+.wa-dot.bad{background:#EF4444;box-shadow:0 0 0 3px rgba(239,68,68,.25);animation:waPulse 1.6s ease-in-out infinite}
+@keyframes waPulse{50%{opacity:.45}}
+@media(max-width:699px){#waPillText{display:none}.wa-pill{padding:10px}}
+.wa-pop{
+  display:none;position:absolute;right:0;top:calc(100% + 12px);z-index:1200;
+  width:360px;max-width:92vw;max-height:70vh;overflow-y:auto;
+  background:#fff;border:1px solid var(--border);border-radius:16px;
+  box-shadow:0 24px 60px -12px rgba(20,22,38,.35);padding:16px;
+}
+.wa-pop.open{display:block;animation:modalIn .25s cubic-bezier(.22,1,.36,1) both}
+.wa-pop-title{font-family:'Playfair Display',serif;font-weight:800;color:var(--primary);font-size:1rem}
+.wa-pop-sub{font-size:.74rem;color:var(--text-soft);margin:2px 0 12px}
+.wa-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)}
+.wa-row:first-of-type{border-top:0}
+.wa-row .n{font-weight:700;color:var(--primary);font-size:.85rem}
+.wa-row .p{font-size:.72rem;color:var(--text-soft)}
+.wa-row .s{margin-left:auto;font-size:.74rem;font-weight:700;white-space:nowrap}
+
+/* ═══════════ PREMIUM DASHBOARD ═══════════ */
+body{background:#F6F4EF}
+.bg-bar{display:none}
+.pd-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.pd-eyebrow{font-size:.68rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent)}
+.pd-title{font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:var(--primary);letter-spacing:-.7px;line-height:1.1;margin-top:4px}
+.pd-sub{font-size:.84rem;color:var(--text-soft);margin-top:5px}
+.pd-sub b{color:var(--primary);font-weight:700}
+.pd-seg{display:inline-flex;background:#fff;border:1px solid rgba(45,49,66,.08);border-radius:100px;padding:4px;box-shadow:var(--sh-sm);max-width:100%;overflow-x:auto;scrollbar-width:none}
+.pd-seg::-webkit-scrollbar{display:none}
+.pd-seg button{padding:9px 17px;border-radius:100px;font-size:.78rem;font-weight:600;color:var(--text-soft);white-space:nowrap;transition:var(--transition)}
+.pd-seg button:hover{color:var(--primary)}
+.pd-seg button.active{background:var(--primary-deep);color:#fff;box-shadow:0 6px 16px -4px rgba(30,34,53,.45)}
+
+.pd-card{background:#fff;border:1px solid rgba(45,49,66,.07);border-radius:20px;box-shadow:0 1px 2px rgba(45,49,66,.04),0 18px 40px -18px rgba(45,49,66,.16);padding:22px 24px}
+.pd-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px}
+.pd-card-title{font-size:.7rem;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--text-soft);display:flex;align-items:center;gap:8px}
+.pd-card-title::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.pd-card-note{font-size:.74rem;color:var(--text-soft)}
+.pd-grid{display:grid;gap:18px;margin-bottom:18px;grid-template-columns:1fr}
+@media(min-width:980px){.pd-g-main{grid-template-columns:1.5fr 1fr}.pd-g-eq{grid-template-columns:1fr 1fr}.pd-g-chart{grid-template-columns:2fr 1fr}}
+
+/* hero KPI strip */
+.pd-hero{position:relative;overflow:hidden;border-radius:24px;margin-bottom:18px;color:#fff;
+  background:radial-gradient(120% 160% at 0% 0%,#323858 0%,#1e2235 55%,#151827 100%);
+  box-shadow:0 30px 60px -24px rgba(20,22,38,.6);border:1px solid rgba(255,255,255,.06)}
+.pd-hero::after{content:'';position:absolute;width:340px;height:340px;right:-100px;top:-160px;border-radius:50%;
+  background:radial-gradient(circle,rgba(239,131,84,.28),transparent 65%);pointer-events:none}
+.pd-hero-grid{display:grid;grid-template-columns:repeat(2,1fr);position:relative;z-index:1}
+.pd-kpi{padding:24px 26px;border-left:1px solid rgba(255,255,255,.08);border-top:1px solid rgba(255,255,255,.08)}
+.pd-kpi:nth-child(-n+2){border-top:0}
+.pd-kpi:nth-child(odd){border-left:0}
+@media(min-width:760px){
+  .pd-hero-grid{grid-template-columns:repeat(4,1fr)}
+  .pd-kpi{border-top:0 !important;border-left:1px solid rgba(255,255,255,.08) !important}
+  .pd-kpi:first-child{border-left:0 !important}
+}
+.pd-kpi-label{font-size:.68rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:rgba(255,255,255,.5)}
+.pd-kpi-value{font-family:'Playfair Display',serif;font-size:2.5rem;font-weight:900;line-height:1.05;margin-top:10px;cursor:pointer;transition:color .2s;display:inline-block}
+.pd-kpi-value:hover{color:var(--accent-light)}
+.pd-kpi-sub{font-size:.74rem;color:rgba(255,255,255,.42);margin-top:6px}
+.pd-kpi.lost .pd-kpi-value{color:#fca5a5}
+
+/* pipeline stats */
+.pd-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:22px 18px}
+@media(min-width:600px){.pd-stats{grid-template-columns:repeat(4,1fr)}}
+.pd-stat{padding-left:14px;border-left:3px solid var(--c,var(--accent))}
+.pd-stat-val{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:900;color:var(--primary);line-height:1}
+.pd-stat-lbl{font-size:.74rem;font-weight:600;color:var(--text-soft);margin-top:6px}
+
+/* follow-up highlight card */
+.pd-follow{cursor:pointer;position:relative;overflow:hidden;border:0;color:#fff;transition:var(--transition);
+  background:linear-gradient(135deg,#EF8354 0%,#f4a07b 100%);box-shadow:0 24px 44px -20px rgba(239,131,84,.8)}
+.pd-follow:hover{transform:translateY(-3px)}
+.pd-follow::after{content:'';position:absolute;width:200px;height:200px;border-radius:50%;right:-60px;bottom:-90px;background:rgba(255,255,255,.18)}
+.pd-follow .pd-card-title{color:rgba(255,255,255,.85)}
+.pd-follow .pd-card-title::before{background:#fff}
+.pd-follow-val{font-family:'Playfair Display',serif;font-size:3.2rem;font-weight:900;line-height:1;position:relative;z-index:1}
+.pd-follow-hint{font-size:.8rem;color:rgba(255,255,255,.88);margin-top:8px;position:relative;z-index:1}
+.pd-follow-go{margin-top:16px;display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;background:rgba(255,255,255,.2);padding:8px 14px;border-radius:100px;position:relative;z-index:1}
+
+/* intent tiles */
+.pd-intent{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pd-int{border-radius:16px;padding:16px;cursor:pointer;transition:var(--transition);border:1px solid transparent}
+.pd-int:hover{transform:translateY(-3px);box-shadow:var(--sh)}
+.pd-int.hot{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.18);--c:#ef4444}
+.pd-int.warm{background:rgba(245,158,11,.09);border-color:rgba(245,158,11,.2);--c:#d97706}
+.pd-int.cold{background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.18);--c:#2563eb}
+.pd-int-label{display:flex;align-items:center;gap:7px;font-size:.72rem;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--c)}
+.pd-int-label::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--c)}
+.pd-int-val{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:900;color:var(--primary);margin-top:10px;line-height:1}
+
+/* round robin rows */
+.pd-rr-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 4px;border-top:1px solid var(--border);cursor:pointer;transition:var(--transition)}
+.pd-rr-row:first-child{border-top:0}
+.pd-rr-row:hover{background:rgba(239,131,84,.05);padding-left:10px;border-radius:10px}
+.pd-rr-name{display:flex;align-items:center;gap:12px;font-weight:600;color:var(--primary);font-size:.9rem}
+.pd-rr-av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff;font-size:.74rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.pd-rr-count{font-family:'Playfair Display',serif;font-weight:900;font-size:1.3rem;color:var(--accent)}
+
+/* dark viz cards refined */
+.chart-card{border-radius:20px;padding:22px 24px;background:linear-gradient(160deg,#252a40 0%,#1b1f31 100%);box-shadow:0 24px 48px -24px rgba(20,22,38,.55)}
+.chart-card-title{font-size:.7rem;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.6)}
+.pd-grid>.chart-card,.pd-grid>.pd-card{margin:0}
+
 </style>
 </head>
 <body data-hide-leads="{{ 'true' if hide_all_leads else 'false' }}">
+<script>try{if(localStorage.getItem('nh_sb')==='1')document.body.classList.add('sb-collapsed')}catch(e){}</script>
 
 <div class="loader-overlay" id="loader"><div class="loader"></div></div>
 <div class="sidebar-veil" id="sidebarVeil"></div>
@@ -1348,6 +1470,17 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </button>
     <div class="topbar-title">Nisha<span>Homes</span> <span style="color:rgba(255,255,255,0.3);font-size:0.8rem;font-family:'DM Sans',sans-serif;font-weight:400"> CRM</span></div>
     <div class="topbar-right">
+      <div class="wa-pill-wrap" id="waStatusSection">
+        <button class="wa-pill" id="waPill" onclick="toggleWaPop(event)" title="WhatsApp connection">
+          <span class="wa-dot" id="waDot"></span><span id="waPillText">WhatsApp</span>
+        </button>
+        <div class="wa-pop" id="waPop" onclick="event.stopPropagation()">
+          <div class="wa-pop-title">WhatsApp Connection</div>
+          <div class="wa-pop-sub" id="waStatusSub"></div>
+          <div id="waSuperWarn" style="display:none;background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:0.78rem;color:#9a3412;font-weight:600"></div>
+          <div id="waStatusList"></div>
+        </div>
+      </div>
       <div class="topbar-search">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="topbarSearch" placeholder="Search leads…">
@@ -1364,24 +1497,22 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 <div class="page active" id="dashboardPage">
   <div class="content">
 
-    <div class="dash-welcome anim anim-1">
+    <div class="pd-head anim anim-1">
       <div>
-        <h1>Dashboard Overview</h1>
-        <p>Live snapshot of your leads, pipeline and team activity</p>
+        <div class="pd-eyebrow">Nisha Homes · Command Centre</div>
+        <div class="pd-title">Dashboard</div>
+        <div class="pd-sub">Showing <b id="dashDatePill">Lifetime</b> · one filter controls every widget</div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <select id="dashPeriodFilter" style="background:#fff;border:1.5px solid var(--border);color:var(--primary);padding:8px 16px;border-radius:var(--radius-pill);font-weight:600;font-size:0.78rem;box-shadow:var(--sh-sm);font-family:'DM Sans',sans-serif;cursor:pointer;outline:none">
-          <option value="lifetime" selected>Lifetime</option>
-          <option value="today">Today</option>
-          <option value="this_month">This Month</option>
-          <option value="last_month">Last Month</option>
-          <option value="last_3_months">Last 3 Months</option>
-        </select>
-        <div class="dash-date-pill" id="dashDatePill">—</div>
+      <div class="pd-seg" id="dashPeriodSeg">
+        <button data-period="today">Today</button>
+        <button data-period="this_month">This Month</button>
+        <button data-period="last_month">Last Month</button>
+        <button data-period="last_3_months">3 Months</button>
+        <button data-period="lifetime" class="active">Lifetime</button>
       </div>
     </div>
 
-        {% if role == 'admin' %}
+    {% if role == 'admin' %}
     <div class="dash-section" id="reportAlertsSection" style="display:none">
       <div class="dash-section-head">
         <div class="dash-section-title">Activity Report Delivery Alerts</div>
@@ -1391,233 +1522,113 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
     </div>
     {% endif %}
 
-        <div class="dash-section anim anim-1" id="waStatusSection" style="display:none">
-      <div class="dash-section-head">
-        <div class="dash-section-title">WhatsApp Connection</div>
-        <div class="dash-section-sub" id="waStatusSub"></div>
-      </div>
-      <div id="waSuperWarn" style="display:none;background:#fff7ed;border:1.5px solid #fdba74;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px;font-size:0.82rem;color:#9a3412;font-weight:600"></div>
-      <div id="waStatusList" style="display:flex;flex-direction:column;gap:10px"></div>
-    </div>
-
-    <!-- KPI: lead volume by type -->
-    <div class="dash-section anim anim-1">
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-top">
-            <div class="kpi-icon">🏠</div>
-          </div>
-          <div class="kpi-label">Total Leads</div>
-          <div class="kpi-value" id="dashTotalLeads" onclick="openDashLeadsModal('all')">—</div>
-          <div class="kpi-change" id="dashTotalChange">Loading…</div>
+    <!-- HERO KPIs -->
+    <div class="pd-hero anim anim-1">
+      <div class="pd-hero-grid">
+        <div class="pd-kpi">
+          <div class="pd-kpi-label">Total Leads</div>
+          <div class="pd-kpi-value" id="dashTotalLeads" onclick="openDashLeadsModal('all')">—</div>
+          <div class="pd-kpi-sub" id="dashTotalChange">Loading…</div>
         </div>
-        <div class="kpi-card green">
-          <div class="kpi-top">
-            <div class="kpi-icon">🛒</div>
-          </div>
-          <div class="kpi-label">Buying</div>
-          <div class="kpi-value" id="dashBuying" onclick="openDashLeadsModal('buying')">—</div>
-          <div class="kpi-change" id="dashBuyingChange">—</div>
+        <div class="pd-kpi">
+          <div class="pd-kpi-label">Buying</div>
+          <div class="pd-kpi-value" id="dashBuying" onclick="openDashLeadsModal('buying')">—</div>
+          <div class="pd-kpi-sub" id="dashBuyingChange">—</div>
         </div>
-        <div class="kpi-card blue">
-          <div class="kpi-top">
-            <div class="kpi-icon">🔑</div>
-          </div>
-          <div class="kpi-label">Rental</div>
-          <div class="kpi-value" id="dashRental" onclick="openDashLeadsModal('rental')">—</div>
-          <div class="kpi-change" id="dashRentalChange">—</div>
+        <div class="pd-kpi">
+          <div class="pd-kpi-label">Rental</div>
+          <div class="pd-kpi-value" id="dashRental" onclick="openDashLeadsModal('rental')">—</div>
+          <div class="pd-kpi-sub" id="dashRentalChange">—</div>
         </div>
-        <div class="kpi-card warm">
-          <div class="kpi-top">
-            <div class="kpi-icon">🚫</div>
-          </div>
-          <div class="kpi-label">Lost</div>
-          <div class="kpi-value" id="dashLost" onclick="openLostLeadsModal('all')">—</div>
-          <div class="kpi-change" id="dashLostChange">—</div>
+        <div class="pd-kpi lost">
+          <div class="pd-kpi-label">Lost</div>
+          <div class="pd-kpi-value" id="dashLost" onclick="openLostLeadsModal('all')">—</div>
+          <div class="pd-kpi-sub" id="dashLostChange">—</div>
         </div>
       </div>
     </div>
 
-    <!-- Pipeline health -->
-    <div class="dash-section anim anim-2">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Pipeline Health</div>
-        <div class="dash-section-sub">Across all leads</div>
+    <!-- PIPELINE + FOLLOW-UPS -->
+    <div class="pd-grid pd-g-main anim anim-2">
+      <div class="pd-card">
+        <div class="pd-card-head">
+          <div class="pd-card-title">Pipeline Health</div>
+          <div class="pd-card-note">Across all leads</div>
+        </div>
+        <div class="pd-stats">
+          <div class="pd-stat" style="--c:#3B82F6"><div class="pd-stat-val" id="dashFollowup">—</div><div class="pd-stat-lbl">Follow-ups Due</div></div>
+          <div class="pd-stat" style="--c:#F59E0B"><div class="pd-stat-val" id="dashPending">—</div><div class="pd-stat-lbl">Pending</div></div>
+          <div class="pd-stat" style="--c:#10B981"><div class="pd-stat-val" id="dashDone">—</div><div class="pd-stat-lbl">Done</div></div>
+          <div class="pd-stat" style="--c:#6B7280"><div class="pd-stat-val" id="dashCallsToday">—</div><div class="pd-stat-lbl" id="dashCallsLabel">Calls</div></div>
+        </div>
       </div>
-      <div class="pipeline-strip">
-        <div class="pipeline-card">
-          <div class="pipeline-icon blue">📅</div>
-          <div class="pipeline-info">
-            <div class="pipeline-value" id="dashFollowup">—</div>
-            <div class="pipeline-label">Follow-ups Due</div>
-          </div>
-        </div>
-        <div class="pipeline-card warm">
-          <div class="pipeline-icon warm">⏳</div>
-          <div class="pipeline-info">
-            <div class="pipeline-value" id="dashPending">—</div>
-            <div class="pipeline-label">Pending</div>
-          </div>
-        </div>
-        <div class="pipeline-card">
-          <div class="pipeline-icon green">✅</div>
-          <div class="pipeline-info">
-            <div class="pipeline-value" id="dashDone">—</div>
-            <div class="pipeline-label">Done</div>
-          </div>
-        </div>
-        <div class="pipeline-card">
-          <div class="pipeline-icon gray">📞</div>
-          <div class="pipeline-info">
-            <div class="pipeline-value" id="dashCallsToday">—</div>
-            <div class="pipeline-label" id="dashCallsLabel">Calls Today</div>
-          </div>
+
+      <div class="pd-card pd-follow" onclick="openFollowupModal()">
+        <div class="pd-card-head"><div class="pd-card-title">Follow-ups</div></div>
+        <div class="pd-follow-val" id="dashFollowupCount">—</div>
+        <div class="pd-follow-hint" id="dashFollowupHint">Leads due for contact</div>
+        <div class="pd-follow-go">View list
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </div>
       </div>
     </div>
 
-
-    {% if role == 'admin' %}
-    <!-- Round Robin assignments (admin only) -->
-    <div class="dash-section anim anim-2" id="rrAssignSection">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Round Robin · Leads Assigned</div>
-        <div class="dash-section-sub" id="rrAssignSub">Tap an employee to see their leads</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-        <select id="rrPeriod" class="filter-select" onchange="loadRrAssign()">
-          <option value="today" selected>Today</option>
-          <option value="yesterday">Yesterday</option>
-          <option value="week">This Week</option>
-          <option value="last_7">Last 7 Days</option>
-          <option value="this_month">This Month</option>
-          <option value="lifetime">Lifetime</option>
-          <option value="custom">Custom Range…</option>
-        </select>
-        <span id="rrCustomWrap" style="display:none;gap:6px;align-items:center">
-          <input type="date" id="rrFrom" class="filter-select" onchange="loadRrAssign()">
-          <span style="color:var(--text-soft);font-size:0.8rem">to</span>
-          <input type="date" id="rrTo" class="filter-select" onchange="loadRrAssign()">
-        </span>
-      </div>
-      <div id="rrAssignList" style="display:flex;flex-direction:column;gap:8px"></div>
-    </div>
-    {% endif %}    
-
-    <!-- Follow-ups spotlight -->
-    <div class="dash-section anim anim-2">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Follow-ups</div>
-        <div class="dash-section-sub">Tap the card to view the list</div>
-      </div>
-      <div style="margin-bottom:12px">
-        <select id="followupPeriodFilter" style="background:#fff;border:1.5px solid var(--border);color:var(--primary);padding:8px 16px;border-radius:var(--radius-pill);font-weight:600;font-size:0.78rem;box-shadow:var(--sh-sm);font-family:'DM Sans',sans-serif;cursor:pointer;outline:none">
-          <option value="today" selected>Today</option>
-          <option value="this_week">This Week</option>
-          <option value="this_month">This Month</option>
-          <option value="last_month">Last Month</option>
-          <option value="last_3_months">Last 3 Months</option>
-          <option value="lifetime">Lifetime</option>
-        </select>
-      </div>
-      <div class="followup-grid" style="grid-template-columns:1fr">
-        <div class="followup-card today" onclick="openFollowupModal()">
-          <div class="fc-row">
-            <div class="fc-icon">📅</div>
-            <div class="fc-arrow">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </div>
-          </div>
-          <div class="fc-label">Follow-ups</div>
-          <div class="fc-value" id="dashFollowupCount">—</div>
-          <div class="fc-hint" id="dashFollowupHint">Leads due for contact today</div>
+    <!-- INTENT + TEAM ACTIVITY -->
+    <div class="pd-grid pd-g-eq anim anim-2">
+      <div class="pd-card">
+        <div class="pd-card-head">
+          <div class="pd-card-title">Lead Intent (AI)</div>
+          <div class="pd-card-note">From call-log interest level</div>
+        </div>
+        <div class="pd-intent">
+          <div class="pd-int hot" onclick="openIntentModal('Hot')"><div class="pd-int-label">Hot</div><div class="pd-int-val" id="dashIntentHot">—</div></div>
+          <div class="pd-int warm" onclick="openIntentModal('Warm')"><div class="pd-int-label">Warm</div><div class="pd-int-val" id="dashIntentWarm">—</div></div>
+          <div class="pd-int cold" onclick="openIntentModal('Cold')"><div class="pd-int-label">Cold</div><div class="pd-int-val" id="dashIntentCold">—</div></div>
         </div>
       </div>
-    </div>
 
-    <!-- Team activity -->
-    <div class="dash-section anim anim-2">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Team Activity</div>
-        <div class="dash-section-sub">Calls logged today</div>
-      </div>
       <div class="chart-card">
-        <div class="chart-card-title"><span id="dashCallsByEmployeeTitle">Calls Today — By Team Member</span></div>
+        <div class="chart-card-title"><span id="dashCallsByEmployeeTitle">Calls — By Team Member</span></div>
         <div id="dashCallsByEmployee" class="donut-wrap"></div>
       </div>
     </div>
 
-
-    <!-- Lead Intent (AI) -->
-    <div class="dash-section anim anim-2">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Lead Intent (AI)</div>
-        <div class="dash-section-sub">Based on Interest Level from call logs</div>
+    {% if role == 'admin' %}
+    <div class="pd-card anim anim-2" id="rrAssignSection" style="margin-bottom:18px">
+      <div class="pd-card-head">
+        <div class="pd-card-title">Round Robin · Leads Assigned</div>
+        <div class="pd-card-note" id="rrAssignSub">Tap an employee to see their leads</div>
       </div>
-      <div class="intent-grid">
-        <div class="intent-card hot" onclick="openIntentModal('Hot')">
-          <div class="intent-icon">🔥</div>
-          <div class="intent-label">Hot Leads</div>
-          <div class="intent-value" id="dashIntentHot">—</div>
+      <div id="rrAssignList"></div>
+    </div>
+    {% endif %}
+
+    <!-- TRENDS -->
+    <div class="pd-grid pd-g-chart anim anim-3">
+      <div class="chart-card">
+        <div class="chart-card-title"><span>Leads Over Time</span></div>
+        <div class="line-chart-wrap">
+          <svg id="lineChartSvg" width="100%" height="190" viewBox="0 0 600 180" preserveAspectRatio="none" style="display:block"></svg>
         </div>
-        <div class="intent-card warm" onclick="openIntentModal('Warm')">
-          <div class="intent-icon">🌤️</div>
-          <div class="intent-label">Warm Leads</div>
-          <div class="intent-value" id="dashIntentWarm">—</div>
-        </div>
-        <div class="intent-card cold" onclick="openIntentModal('Cold')">
-          <div class="intent-icon">❄️</div>
-          <div class="intent-label">Cold Leads</div>
-          <div class="intent-value" id="dashIntentCold">—</div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">Leads by Type</div>
+        <div class="donut-wrap">
+          <div class="donut-svg-wrap"><svg id="donutSvg" width="120" height="120" viewBox="0 0 120 120"></svg></div>
+          <div id="donutLegend"></div>
         </div>
       </div>
     </div>
 
-    <!-- Charts -->
-    <div class="dash-section anim anim-2">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Trends</div>
+    <!-- BREAKDOWN -->
+    <div class="pd-grid pd-g-eq anim anim-3">
+      <div class="chart-card">
+        <div class="chart-card-title">Leads by Call Status</div>
+        <div class="bar-chart" id="statusBarChart"></div>
       </div>
-      <div class="charts-row">
-        <div class="chart-card">
-          <div class="chart-card-title">
-            <span>Leads Over Time</span>
-            <select class="chart-period-select" id="chartPeriod">
-              <option value="7">Last 7 Days</option>
-              <option value="30" selected>This Month</option>
-              <option value="90">Last 90 Days</option>
-            </select>
-          </div>
-          <div class="line-chart-wrap">
-            <svg id="lineChartSvg" width="100%" height="180" viewBox="0 0 600 180" preserveAspectRatio="none" style="display:block"></svg>
-          </div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-card-title">Leads by Type</div>
-          <div class="donut-wrap">
-            <div class="donut-svg-wrap">
-              <svg id="donutSvg" width="120" height="120" viewBox="0 0 120 120"></svg>
-            </div>
-            <div id="donutLegend"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Status + locations -->
-    <div class="dash-section anim anim-3">
-      <div class="dash-section-head">
-        <div class="dash-section-title">Breakdown</div>
-      </div>
-      <div class="charts-row">
-        <div class="chart-card">
-          <div class="chart-card-title">Leads by Call Status</div>
-          <div class="bar-chart" id="statusBarChart"></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-card-title">Top Locations</div>
-          <div class="location-list" id="topLocationsList"></div>
-        </div>
+      <div class="chart-card">
+        <div class="chart-card-title">Top Locations</div>
+        <div class="location-list" id="topLocationsList"></div>
       </div>
     </div>
 
@@ -2139,21 +2150,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
   <div class="modal" style="max-width:640px">
     <button class="modal-close" onclick="closeRrLeadsModal()">✕</button>
     <h2 id="rrLeadsTitle">Assigned Leads</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-      <select id="rrmPeriod" class="form-select" style="width:auto" onchange="loadRrLeads()">
-        <option value="today">Today</option>
-        <option value="yesterday">Yesterday</option>
-        <option value="week">This Week</option>
-        <option value="last_7">Last 7 Days</option>
-        <option value="this_month">This Month</option>
-        <option value="lifetime">Lifetime</option>
-        <option value="custom">Custom Range…</option>
-      </select>
-      <span id="rrmCustomWrap" style="display:none;gap:6px;align-items:center">
-        <input type="date" id="rrmFrom" class="form-input" style="width:auto" onchange="loadRrLeads()">
-        <input type="date" id="rrmTo" class="form-input" style="width:auto" onchange="loadRrLeads()">
-      </span>
-      <input type="text" id="rrmSearch" class="form-input" placeholder="Search name / number…" style="flex:1;min-width:140px" oninput="renderRrLeads()">
+    <div style="margin-bottom:12px">
+      <input type="text" id="rrmSearch" class="form-input" placeholder="Search name / number…" oninput="renderRrLeads()">
     </div>
     <div id="rrmCount" style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-bottom:10px"></div>
     <div id="rrmList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
@@ -2305,6 +2303,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 <button id="installBtn" style="display:none">📲 Install App</button>
 
 <script>
+{% raw %}
   /* ═══════════════════════════════════
    CONFIG
 ═══════════════════════════════════ */
@@ -2971,7 +2970,12 @@ const sidebar = document.getElementById('sidebar');
 const sidebarVeil = document.getElementById('sidebarVeil');
 function openSidebar(){sidebar.classList.add('open');sidebarVeil.classList.add('open');document.body.style.overflow='hidden'}
 function closeSidebar(){sidebar.classList.remove('open');sidebarVeil.classList.remove('open');document.body.style.overflow=''}
-document.getElementById('hamburgerBtn').addEventListener('click',openSidebar);
+document.getElementById('hamburgerBtn').addEventListener('click',()=>{
+  if(window.innerWidth >= 900){
+    const c = document.body.classList.toggle('sb-collapsed');
+    try{ localStorage.setItem('nh_sb', c ? '1' : '0'); }catch(e){}
+  }else openSidebar();
+});
 document.getElementById('sidebarClose').addEventListener('click',closeSidebar);
 sidebarVeil.addEventListener('click',closeSidebar);
 
@@ -3505,7 +3509,7 @@ function buildLineChart(trendObj){
   if(trendObj) lastTrendData = trendObj;
   const svg=document.getElementById('lineChartSvg');
   const W=600,H=180,PAD={t:20,r:20,b:30,l:40};
-  const days = parseInt(document.getElementById('chartPeriod').value || '30', 10);
+  const days = 60;
   const byDate = lastTrendData || {};
   const sorted=Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0])).slice(-days);
   if(sorted.length<2){svg.innerHTML=`<text x="50%" y="50%" fill="rgba(255,255,255,0.3)" text-anchor="middle" font-size="13">Not enough data</text>`;return}
@@ -3576,7 +3580,7 @@ function buildTopLocations(locObj){
   container.innerHTML=sorted.map(([loc,v],i)=>`<div class="location-item"><div class="location-flag">${emojis[i]||'📍'}</div><div class="location-name">${escHtml(loc)}</div><div class="location-bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%"></div></div></div><div class="location-count">${v}</div></div>`).join('');
 }
 
-document.getElementById('chartPeriod').addEventListener('change',()=>buildLineChart());
+
 
 /* ═══════════════════════════════════
    DASHBOARD OVERVIEW (PERIOD-AWARE)
@@ -3643,8 +3647,16 @@ async function loadDashboardOverview(period){
   }
 }
 
-document.getElementById('dashPeriodFilter').addEventListener('change', function(){
-  loadDashboardOverview(this.value);
+function setDashPeriod(p){
+  currentDashPeriod = p;
+  document.querySelectorAll('#dashPeriodSeg button').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  loadDashboardOverview(p);
+  loadDashboardFollowups(p);
+  loadRrAssign();
+}
+document.getElementById('dashPeriodSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button[data-period]');
+  if(b) setDashPeriod(b.dataset.period);
 });
 
 /* ═══════════════════════════════════
@@ -3687,9 +3699,7 @@ async function loadDashboardFollowups(period){
   }catch(e){ console.warn('followups load failed', e); }
 }
 
-document.getElementById('followupPeriodFilter').addEventListener('change', function(){
-  loadDashboardFollowups(this.value);
-});
+
 
 let intentData = { hotLeads: [], warmLeads: [], coldLeads: [] };
 
@@ -4270,7 +4280,7 @@ document.getElementById('callLogForm').addEventListener('submit',async e=>{
     endDataMap={}; await loadEndData();
     loadAllLeads(true);
     loadAssignedLeads();
-    loadDashboardStats();
+    loadDashboardOverview(currentDashPeriod);
     loadOwnerLeads(true);   // refresh owner cards (call status / auto "Contacted")
   }catch(err){console.error(err);alert('Failed')}
   finally{hideLoader()}
@@ -4636,24 +4646,28 @@ function renderLostLeadsList(){
 
 
 /* ═══════ ROUND ROBIN ASSIGNMENTS (admin dashboard) ═══════ */
-function rrQuery(period, from, to){
-  let q = `period=${encodeURIComponent(period)}`;
-  if(period === 'custom') q += `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-  return q;
+function rrQuery(){
+  const p = currentDashPeriod;
+  if(p === 'today' || p === 'this_month' || p === 'lifetime') return `period=${p}`;
+  const now = new Date();
+  const iso = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  let from, to;
+  if(p === 'last_month'){
+    from = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    to   = new Date(now.getFullYear(), now.getMonth(), 0);
+  }else{ // last_3_months
+    from = new Date(now.getFullYear(), now.getMonth()-2, 1);
+    to   = now;
+  }
+  return `period=custom&from=${iso(from)}&to=${iso(to)}`;
 }
 
 async function loadRrAssign(){
   const sec = document.getElementById('rrAssignSection');
   if(!sec) return;                                    // not admin
-  const period = document.getElementById('rrPeriod').value;
-  const from = document.getElementById('rrFrom').value;
-  const to = document.getElementById('rrTo').value;
-  document.getElementById('rrCustomWrap').style.display = period === 'custom' ? 'flex' : 'none';
-  if(period === 'custom' && (!from || !to)) return;
-
   const box = document.getElementById('rrAssignList');
   try{
-    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery(period, from, to)}`);
+    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery()}`);
     const d = await res.json();
     if(!d.success){ box.innerHTML = `<div style="color:var(--hot);font-size:0.82rem">${escHtml(d.message||'Failed to load')}</div>`; return; }
     if(!d.data.length){
@@ -4661,12 +4675,11 @@ async function loadRrAssign(){
       document.getElementById('rrAssignSub').textContent = 'Select employees on the Round Robin page';
       return;
     }
-    document.getElementById('rrAssignSub').textContent = `${d.total} lead${d.total!==1?'s':''} assigned in total · tap a name to view`;
+    document.getElementById('rrAssignSub').textContent = `${d.total} lead${d.total!==1?'s':''} assigned · tap a name to view`;
     box.innerHTML = d.data.map(r => `
-      <div onclick="openRrLeadsModal(${r.number}, '${escHtml(r.name).replace(/'/g,'&#39;')}')"
-           style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);cursor:pointer;transition:var(--transition)">
-        <span style="font-weight:700;color:var(--primary);font-size:0.92rem">${escHtml(r.name)}</span>
-        <span style="font-weight:800;color:var(--accent);font-size:1.05rem">${r.count}</span>
+      <div class="pd-rr-row" onclick="openRrLeadsModal(${r.number}, '${escHtml(r.name).replace(/'/g,'&#39;')}')">
+        <span class="pd-rr-name"><span class="pd-rr-av">${initials(r.name)}</span>${escHtml(r.name)}</span>
+        <span class="pd-rr-count">${r.count}</span>
       </div>`).join('');
   }catch(e){ console.warn('rr assign load failed', e); }
 }
@@ -4677,10 +4690,6 @@ let rrModalData = [];
 function openRrLeadsModal(number, name){
   rrModalNumber = number;
   document.getElementById('rrLeadsTitle').textContent = `${name} · Assigned Leads`;
-  // start with whatever filter the dashboard widget currently uses
-  document.getElementById('rrmPeriod').value = document.getElementById('rrPeriod').value;
-  document.getElementById('rrmFrom').value = document.getElementById('rrFrom').value;
-  document.getElementById('rrmTo').value = document.getElementById('rrTo').value;
   document.getElementById('rrmSearch').value = '';
   document.getElementById('rrLeadsModal').classList.add('active');
   loadRrLeads();
@@ -4689,17 +4698,9 @@ function closeRrLeadsModal(){ document.getElementById('rrLeadsModal').classList.
 document.getElementById('rrLeadsModal').addEventListener('click', e=>{ if(e.target.id==='rrLeadsModal') closeRrLeadsModal(); });
 
 async function loadRrLeads(){
-  const period = document.getElementById('rrmPeriod').value;
-  const from = document.getElementById('rrmFrom').value;
-  const to = document.getElementById('rrmTo').value;
-  document.getElementById('rrmCustomWrap').style.display = period === 'custom' ? 'flex' : 'none';
-  if(period === 'custom' && (!from || !to)){
-    document.getElementById('rrmList').innerHTML = '<p style="color:rgba(255,255,255,0.5)">Pick a from and to date</p>';
-    return;
-  }
   document.getElementById('rrmList').innerHTML = '<div class="loader" style="margin:20px auto"></div>';
   try{
-    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery(period, from, to)}&number=${rrModalNumber}`);
+    const res = await fetch(`${BASE}/dashboard/rr-assignments?${rrQuery()}&number=${rrModalNumber}`);
     const d = await res.json();
     rrModalData = d.success ? d.data : [];
     if(!d.success) document.getElementById('rrmList').innerHTML = `<p style="color:#ff6b6b">${escHtml(d.message||'Failed')}</p>`;
@@ -4735,6 +4736,12 @@ function renderRrLeads(){
 setInterval(loadRrAssign, 60000);
 
 /* ═══════ WHATSAPP CONNECTION STATUS ═══════ */
+function toggleWaPop(e){
+  e.stopPropagation();
+  document.getElementById('waPop').classList.toggle('open');
+}
+document.addEventListener('click', ()=>{ const p=document.getElementById('waPop'); if(p) p.classList.remove('open'); });
+
 async function loadWaStatus(){
   const sec = document.getElementById('waStatusSection');
   try{
@@ -4744,39 +4751,41 @@ async function loadWaStatus(){
     sec.style.display = 'block';
 
     const bad = d.data.filter(r => r.state !== 'connected').length;
+    const superBad = d.isSuperAdmin && (!d.superAdmin || d.superAdmin.state !== 'connected');
+    const anyBad = bad > 0 || superBad;
+    document.getElementById('waDot').className = 'wa-dot ' + (anyBad ? 'bad' : 'ok');
+    document.getElementById('waPillText').textContent = anyBad ? (bad ? `${bad} offline` : 'Attention') : 'WhatsApp';
+
     document.getElementById('waStatusSub').textContent = d.isSuperAdmin
       ? (bad ? `${bad} of ${d.data.length} not connected` : `All ${d.data.length} connected ✓`)
       : 'Your WhatsApp';
 
     const warn = document.getElementById('waSuperWarn');
-    if(!d.isSuperAdmin){
-      warn.style.display='none';
-    }else if(!d.superAdmin){
+    if(!d.isSuperAdmin){ warn.style.display='none'; }
+    else if(!d.superAdmin){
       warn.style.display='block';
       warn.textContent = '⚠ No Super Admin selected — alerts, notifications and reports cannot be sent.';
     }else if(d.superAdmin.state !== 'connected'){
       warn.style.display='block';
-      warn.textContent = `⚠ Your WhatsApp (Super Admin) is not connected — alerts, notifications and reports are NOT being sent.`;
-    }else{
-      warn.style.display='none';
-    }
+      warn.textContent = '⚠ Super Admin WhatsApp is not connected — alerts, notifications and reports are NOT being sent.';
+    }else warn.style.display='none';
 
     const meta = {
-      connected:    {c:'#10B981', t:'Connected'},
-      disconnected: {c:'#EF4444', t:'Disconnected'},
-      not_setup:    {c:'#F59E0B', t:'Not set up'}
+      connected:{c:'#10B981',t:'Connected'},
+      disconnected:{c:'#EF4444',t:'Disconnected'},
+      not_setup:{c:'#F59E0B',t:'Not set up'}
     };
     document.getElementById('waStatusList').innerHTML = d.data.map(r=>{
       const m = meta[r.state] || meta.disconnected;
       const action = (r.state !== 'connected' && (r.isSelf || d.isSuperAdmin))
-        ? `<a href="/team-webhooks" class="action-btn-sm primary">📱 Connect</a>` : '';
+        ? `<a href="/team-webhooks" class="action-btn-sm primary" style="padding:6px 10px;font-size:.72rem">Connect</a>` : '';
       return `
-      <div style="background:#fff;border:1.5px solid ${r.state==='connected'?'var(--border)':'#fca5a5'};border-left:5px solid ${m.c};border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div style="flex:1;min-width:160px">
-          <div style="font-weight:700;color:var(--primary);font-size:0.9rem">${escHtml(r.name)}${r.isSuper?' 👑':''}${r.isSelf?' (you)':''}</div>
-          <div style="font-size:0.74rem;color:var(--text-soft)">${r.phone ? '+'+escHtml(r.phone) : r.number}</div>
+      <div class="wa-row">
+        <div>
+          <div class="n">${escHtml(r.name)}${r.isSuper?' 👑':''}${r.isSelf?' (you)':''}</div>
+          <div class="p">${r.phone ? '+'+escHtml(r.phone) : r.number}</div>
         </div>
-        <span style="font-weight:700;font-size:0.8rem;color:${m.c}">● ${m.t}</span>
+        <span class="s" style="color:${m.c}">● ${m.t}</span>
         ${action}
       </div>`;
     }).join('');
@@ -4930,7 +4939,9 @@ document.getElementById('aiCallModal').addEventListener('click', e=>{ if(e.targe
 /* ═══════════════════════════════════════════════════
    OWNER LEADS  (import · list · call · WhatsApp · log · edit · status · timeline)
 ═══════════════════════════════════════════════════ */
+{% endraw %}
 const IS_ADMIN = {{ 'true' if role == 'admin' else 'false' }};
+{% raw %}
 const OWNER_STATUSES = ['New','Contacted','Interested','Follow-up','Not Interested','Deal Done'];
 const OWNER_STATUS_COLORS = {
   'new':'#3B82F6','contacted':'#F59E0B','interested':'#10B981',
@@ -5595,15 +5606,17 @@ window.addEventListener('load',()=>{
     hideLoader();
     loadAllLeads();
     loadAssignedLeads();
-    loadDashboardOverview('lifetime');
-    loadDashboardFollowups('today');
+    setDashPeriod('lifetime');   // change to 'this_month' if you want that as the default
     flushCallQueue();
     loadReportAlerts();
     loadWaStatus();
     loadRrAssign();     // admin: round robin assignment counts
     loadOwnerLeads();   // fills the "Owner Leads" sidebar badge
+        const _h = (location.hash || '').replace('#','');
+    if(['dashboard','leads','assigned','owners'].includes(_h)) switchPage(_h);   // links from Manage Team
   },600);
 });
+{% endraw %}
 </script>
 </body>
 </html>
