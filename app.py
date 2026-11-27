@@ -316,11 +316,65 @@ def add_cors_headers(response):
 PARTNER_ALLOWED_PATHS = {"/inventory", "/logout", "/add-inventory"}
 PARTNER_ALLOWED_PREFIXES = ("/api/projects", "/api/ai", "/uploads", "/static")
 
+# Paths that never need a session check (public / webhook / static)
+SESSION_CHECK_SKIP_PREFIXES = ("/static", "/webhook/", "/activity-reports", "/api/public", "/view/", "/logout")
+
+
+def _force_logout_response(reason):
+    """Ends the session and returns the right response for API vs page requests."""
+    session.clear()
+    print(f"[session] forced logout: {reason}")
+    if request.path.startswith("/api/"):
+        return jsonify({"success": False, "message": "Your session has ended. Please log in again.",
+                        "logout": True}), 401
+    return redirect("/")
+
+
 @app.before_request
 def restrict_partner_access():
     if request.method == "OPTIONS":
         return  # let CORS preflight through untouched
 
+    # ---------- 1) LIVE SESSION VALIDATION ----------
+    # Deleted / deactivated / password-reset users are logged out instantly,
+    # even if their browser still holds a valid cookie.
+    if session.get("user_id") and not request.path.startswith(SESSION_CHECK_SKIP_PREFIXES):
+        try:
+            member = db["teamAssign"].find_one(
+                {"_id": ObjectId(session["user_id"])},
+                {"roll": 1, "Active": 1, "password": 1, "Employee name": 1, "Employee number": 1}
+            )
+        except Exception as e:
+            # Invalid id format -> bad session. Mongo down -> fail open (don't log everyone out).
+            if isinstance(e, (ValueError, TypeError)) or e.__class__.__name__ == "InvalidId":
+                return _force_logout_response("invalid session id")
+            print(f"[session] validation skipped (DB error): {e}")
+            member = "DB_ERROR"
+
+        if member != "DB_ERROR":
+            if not member:
+                return _force_logout_response("user deleted by admin")
+
+            if member.get("Active", True) is False:
+                return _force_logout_response("user deactivated by admin")
+
+            # password changed / reset -> old sessions die (only if session was created with fingerprint)
+            import hashlib
+            fp_saved = session.get("pw_fp")
+            if fp_saved:
+                fp_now = hashlib.sha256(str(member.get("password") or "").encode("utf-8")).hexdigest()[:16]
+                if fp_saved != fp_now:
+                    return _force_logout_response("password changed")
+
+            # keep role / name in sync instantly (e.g. admin demoted to emp)
+            new_role = (member.get("roll") or "").strip().lower()
+            if new_role not in ("admin", "emp", "partner"):
+                return _force_logout_response("invalid role")
+            session["role"] = new_role
+            session["employee_name"] = member.get("Employee name")
+            session["employee_number"] = member.get("Employee number")
+
+    # ---------- 2) PARTNER ACCESS LOCK (unchanged) ----------
     if session.get("role") == "partner":
         path = request.path
         if path in PARTNER_ALLOWED_PATHS:
@@ -328,6 +382,15 @@ def restrict_partner_access():
         if path.startswith(PARTNER_ALLOWED_PREFIXES):
             return
         return redirect("/inventory")
+
+
+@app.route("/api/session-ping", methods=["GET"])
+def session_ping():
+    """Lightweight endpoint the frontend polls so idle open tabs get kicked out fast.
+    The before_request above already returns 401 + logout:true if the user is gone."""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "logout": True}), 401
+    return jsonify({"success": True}), 200
 
 
 def parse_lead_date(date_str):
@@ -1630,9 +1693,15 @@ def login():
         flash("Invalid number or password")
         return redirect("/")
 
+    if user.get("Active", True) is False:
+        flash("Your account has been deactivated. Contact admin.")
+        return redirect("/")
+
     role = (user.get("roll") or "").strip().lower()
 
     # Store session
+    import hashlib
+    session["pw_fp"] = hashlib.sha256(str(user.get("password") or "").encode("utf-8")).hexdigest()[:16]
     session["user_id"] = str(user["_id"])
     session["role"] = role
     session["employee_name"] = user.get("Employee name")
@@ -2019,6 +2088,9 @@ def add_team_member():
 @app.route("/api/remove-team-assign/<number>", methods=["DELETE"])
 def remove_team_member(number):
     try:
+        if session.get("role") != "admin":
+            return jsonify({"success": False, "message": "Admin only"}), 403
+
         collection = db["teamAssign"]
 
         number = str(number).strip()
@@ -2030,12 +2102,31 @@ def remove_team_member(number):
 
         number = int(number)
 
+        # don't let an admin delete themselves by accident
+        if number == session.get("employee_number"):
+            return jsonify({"success": False, "message": "You cannot remove your own account"}), 400
+
         result = collection.delete_one({"Employee number": number})
 
         if result.deleted_count == 0:
             return jsonify({"success": False, "message": "Member not found"}), 404
 
-        return jsonify({"success": True, "message": "Team member removed"})
+        # The user is now gone from teamAssign -> restrict_partner_access() logs
+        # them out on their very next request (page click / API call / session-ping).
+
+        # ---- best-effort cleanup (never breaks the response) ----
+        try:
+            round_robin_collection.update_one({"_id": "config"}, {"$pull": {"employees": number}})
+            wh = team_webhooks_collection.find_one({"employeeNumber": number})
+            if wh:
+                if wh.get("instanceId"):
+                    wb_dev("DELETE", f"/instances/{wh['instanceId']}")
+                team_webhook_messages_collection.delete_many({"token": wh.get("token")})
+                team_webhooks_collection.delete_one({"_id": wh["_id"]})
+        except Exception as cleanup_err:
+            print(f"[remove-team] cleanup warning: {cleanup_err}")
+
+        return jsonify({"success": True, "message": "Team member removed and logged out"})
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500

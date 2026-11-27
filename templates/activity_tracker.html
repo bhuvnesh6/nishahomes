@@ -259,5 +259,23 @@ renderTypeTabs();
 loadCallers();
 reload();
 </script>
+<script>
+(function () {
+  // 1) any API call that comes back "logout" -> go to login
+  const _fetch = window.fetch;
+  window.fetch = async function (...args) {
+    const res = await _fetch.apply(this, args);
+    if (res.status === 401) {
+      try {
+        const d = await res.clone().json();
+        if (d && d.logout) { window.location.href = "/"; }
+      } catch (e) {}
+    }
+    return res;
+  };
+  // 2) idle tabs: check every 20 seconds
+  setInterval(() => { fetch("/api/session-ping").catch(() => {}); }, 20000);
+})();
+</script>
 </body>
 </html>
