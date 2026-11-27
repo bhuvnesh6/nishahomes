@@ -14815,6 +14815,448 @@ def start_owner_sheet_scheduler():
 
 start_owner_sheet_scheduler()
 
+# =====================================================================
+# SITE VISITS  (mark visit on any lead -> dashboard schedule -> WhatsApp reminders)
+# =====================================================================
+site_visits_collection = db["siteVisits"]
+try:
+    site_visits_collection.create_index([("callerNumber", 1), ("visitAt", 1)])
+    site_visits_collection.create_index([("status", 1), ("visitAt", 1)])
+    site_visits_collection.create_index("leadId")
+except Exception as _sv_idx_err:
+    print(f"[startup] siteVisits index warning: {_sv_idx_err}")
+
+SV_START_MIN = 9 * 60          # 9:00 AM
+SV_END_MIN = 20 * 60           # 8:00 PM (last allowed slot)
+SV_REMINDER_MAX_TRIES = 10
+_SV_OFF = timedelta(hours=5, minutes=30)   # IST offset
+
+# key, send-when-this-long-before, grace window, wording, who gets it
+SV_REMINDER_STEPS = [
+    ("rem_1d",  timedelta(days=1),     timedelta(hours=6),    "tomorrow",             "lead"),
+    ("rem_1h",  timedelta(hours=1),    timedelta(minutes=20), "in about 1 hour",      "lead"),
+    ("rem_10m", timedelta(minutes=10), timedelta(minutes=8),  "in about 10 minutes",  "lead"),
+    ("rem_emp", timedelta(minutes=15), timedelta(minutes=10), None,                   "employee"),
+]
+
+
+def _sv_day_starts_utc():
+    """(start of today IST, start of tomorrow IST, start of day-after) as naive UTC."""
+    ist_now = get_ist_now()
+    today0 = ist_now.replace(hour=0, minute=0, second=0, microsecond=0) - _SV_OFF
+    return today0, today0 + timedelta(days=1), today0 + timedelta(days=2)
+
+
+def _sv_fmt_parts(dt_utc):
+    ist = dt_utc + _SV_OFF
+    return (ist.strftime("%a, %d %b %Y"), ist.strftime("%I:%M %p").lstrip("0"),
+            ist.strftime("%Y-%m-%d"), ist.strftime("%H:%M"))
+
+
+def _sv_view(v, now):
+    date_text, time_text, date_iso, time_iso = _sv_fmt_parts(v["visitAt"])
+    done_at = v.get("doneAt")
+    return {
+        "id": str(v["_id"]),
+        "leadId": v.get("leadId"),
+        "collection": v.get("collection"),
+        "name": v.get("leadName") or "Unknown",
+        "phone": v.get("phone") or "",
+        "leadType": v.get("leadType") or "",
+        "property": v.get("propertyName") or "",
+        "notes": v.get("notes") or "",
+        "status": v.get("status"),
+        "dateText": date_text, "timeText": time_text,
+        "dateIso": date_iso, "timeIso": time_iso,
+        "callerName": v.get("callerName") or "",
+        "callerNumber": v.get("callerNumber"),
+        "isOverdue": v.get("status") == "scheduled" and v["visitAt"] < now,
+        "reminders": [k for k in ("rem_1d", "rem_1h", "rem_10m")
+                      if v.get(k) and not v.get(k + "_skipped")],
+        "doneAt": format_ist(done_at) if isinstance(done_at, datetime) else None,
+    }
+
+
+@app.route("/api/site-visits/mark", methods=["POST"])
+def site_visit_mark():
+    """Schedule (or reschedule) a site visit for ANY lead."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    try:
+        data = request.json or {}
+        coll = str(data.get("collection") or "").strip()
+        if coll not in LEAD_COLLECTIONS_ALL:
+            return jsonify({"success": False, "message": "Invalid collection"}), 400
+        try:
+            oid = ObjectId(str(data.get("leadId") or "").strip())
+        except Exception:
+            return jsonify({"success": False, "message": "Invalid lead id"}), 400
+
+        date_s = str(data.get("date") or "").strip()
+        time_s = str(data.get("time") or "").strip()
+        try:
+            visit_utc = datetime.strptime(f"{date_s} {time_s}", "%Y-%m-%d %H:%M") - _SV_OFF
+            h, m = [int(x) for x in time_s.split(":")]
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid date or time"}), 400
+
+        if not (SV_START_MIN <= h * 60 + m <= SV_END_MIN):
+            return jsonify({"success": False, "message": "Visit time must be between 9:00 AM and 8:00 PM"}), 400
+
+        now = datetime.utcnow()
+        if visit_utc <= now:
+            return jsonify({"success": False, "message": "Please pick a future date and time"}), 400
+
+        lead = db[coll].find_one({"_id": oid})
+        if not lead:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
+        if not phone_last10(lead.get("Phone Number")):
+            return jsonify({"success": False, "message": "This lead has no valid phone number"}), 400
+
+        phone91 = normalize_phone_91(lead.get("Phone Number"))
+        name = lead.get("Lead Name") or lead.get("Name") or "Customer"
+
+        fields = {
+            "visitAt": visit_utc,
+            "propertyName": str(data.get("propertyName") or "").strip(),
+            "notes": str(data.get("notes") or "").strip(),
+            "updatedAt": now,
+        }
+
+        existing = site_visits_collection.find_one({"leadId": str(oid), "status": "scheduled"})
+        if existing:
+            reset = {}
+            for k in ("rem_1d", "rem_1h", "rem_10m", "rem_emp"):
+                for suffix in ("", "_tries", "_skipped", "_error"):
+                    reset[k + suffix] = ""
+            site_visits_collection.update_one({"_id": existing["_id"]}, {"$set": fields, "$unset": reset})
+            rescheduled = True
+        else:
+            site_visits_collection.insert_one({
+                **fields,
+                "leadId": str(oid), "collection": coll,
+                "leadName": name, "phone": phone91,
+                "leadType": _normalize_lead_type_field(lead.get("LeadType")),
+                "callerNumber": session.get("employee_number"),
+                "callerName": session.get("employee_name"),
+                "status": "scheduled", "createdAt": now,
+            })
+            rescheduled = False
+
+        try:
+            db[coll].update_one({"_id": oid}, {"$set": {"SiteVisitStatus": "scheduled", "SiteVisitAt": visit_utc}})
+            db["endData"].update_one(
+                {"Number": phone91},
+                {"$set": {"Call Status": "Site Visit Scheduled", "LeadId": str(oid), "lastUpdatedAt": now},
+                 "$setOnInsert": {"Number": phone91}},
+                upsert=True
+            )
+        except Exception as side_err:
+            print(f"[site-visit] side-effect update failed: {side_err}")
+
+        invalidate_cache("followup_stats")
+        return jsonify({"success": True, "rescheduled": rescheduled}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def _sv_get_for_action(visit_id):
+    """Returns (visit, None) or (None, error_response)."""
+    if session.get("role") not in ("admin", "emp"):
+        return None, (jsonify({"success": False, "message": "Staff only"}), 403)
+    try:
+        oid = ObjectId(visit_id)
+    except Exception:
+        return None, (jsonify({"success": False, "message": "Invalid id"}), 400)
+    v = site_visits_collection.find_one({"_id": oid})
+    if not v:
+        return None, (jsonify({"success": False, "message": "Site visit not found"}), 404)
+    if session.get("role") != "admin" and v.get("callerNumber") != session.get("employee_number"):
+        return None, (jsonify({"success": False, "message": "Only the owner of this visit (or an admin) can change it"}), 403)
+    if v.get("status") != "scheduled":
+        return None, (jsonify({"success": False, "message": f"This visit is already {v.get('status')}"}), 409)
+    return v, None
+
+
+@app.route("/api/site-visits/done/<visit_id>", methods=["POST"])
+def site_visit_done(visit_id):
+    v, err = _sv_get_for_action(visit_id)
+    if err:
+        return err
+    try:
+        now = datetime.utcnow()
+        res = site_visits_collection.update_one(
+            {"_id": v["_id"], "status": "scheduled"},
+            {"$set": {"status": "done", "doneAt": now, "doneBy": session.get("employee_name"), "updatedAt": now}}
+        )
+        if res.modified_count == 0:
+            return jsonify({"success": False, "message": "Already closed"}), 409
+
+        try:
+            db[v["collection"]].update_one(
+                {"_id": ObjectId(v["leadId"])},
+                {"$set": {"SiteVisitStatus": "done", "SiteVisitDoneAt": now}}
+            )
+            # lead status -> Done (this is what the dashboard 'Done' count reads)
+            db["endData"].update_one(
+                {"Number": v.get("phone")},
+                {"$set": {"Status": "Done", "Call Status": "Site Visit Completed",
+                          "LeadId": v["leadId"], "lastUpdatedAt": now},
+                 "$setOnInsert": {"Number": v.get("phone")}},
+                upsert=True
+            )
+        except Exception as side_err:
+            print(f"[site-visit] done side-effect failed: {side_err}")
+
+        # counts in weekly site-visit stats + Activity Tracker + 3PM/10PM reports
+        log_activity(
+            activity_type="SITE_VISIT", source_platform="Site Visit",
+            caller_number=v.get("callerNumber"), caller_name=v.get("callerName"),
+            customer_name=v.get("leadName"), mobile=v.get("phone"),
+            lead_id=v.get("leadId"), property_name=v.get("propertyName", ""),
+            start_time=now, status="completed",
+            extra={"notes": v.get("notes", ""), "siteVisitId": str(v["_id"])}
+        )
+        invalidate_cache("followup_stats")
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/site-visits/cancel/<visit_id>", methods=["POST"])
+def site_visit_cancel(visit_id):
+    v, err = _sv_get_for_action(visit_id)
+    if err:
+        return err
+    now = datetime.utcnow()
+    site_visits_collection.update_one(
+        {"_id": v["_id"], "status": "scheduled"},
+        {"$set": {"status": "cancelled", "cancelledAt": now, "updatedAt": now}}
+    )
+    try:
+        db[v["collection"]].update_one({"_id": ObjectId(v["leadId"])}, {"$set": {"SiteVisitStatus": "cancelled"}})
+    except Exception as e:
+        print(f"[site-visit] cancel side-effect failed: {e}")
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/site-visits", methods=["GET"])
+def site_visits_list():
+    """Visits of ONE person. No ?number= -> the logged-in user's own visits."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    try:
+        my_num = session.get("employee_number")
+        raw = request.args.get("number")
+        if raw:
+            try:
+                num = int(str(raw).strip())
+            except ValueError:
+                return jsonify({"success": False, "message": "Invalid employee number"}), 400
+        else:
+            num = my_num
+
+        member = db["teamAssign"].find_one({"Employee number": num}, {"Employee name": 1})
+        name = (member or {}).get("Employee name") or "Unknown"
+
+        f = request.args.get("filter", "today")
+        now = datetime.utcnow()
+        today_s, tom_s, after_s = _sv_day_starts_utc()
+        base = {"callerNumber": num}
+        queries = {
+            "today":    {**base, "status": "scheduled", "visitAt": {"$gte": today_s, "$lt": tom_s}},
+            "tomorrow": {**base, "status": "scheduled", "visitAt": {"$gte": tom_s, "$lt": after_s}},
+            "upcoming": {**base, "status": "scheduled", "visitAt": {"$gte": after_s}},
+            "overdue":  {**base, "status": "scheduled", "visitAt": {"$lt": now}},
+            "done":     {**base, "status": "done"},
+        }
+        if f not in queries:
+            f = "today"
+
+        sort = [("doneAt", -1)] if f == "done" else [("visitAt", 1)]
+        docs = list(site_visits_collection.find(queries[f]).sort(sort).limit(300))
+        counts = {k: site_visits_collection.count_documents(q) for k, q in queries.items()}
+
+        return jsonify({
+            "success": True, "filter": f, "counts": counts,
+            "viewing": {"number": num, "name": name, "isMine": num == my_num},
+            "data": [_sv_view(d, now) for d in docs]
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/site-visits/summary", methods=["GET"])
+def site_visits_summary():
+    """Per-team-member counts for the dashboard widget."""
+    if session.get("role") not in ("admin", "emp"):
+        return jsonify({"success": False, "message": "Staff only"}), 403
+    try:
+        now = datetime.utcnow()
+        today_s, tom_s, after_s = _sv_day_starts_utc()
+
+        def bucket(cond):
+            return {"$sum": {"$cond": [cond, 1, 0]}}
+
+        rows = {}
+        for r in site_visits_collection.aggregate([
+            {"$match": {"status": "scheduled"}},
+            {"$group": {
+                "_id": "$callerNumber",
+                "today": bucket({"$and": [{"$gte": ["$visitAt", today_s]}, {"$lt": ["$visitAt", tom_s]}]}),
+                "tomorrow": bucket({"$and": [{"$gte": ["$visitAt", tom_s]}, {"$lt": ["$visitAt", after_s]}]}),
+                "upcoming": bucket({"$gte": ["$visitAt", after_s]}),
+                "overdue": bucket({"$lt": ["$visitAt", now]}),
+            }}
+        ]):
+            rows[r["_id"]] = r
+
+        members = db["teamAssign"].find(
+            {"roll": {"$in": ["admin", "emp"]}, "Active": {"$ne": False}},
+            {"Employee name": 1, "Employee number": 1}
+        )
+        data = []
+        for m in members:
+            n = m.get("Employee number")
+            if n is None:
+                continue
+            r = rows.get(n, {})
+            data.append({
+                "name": m.get("Employee name", "Unknown"), "number": n,
+                "today": r.get("today", 0), "tomorrow": r.get("tomorrow", 0),
+                "upcoming": r.get("upcoming", 0), "overdue": r.get("overdue", 0),
+            })
+        return jsonify({"success": True, "myNumber": session.get("employee_number"), "data": data}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------
+# REMINDERS  (Wirebase, Super Admin's instance)
+# lead: 1 day / 1 hour / 10 minutes before   |   employee: 15 minutes before
+# ---------------------------------------------------------------------
+def _sv_lead_message(v, when_text):
+    date_text, time_text, _, _ = _sv_fmt_parts(v["visitAt"])
+    lines = [
+        f"Hello {v.get('leadName') or 'there'} 🙏",
+        "",
+        f"This is a gentle reminder from Nisha Homes — your site visit is scheduled {when_text}.",
+        "",
+        f"📅 {date_text}",
+        f"⏰ {time_text}",
+    ]
+    if v.get("propertyName"):
+        lines.append(f"🏡 {v['propertyName']}")
+    adv = v.get("callerName") or ""
+    adv_num = normalize_phone_91(v.get("callerNumber")) if v.get("callerNumber") else ""
+    if adv:
+        lines += ["", f"Your advisor {adv}{(' (+' + adv_num + ')') if adv_num else ''} will be glad to assist you."]
+    lines += [
+        "If you need to reschedule, just reply here and we'll arrange it. 😊",
+        "",
+        "We look forward to meeting you!",
+        "",
+        "— Nisha Homes",
+        "📞 7303515710",
+        "🌐 www.nishahomes.com",
+    ]
+    return "\n".join(lines)
+
+
+def _sv_employee_message(v):
+    date_text, time_text, _, _ = _sv_fmt_parts(v["visitAt"])
+    lines = ["⏰ Site visit in 15 minutes!", "",
+             f"Lead: {v.get('leadName') or 'Unknown'}",
+             f"Phone: +{v.get('phone')}",
+             f"When: {date_text}, {time_text}"]
+    if v.get("propertyName"):
+        lines.append(f"Property: {v['propertyName']}")
+    if v.get("notes"):
+        lines.append(f"Notes: {v['notes']}")
+    lines += ["", "— NishaHomes CRM"]
+    return "\n".join(lines)
+
+
+def process_site_visit_reminders():
+    now = datetime.utcnow()
+    visits = list(site_visits_collection.find({
+        "status": "scheduled",
+        "visitAt": {"$gt": now, "$lte": now + timedelta(days=1, minutes=1)}
+    }))
+
+    for v in visits:
+        for key, delta, grace, when_text, audience in SV_REMINDER_STEPS:
+            due = v["visitAt"] - delta
+            if not (due <= now < due + grace):
+                continue
+            if v.get(key) or v.get(key + "_tries", 0) >= SV_REMINDER_MAX_TRIES:
+                continue
+
+            # atomic claim -> only ONE worker/thread ever sends this reminder
+            claim = site_visits_collection.update_one(
+                {"_id": v["_id"], key: {"$exists": False}}, {"$set": {key: now}}
+            )
+            if claim.modified_count != 1:
+                continue
+
+            if audience == "lead":
+                to, text = v.get("phone"), _sv_lead_message(v, when_text)
+            else:
+                to = normalize_phone_91(v.get("callerNumber")) if v.get("callerNumber") else ""
+                text = _sv_employee_message(v)
+
+            if not to or is_number_blocked(to):
+                site_visits_collection.update_one({"_id": v["_id"]}, {"$set": {key + "_skipped": True}})
+                continue
+
+            ok, err, _ = wb_send_via_super_admin(to, {"type": "text", "message": text})
+            if ok:
+                print(f"[site-visit] {key} sent to {to}")
+            else:
+                print(f"[site-visit] {key} FAILED for {to}: {err}")
+                site_visits_collection.update_one(
+                    {"_id": v["_id"]},
+                    {"$unset": {key: ""}, "$inc": {key + "_tries": 1}, "$set": {key + "_error": str(err)[:200]}}
+                )
+            time.sleep(2)
+
+
+def site_visit_reminder_loop():
+    print("[site-visit] reminder loop started")
+    time.sleep(30)
+    while True:
+        try:
+            process_site_visit_reminders()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        time.sleep(60)
+
+
+_site_visit_thread_started = False
+
+
+def start_site_visit_reminders():
+    global _site_visit_thread_started
+    if _site_visit_thread_started:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        threading.Thread(target=site_visit_reminder_loop, daemon=True, name="site-visit-reminders").start()
+        _site_visit_thread_started = True
+        print("[site-visit] reminder thread launched")
+
+
+start_site_visit_reminders()
+
 import followup90
 followup90.register(globals())   # 90-day follow-up engine (routes + scheduler)
 

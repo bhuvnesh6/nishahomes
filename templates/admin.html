@@ -1342,6 +1342,31 @@ body{background:#F6F4EF}
 .chart-card-title{font-size:.7rem;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.6)}
 .pd-grid>.chart-card,.pd-grid>.pd-card{margin:0}
 
+
+/* ═══════════ SITE VISITS ═══════════ */
+.sv-viewing{display:none;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1.5px solid var(--border);border-left:5px solid var(--accent);border-radius:var(--radius-sm);padding:12px 16px;box-shadow:var(--sh-sm);margin-bottom:14px}
+.sv-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.sv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+@media(max-width:420px){.sv-grid{grid-template-columns:1fr}}
+.sv-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--sh-sm);overflow:hidden;position:relative;display:flex;flex-direction:column;transition:var(--transition)}
+.sv-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--svc,var(--accent))}
+.sv-card:hover{transform:translateY(-3px);box-shadow:var(--sh)}
+.sv-card .lc-body{padding-bottom:12px}
+.sv-card .lc-actions{margin-top:auto}
+.sv-when{display:flex;align-items:center;gap:10px;margin:2px 14px 12px 18px;padding:10px 14px;border-radius:10px;background:var(--primary-deep);color:#fff}
+.sv-when .d{font-weight:600;font-size:.84rem}
+.sv-when .t{margin-left:auto;font-family:'Playfair Display',serif;font-weight:900;color:var(--accent-light);font-size:1.1rem}
+.sv-rem{display:flex;gap:5px;flex-wrap:wrap;padding:0 14px 0 18px;margin-bottom:4px}
+.sv-dash-head,.sv-dash-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,64px);align-items:center;gap:6px}
+.sv-dash-head{font-size:.66rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-soft);padding:0 0 8px;text-align:center}
+.sv-dash-head span:first-child{text-align:left}
+.sv-dash-row{padding:10px 0;border-top:1px solid var(--border)}
+.sv-dash-name{display:flex;align-items:center;gap:10px;min-width:0;font-weight:600;color:var(--primary);font-size:.88rem;cursor:pointer;flex-wrap:wrap}
+.sv-cell{height:34px;border-radius:10px;font-family:'Playfair Display',serif;font-weight:900;font-size:1.05rem;background:rgba(107,114,128,.08);color:#9ca3af;transition:var(--transition)}
+.sv-cell.has{background:rgba(239,131,84,.14);color:var(--accent)}
+.sv-cell:hover{background:var(--accent);color:#fff}
+.sv-od{font-size:.68rem;font-weight:700;color:var(--hot);cursor:pointer;white-space:nowrap}
+
 </style>
 </head>
 <body data-hide-leads="{{ 'true' if hide_all_leads else 'false' }}">
@@ -1377,6 +1402,12 @@ body{background:#F6F4EF}
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     Owner Leads
     <span class="sidebar-badge" id="sidebarOwnerCount">—</span>
+  </button>
+
+  <button class="sidebar-link" data-page="sitevisits" onclick="svViewNumber=null;svFilter='today'">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/></svg>
+    Site Visits
+    <span class="sidebar-badge" id="sidebarSvCount">—</span>
   </button>
 
   <div class="sidebar-section">Tools</div>
@@ -1602,6 +1633,16 @@ body{background:#F6F4EF}
       <div id="rrAssignList"></div>
     </div>
     {% endif %}
+
+    <!-- SITE VISITS (team schedule) -->
+    <div class="pd-card anim anim-2" style="margin-bottom:18px">
+      <div class="pd-card-head">
+        <div class="pd-card-title">Site Visits · Team Schedule</div>
+        <div class="pd-card-note">Tap a number to open that person's visits</div>
+      </div>
+      <div class="sv-dash-head"><span>Team member</span><span>Today</span><span>Tomorrow</span><span>Upcoming</span></div>
+      <div id="svDashList"><div style="color:var(--text-soft);font-size:.85rem;padding:10px 0">Loading…</div></div>
+    </div>
 
     <!-- TRENDS -->
     <div class="pd-grid pd-g-chart anim anim-3">
@@ -1869,6 +1910,26 @@ body{background:#F6F4EF}
         <div class="pagination-info" id="ownerPaginationInfo"></div>
         <div class="pagination-btns" id="ownerPaginationBtns"></div>
       </div>
+    </div>
+  </div>
+
+    <!-- SITE VISITS PAGE -->
+  <div class="page" id="sitevisitsPage">
+    <div class="content">
+      <div class="leads-header anim anim-1">
+        <div>
+          <div class="leads-title" id="svPageTitle">My Site Visits</div>
+          <div class="leads-subtitle" id="svPageSubtitle">Loading…</div>
+        </div>
+      </div>
+
+      <div class="sv-viewing" id="svViewing">
+        <div style="flex:1;min-width:180px;font-size:.88rem;color:var(--text-soft)">Viewing <b id="svViewingName" style="color:var(--primary)"></b>'s site visits</div>
+        <button class="action-btn-sm primary" onclick="svBackToMine()">← My site visits</button>
+      </div>
+
+      <div class="sv-tabs anim anim-2" id="svTabs"></div>
+      <div class="sv-grid anim anim-3" id="svGrid"></div>
     </div>
   </div>
 </div><!-- /main-wrap -->
@@ -2297,6 +2358,39 @@ body{background:#F6F4EF}
     <div id="ownerSheetViewProgress" style="display:none">
       <div id="ownerSheetProgressBox"></div>
     </div>
+  </div>
+</div>
+
+<!-- ═════════ MARK SITE VISIT MODAL ═════════ -->
+<div class="modal-overlay" id="siteVisitModal">
+  <div class="modal" style="max-width:460px">
+    <button class="modal-close" onclick="closeSiteVisitModal()">✕</button>
+    <h2 id="svModalTitle">Mark Site Visit</h2>
+    <div id="svLeadLabel" style="color:var(--accent);font-size:.85rem;margin:-14px 0 18px"></div>
+    <form id="siteVisitForm">
+      <input type="hidden" id="svLeadId">
+      <input type="hidden" id="svCollection">
+      <div class="form-group">
+        <label class="form-label">Visit Date *</label>
+        <input type="date" id="svDate" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Visit Time * (9:00 AM – 8:00 PM)</label>
+        <select id="svTime" class="form-select" required></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Property / Project (optional)</label>
+        <input type="text" id="svProperty" class="form-input" placeholder="e.g. Hazelwood, Sector 63">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <textarea id="svNotes" class="form-textarea" style="min-height:60px"></textarea>
+      </div>
+      <div style="font-size:.76rem;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:14px">
+        🔔 The lead gets a polite WhatsApp reminder <b>1 day</b>, <b>1 hour</b> and <b>10 minutes</b> before the visit.
+      </div>
+      <button type="submit" class="submit-btn">Confirm Site Visit</button>
+    </form>
   </div>
 </div>
 
@@ -2843,6 +2937,7 @@ function renderAssignedTable(){
         <a href="https://wa.me/${rawPhone}" target="_blank" class="icon-btn" title="WhatsApp"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></a>
         <button class="icon-btn" title="Add Call Log" data-lead="${rowData}" onclick="openCallLogModal(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>
         <button class="icon-btn" title="AI Call Recording, Summary & Transcript" data-lead="${rowData}" onclick="openLeadAICall(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg></button>
+        <button class="icon-btn" title="Mark Site Visit" data-lead="${rowData}" onclick="openSiteVisitModal(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/></svg></button>
         <button class="icon-btn" title="Reassign" onclick="openAssignModal('${escHtml(l._id)}','${collection}','${escHtml(phone)}','${name}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>
         <button class="icon-btn" title="Edit" data-lead="${rowData}" onclick="openEditModalFromData(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="icon-btn" title="AI Summary" data-lead="${rowData}" onclick="senReqtoAI(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></button>
@@ -2958,7 +3053,8 @@ function switchPage(page){
   sidebarLinks.forEach(l=>l.classList.toggle('active', l.dataset.page===page));
   if(page==='leads' && flatLeads.length===0) loadAllLeads();
   if(page==='assigned') loadAssignedLeads();
-  if(page==='owners') loadOwnerLeads(true);
+if(page==='owners') loadOwnerLeads(true);
+  if(page==='sitevisits') loadSiteVisits();
   closeSidebar();
 }
 sidebarLinks.forEach(l=>l.addEventListener('click',()=>switchPage(l.dataset.page)));
@@ -3180,6 +3276,9 @@ function renderTable(){
         <button class="icon-btn" title="AI Call Recording, Summary & Transcript" data-lead="${rowData}" onclick="openLeadAICall(this)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg>
         </button>
+                <button class="icon-btn" title="Mark Site Visit" data-lead="${rowData}" onclick="openSiteVisitModal(this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/></svg>
+        </button>
         <button class="icon-btn danger" title="Delete" onclick="deleteLead('${escHtml(l._id)}','${srcType}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
         </button>
@@ -3390,6 +3489,10 @@ function openCardMenu(btn){
     <button class="cm-menu-item" onclick="closeCardMenu();openAssignModal('${escHtml(data.id)}','${escHtml(data.collection)}','${escHtml(data.phone)}','${escHtml(data.name)}')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
       Assign Lead
+    </button>
+    <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();openSiteVisitModal(this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/></svg>
+      Mark Site Visit
     </button>
     <button class="cm-menu-item" data-lead="${rowDataStr}" onclick="closeCardMenu();senReqtoAI(this)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
@@ -5616,6 +5719,216 @@ window.addEventListener('load',()=>{
     if(['dashboard','leads','assigned','owners'].includes(_h)) switchPage(_h);   // links from Manage Team
   },600);
 });
+
+
+/* ═══════════════════════════════════════════════════
+   SITE VISITS
+═══════════════════════════════════════════════════ */
+let svViewNumber = null;     // null = logged-in user's own visits
+let svFilter = 'today';
+let svMyNumber = null;
+const SV_TABS = [['today','Today'],['tomorrow','Tomorrow'],['upcoming','Upcoming'],['overdue','Overdue'],['done','Done']];
+
+function svLocalIso(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function svFillTimeSlots(selected){
+  let html = '<option value="">Select time</option>';
+  for(let m = 9*60; m <= 20*60; m += 30){
+    const h = Math.floor(m/60), mm = m % 60;
+    const val = String(h).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+    html += `<option value="${val}" ${val===selected?'selected':''}>${h%12||12}:${String(mm).padStart(2,'0')} ${h<12?'AM':'PM'}</option>`;
+  }
+  document.getElementById('svTime').innerHTML = html;
+}
+
+/* ───────── MARK / RESCHEDULE MODAL ───────── */
+function openSiteVisitModal(btn){
+  const d = JSON.parse(decodeURIComponent(btn.dataset.lead));
+  if(!d.id || !d.collection){ alert('Lead reference missing — please reload the page'); return; }
+  document.getElementById('svLeadId').value = d.id;
+  document.getElementById('svCollection').value = d.collection;
+  document.getElementById('svLeadLabel').textContent = `${d.name || 'Lead'} · +${telNumber(d.phone)}`;
+  document.getElementById('svModalTitle').textContent = d.date ? 'Reschedule Site Visit' : 'Mark Site Visit';
+  const dateEl = document.getElementById('svDate');
+  dateEl.min = svLocalIso(new Date());
+  dateEl.value = d.date || '';
+  svFillTimeSlots(d.time || '');
+  document.getElementById('svProperty').value = d.siteProperty || '';
+  document.getElementById('svNotes').value = d.notes || '';
+  document.getElementById('siteVisitModal').classList.add('active');
+}
+function closeSiteVisitModal(){ document.getElementById('siteVisitModal').classList.remove('active'); }
+document.getElementById('siteVisitModal').addEventListener('click', e=>{ if(e.target.id==='siteVisitModal') closeSiteVisitModal(); });
+
+document.getElementById('siteVisitForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const btn = e.target.querySelector('.submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${BASE}/site-visits/mark`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        leadId: document.getElementById('svLeadId').value,
+        collection: document.getElementById('svCollection').value,
+        date: document.getElementById('svDate').value,
+        time: document.getElementById('svTime').value,
+        propertyName: document.getElementById('svProperty').value,
+        notes: document.getElementById('svNotes').value
+      })
+    });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Could not save the site visit'); return; }
+    alert(d.rescheduled ? 'Site visit rescheduled ✅' : 'Site visit marked ✅\nThe lead will get automatic reminders.');
+    closeSiteVisitModal();
+    loadSiteVisitSummary();
+    if(document.getElementById('sitevisitsPage').classList.contains('active')) loadSiteVisits();
+  }catch(err){ console.error(err); alert('Could not save the site visit'); }
+  finally{ btn.disabled = false; btn.textContent = 'Confirm Site Visit'; }
+});
+
+/* ───────── DASHBOARD WIDGET ───────── */
+async function loadSiteVisitSummary(){
+  const box = document.getElementById('svDashList');
+  if(!box) return;
+  try{
+    const d = await (await fetch(`${BASE}/site-visits/summary`)).json();
+    if(!d.success) return;
+    svMyNumber = d.myNumber;
+
+    const total = r => r.today + r.tomorrow + r.upcoming;
+    const rows = d.data.slice().sort((a,b) =>
+      ((b.number===d.myNumber) - (a.number===d.myNumber)) || (total(b) - total(a)) || a.name.localeCompare(b.name));
+
+    const me = rows.find(r => r.number === d.myNumber);
+    document.getElementById('sidebarSvCount').textContent = me ? me.today : 0;
+
+    if(!rows.length){ box.innerHTML = '<div style="color:var(--text-soft);font-size:.85rem;padding:10px 0">No team members</div>'; return; }
+
+    const cell = (r,f) => `<button class="sv-cell ${r[f]?'has':''}" onclick="openSiteVisitsFor(${r.number},'${f}')">${r[f]}</button>`;
+    box.innerHTML = rows.map(r => `
+      <div class="sv-dash-row">
+        <div class="sv-dash-name">
+          <span onclick="openSiteVisitsFor(${r.number},'today')" style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span class="pd-rr-av">${initials(r.name)}</span>${escHtml(r.name)}${r.number===d.myNumber?' <span style="color:var(--text-soft);font-weight:500">(you)</span>':''}
+          </span>
+          ${r.overdue?`<span class="sv-od" onclick="openSiteVisitsFor(${r.number},'overdue')">⚠ ${r.overdue} overdue</span>`:''}
+        </div>
+        ${cell(r,'today')}${cell(r,'tomorrow')}${cell(r,'upcoming')}
+      </div>`).join('');
+  }catch(e){ console.warn('site visit summary failed', e); }
+}
+
+function openSiteVisitsFor(number, filter){
+  svViewNumber = (number === svMyNumber) ? null : number;   // own visits = no ?number=
+  svFilter = filter || 'today';
+  switchPage('sitevisits');
+  window.scrollTo(0,0);
+}
+function svBackToMine(){ svViewNumber = null; svFilter = 'today'; loadSiteVisits(); }
+function svSetFilter(f){ svFilter = f; loadSiteVisits(); }
+
+/* ───────── SITE VISITS PAGE ───────── */
+async function loadSiteVisits(){
+  const grid = document.getElementById('svGrid');
+  grid.innerHTML = '<div class="loader" style="margin:30px auto;grid-column:1/-1"></div>';
+  try{
+    const q = svViewNumber ? `&number=${encodeURIComponent(svViewNumber)}` : '';
+    const d = await (await fetch(`${BASE}/site-visits?filter=${encodeURIComponent(svFilter)}${q}`)).json();
+    if(!d.success){ grid.innerHTML = `<p style="color:var(--hot)">${escHtml(d.message||'Failed to load')}</p>`; return; }
+
+    const who = d.viewing;
+    svFilter = d.filter;
+    document.getElementById('svPageTitle').textContent = who.isMine ? 'My Site Visits' : `${who.name}'s Site Visits`;
+    document.getElementById('svPageSubtitle').textContent =
+      `${d.counts[svFilter] || 0} ${svFilter}`;
+    document.getElementById('svViewing').style.display = who.isMine ? 'none' : 'flex';
+    document.getElementById('svViewingName').textContent = who.name;
+
+    document.getElementById('svTabs').innerHTML = SV_TABS.map(([k,l]) =>
+      `<button class="owner-stat ${svFilter===k?'active':''}" onclick="svSetFilter('${k}')">${l} <b>${d.counts[k]||0}</b></button>`).join('');
+
+    if(!d.data.length){
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+        <div class="empty-state-icon">📅</div><h3>0 site visits</h3>
+        <p>${who.isMine ? 'Mark a site visit from any lead and it will show up here' : 'Nothing in this tab'}</p></div>`;
+      return;
+    }
+    const canAct = who.isMine || IS_ADMIN;
+    grid.innerHTML = d.data.map(v => svCardHtml(v, canAct)).join('');
+  }catch(e){
+    console.error(e);
+    grid.innerHTML = '<p style="color:var(--hot)">Failed to load site visits</p>';
+  }
+}
+
+function svCardHtml(v, canAct){
+  const color = v.status==='done' ? '#10B981' : v.status==='cancelled' ? '#6B7280' : (v.isOverdue ? '#EF4444' : '#EF8354');
+  const label = v.status==='done' ? 'Done' : v.status==='cancelled' ? 'Cancelled' : (v.isOverdue ? 'Overdue' : 'Scheduled');
+  const raw = telNumber(v.phone);
+  const pay = encodeURIComponent(JSON.stringify({
+    id: v.leadId, collection: v.collection, name: v.name, phone: v.phone,
+    date: v.dateIso, time: v.timeIso, siteProperty: v.property, notes: v.notes
+  }));
+  const rem = [['rem_1d','1 day'],['rem_1h','1 hour'],['rem_10m','10 min']].map(([k,l]) => {
+    const sent = v.reminders.includes(k);
+    return `<span class="badge" style="background:${sent?'rgba(16,185,129,.12);color:#059669':'rgba(107,114,128,.1);color:#6b7280'}">${sent?'✓':'○'} ${l}</span>`;
+  }).join(' ');
+
+  const actions = (v.status==='scheduled' && canAct) ? `
+    <button class="lc-action-btn" style="background:rgba(16,185,129,.08);border-color:#10B981;color:#059669" onclick="svAction('done','${v.id}')">✅ Done</button>
+    <button class="lc-action-btn" data-lead="${pay}" onclick="openSiteVisitModal(this)">🔁 Reschedule</button>
+    <button class="lc-action-btn danger" onclick="svAction('cancel','${v.id}')">✖</button>` : '';
+
+  return `
+  <div class="sv-card" style="--svc:${color}">
+    <div class="lc-header">
+      <div class="lc-avatar">${initials(v.name)}</div>
+      <div class="lc-name-block">
+        <div class="lc-name">${escHtml(v.name)}</div>
+        <div class="lc-date">${v.callerName ? 'Owner: '+escHtml(v.callerName) : ''}</div>
+        <div class="lc-badges">
+          <span class="badge" style="background:${color}22;color:${color}">${label}</span>
+          ${v.leadType?`<span class="badge ${typeBadgeClass(v.leadType)}">${getTypeLabel(v.leadType)}</span>`:''}
+        </div>
+      </div>
+    </div>
+    <div class="sv-when">
+      <span style="font-size:1.1rem">📅</span>
+      <span class="d">${escHtml(v.dateText)}</span>
+      <span class="t">${escHtml(v.timeText)}</span>
+    </div>
+    <div class="lc-body">
+      <div class="lc-field"><div class="lc-field-label">Phone</div><div class="lc-field-value"><a href="tel:${raw}">+${escHtml(raw)}</a></div></div>
+      <div class="lc-field"><div class="lc-field-label">Property</div><div class="lc-field-value">${escHtml(v.property||'—')}</div></div>
+      ${v.notes?`<div class="lc-field" style="grid-column:1/-1"><div class="lc-field-label">Notes</div><div class="lc-field-value">${escHtml(v.notes)}</div></div>`:''}
+      ${v.doneAt?`<div class="lc-field" style="grid-column:1/-1"><div class="lc-field-label">Completed</div><div class="lc-field-value">${escHtml(v.doneAt)}</div></div>`:''}
+    </div>
+    ${v.status==='scheduled'?`<div class="sv-rem">${rem}</div>`:''}
+    <div class="lc-actions">
+      <a href="tel:${raw}" class="lc-action-btn call" onclick="logCallClick('${raw}','${escHtml(v.name)}','${v.leadType||''}')">📞 Call</a>
+      <a href="https://wa.me/${raw}" target="_blank" class="lc-action-btn wa">💬 WA</a>
+      ${actions}
+    </div>
+  </div>`;
+}
+
+async function svAction(kind, id){
+  if(kind==='done' && !confirm('Mark this site visit as DONE?\nThe lead status will also be set to Done.')) return;
+  if(kind==='cancel' && !confirm('Cancel this site visit? No more reminders will be sent.')) return;
+  try{
+    const res = await fetch(`${BASE}/site-visits/${kind}/${id}`,{ method:'POST' });
+    const d = await res.json();
+    if(!d.success){ alert(d.message || 'Action failed'); return; }
+    loadSiteVisits();
+    loadSiteVisitSummary();
+    loadDashboardOverview(currentDashPeriod);
+  }catch(e){ console.error(e); alert('Action failed'); }
+}
+
+window.addEventListener('load', ()=> setTimeout(loadSiteVisitSummary, 900));
+setInterval(loadSiteVisitSummary, 60000);
 {% endraw %}
 </script>
 </body>
